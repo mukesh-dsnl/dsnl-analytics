@@ -14,12 +14,17 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { cdrApi } from '../api';
-import type { CategoryDatum, CdrFilters } from '../api';
+import type { CallCubeRow, CategoryDatum, CdrFilters } from '../api';
 import { formatCount, formatMinutes, useChartTheme } from '../chartTheme';
 import { CategoryBarChart } from './CategoryBarChart';
 import { ChartCard } from './ChartCard';
+import { CrossTabTooltip } from './CrossTabTooltip';
+import type { CubeDimension } from '../cubeDimensions';
 import { KpiCard } from './KpiCard';
 import { PeakPortsChart } from './PeakPortsChart';
+
+/** Stable reference so a still-loading cube doesn't hand every tooltip closure a fresh empty array. */
+const EMPTY_CUBE_ROWS: CallCubeRow[] = [];
 
 interface CDRDashboardProps {
   filters: CdrFilters;
@@ -56,6 +61,19 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
     queryKey: ['cdr', 'dashboard', filters],
     queryFn: () => cdrApi.dashboard(filters),
   });
+
+  // Second, independent request: the joint location × connected × direction ×
+  // provider distribution that powers each bar's hover breakdown below. Its
+  // own query rather than folded into the dashboard call, since it's the only
+  // consumer of that shape — every other panel stays a single-dimension count.
+  const { data: cube } = useQuery({
+    queryKey: ['cdr', 'call-cube', filters],
+    queryFn: () => cdrApi.callCube(filters),
+  });
+  const cubeRows = cube?.rows ?? EMPTY_CUBE_ROWS;
+  const crossTabTooltip = (dimension: CubeDimension) => (datum: CategoryDatum) => (
+    <CrossTabTooltip dimension={dimension} value={datum.label} cubeRows={cubeRows} />
+  );
 
   const isEmptyList = (rows: CategoryDatum[] | undefined) => !rows || rows.length === 0;
   const peakPorts = data?.peak_ports ?? [];
@@ -142,18 +160,24 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
 
         <ChartCard
           title="Dial In vs Dial Out"
-          subtitle="Calls by direction"
+          subtitle="Hover a bar for its connection, location and provider mix"
           icon={ArrowLeftRight}
           isLoading={isPending}
           error={error}
           isEmpty={isEmptyList(data?.call_direction)}
         >
-          <CategoryBarChart data={data?.call_direction ?? []} valueName="Calls" height={260} />
+          <CategoryBarChart
+            data={data?.call_direction ?? []}
+            valueName="Calls"
+            height={260}
+            showValueLabels
+            tooltipContent={crossTabTooltip('direction')}
+          />
         </ChartCard>
 
         <ChartCard
           title="Connected vs Not Connected"
-          subtitle="Calls by connection status"
+          subtitle="Hover a bar for its dial direction, location and provider mix"
           icon={PlugZap}
           isLoading={isPending}
           error={error}
@@ -164,18 +188,26 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
             valueName="Calls"
             height={260}
             colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
+            showValueLabels
+            tooltipContent={crossTabTooltip('connection')}
           />
         </ChartCard>
 
         <ChartCard
           title="Location"
-          subtitle="Calls by bridge server location"
+          subtitle="Hover a bar for its connection, direction and provider mix"
           icon={MapPin}
           isLoading={isPending}
           error={error}
           isEmpty={isEmptyList(data?.location)}
         >
-          <CategoryBarChart data={locations} valueName="Calls" height={260} />
+          <CategoryBarChart
+            data={locations}
+            valueName="Calls"
+            height={260}
+            showValueLabels
+            tooltipContent={crossTabTooltip('location')}
+          />
         </ChartCard>
 
         <div className="lg:col-span-2">
@@ -194,7 +226,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
 
         <ChartCard
           title="Service Provider"
-          subtitle="Calls by provider"
+          subtitle="Hover a bar for its connection, direction and location mix"
           icon={Radio}
           isLoading={isPending}
           error={error}
@@ -206,6 +238,8 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
             valueName="Calls"
             orientation="bars"
             height={barsHeight(providers.length)}
+            showValueLabels
+            tooltipContent={crossTabTooltip('provider')}
           />
         </ChartCard>
 

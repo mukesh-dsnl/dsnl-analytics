@@ -37,6 +37,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.cdr import service
 from app.schemas.cdr import (
+    CallCubeResponse,
     CdrDashboardResponse,
     CdrFilter,
     CdrLakeStatus,
@@ -103,6 +104,18 @@ def query_by_account(body: CdrFilter) -> CdrQueryResponse:
     """Per-account, per-service breakdown. Always joins CODR — see the service."""
     try:
         return CdrQueryResponse(**service.query_by_account(body))
+    except service.DatasetNotReady as exc:
+        raise _not_ready(exc)
+
+
+@router.post("/cdr/query/call-cube", response_model=CallCubeResponse)
+def query_call_cube(body: CdrFilter) -> CallCubeResponse:
+    """
+    One row per (location, connected, direction, provider) combination — what
+    the Blast Details bar charts cross-reference for their hover breakdowns.
+    """
+    try:
+        return CallCubeResponse(**service.query_call_cube(body))
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
 

@@ -121,6 +121,23 @@ export interface CdrDashboard {
   coverage: CdrCoverage;
 }
 
+// ── Call cube (Blast Details hover breakdowns) ───────────────────────────
+
+/** One combination of the four dimensions, and its count. */
+export interface CallCubeRow {
+  location: string;
+  is_connected: boolean;
+  call_direction: string;
+  service_provider: string;
+  count: number;
+}
+
+export interface CallCubeResponse {
+  rows: CallCubeRow[];
+  total_calls: number;
+  coverage: CdrCoverage;
+}
+
 // ── Transport ──────────────────────────────────────────────────────────────
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -172,4 +189,12 @@ export const cdrApi = {
   /** Every panel in one round trip — see the note at the top of this file. */
   dashboard: (filters: CdrFilters): Promise<CdrDashboard> =>
     post<CdrDashboard>('dashboard', filters),
+
+  /**
+   * The joint location × connected × direction × provider distribution, in
+   * one payload. Blast Details derives its four bar charts and every hover
+   * breakdown from this single request instead of five separate ones.
+   */
+  callCube: (filters: CdrFilters): Promise<CallCubeResponse> =>
+    post<CallCubeResponse>('call-cube', filters),
 };

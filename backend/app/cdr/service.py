@@ -35,6 +35,11 @@ from app.cdr.filters import SERVICE_TYPE_EXPR, WhereClause, build_where, needs_c
 from app.core.config import get_settings
 from app.schemas.cdr import CdrFilter, CdrRecordsRequest
 
+# Same mapping as the call_direction panel above — this has to stay in sync
+# with it, since Blast Details cross-references cube rows against the labels
+# that chart already shows.
+_CALL_DIRECTION_EXPR = "CASE c.CALLTYPE WHEN 0 THEN 'Dial In' WHEN 1 THEN 'Dial Out' ELSE 'Unknown' END"
+
 logger = logging.getLogger(__name__)
 
 # Code -> reason label for the disconnect breakdown. Kept as data rather than a
@@ -638,6 +643,46 @@ def query_by_account(f: CdrFilter) -> dict:
         "row_count": len(rows),
         "filters_applied": _applied(f, where, joined=True),
         "truncated": len(rows) == limit,
+    }
+
+
+def query_call_cube(f: CdrFilter) -> dict:
+    """
+    One row per (location, connected, direction, provider) combination, each
+    with its count — what the Blast Details charts cross-reference so hovering
+    a bar can show its connected/not-connected, dial-in/out, location and
+    provider breakdown instead of just its own total.
+
+    Standalone rather than a `slice`-CTE panel: nothing else needs all four
+    dimensions joined together, so there's no shared query to slot into.
+    """
+    joined = needs_codr(f)
+    from_clause, day_count = _from_clause(f, joined)
+    where = build_where(f)
+
+    rows = _run(
+        f"""
+        SELECT 'L' || CAST(c.LOCATION_ID AS VARCHAR)                          AS location,
+               (c.INCONF_DATETIME_EPOC IS NOT NULL AND c.INCONF_DATETIME_EPOC <> 0)
+                                                                                AS is_connected,
+               {_CALL_DIRECTION_EXPR}                                         AS call_direction,
+               CAST(c.SERVICE_PROVIDER AS VARCHAR)                            AS service_provider,
+               CAST(COUNT(*) AS BIGINT)                                       AS count
+        {from_clause}
+        {where.sql}
+        GROUP BY 1, 2, 3, 4
+        """,
+        where.params,
+    )
+    return {
+        "rows": rows,
+        "total_calls": sum(r["count"] for r in rows),
+        "coverage": {
+            "days_requested": f.span_days,
+            "days_matched": day_count,
+            "first_day": f.date_from.isoformat(),
+            "last_day": f.date_to.isoformat(),
+        },
     }
 
 
