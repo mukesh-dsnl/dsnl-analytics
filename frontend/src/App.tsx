@@ -6,12 +6,15 @@ import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
 import { Login } from './pages/Login';
 
-// The analytics page pulls in the charting library, which is heavier than the
+// The analytics pages pull in the charting library, which is heavier than the
 // rest of the app put together. Loading it on demand keeps that weight off
 // every other route instead of taxing the initial bundle for a page most
 // sessions never open.
 const CDRDashboardPage = lazy(() =>
   import('./features/cdr-dashboard/pages/CDRDashboardPage').then((m) => ({ default: m.CDRDashboardPage })),
+);
+const BlastDetailsPage = lazy(() =>
+  import('./features/cdr-dashboard/pages/BlastDetailsPage').then((m) => ({ default: m.BlastDetailsPage })),
 );
 
 function RouteFallback() {
@@ -39,15 +42,50 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<RequireAuth />}>
             <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/analytics" replace />} />
-              <Route
-                path="analytics"
-                element={
-                  <Suspense fallback={<RouteFallback />}>
-                    <CDRDashboardPage />
-                  </Suspense>
-                }
-              />
+              <Route index element={<Navigate to="/analytics/all" replace />} />
+              <Route path="analytics">
+                <Route index element={<Navigate to="all" replace />} />
+                <Route
+                  path="all"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CDRDashboardPage service="all" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="voicedrop"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CDRDashboardPage service="voicedrop" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="voicedrop/blast-details"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <BlastDetailsPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="conference"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CDRDashboardPage service="conference" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="multicall"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CDRDashboardPage service="multicall" />
+                    </Suspense>
+                  }
+                />
+              </Route>
             </Route>
           </Route>
         </Routes>

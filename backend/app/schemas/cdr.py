@@ -29,10 +29,14 @@ class CdrFilter(BaseModel):
     account_id: Optional[str] = None
     crn: Optional[str] = None
     conf_num: Optional[str] = None
+    # Chairperson PIN — CODR.CHAIR_PIN. Only meaningful for Conference and
+    # Multicall, but setting it forces the CODR join regardless of service
+    # (see filters.needs_codr) so it works from any tab.
+    cpin: Optional[str] = None
     time_from: Optional[time] = None
     time_to: Optional[time] = None
 
-    @field_validator("account_id", "crn", "conf_num")
+    @field_validator("account_id", "crn", "conf_num", "cpin")
     @classmethod
     def _blank_to_none(cls, v: Optional[str]) -> Optional[str]:
         """Treat "" from a cleared UI field as "not filtering"."""
@@ -169,5 +173,7 @@ class CdrDashboardResponse(BaseModel):
     service_provider: list[CategoryDatum]
     reblast: CdrReblast
     disconnect_reason: list[CategoryDatum]
+    location: list[CategoryDatum]
+    call_funnel: list[CategoryDatum]
     filters_applied: dict[str, Any]
     coverage: CdrCoverage

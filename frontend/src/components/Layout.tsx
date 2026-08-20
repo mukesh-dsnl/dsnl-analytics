@@ -1,15 +1,118 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
-  PieChart,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  LayoutGrid,
   LogOut,
+  Moon,
+  PhoneCall,
+  PhoneForwarded,
   Sun,
-  Moon
+  Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+
+interface NavNode {
+  label: string;
+  path: string;
+  icon?: LucideIcon;
+  children?: NavNode[];
+}
+
+const NAV: NavNode[] = [
+  { label: 'All', path: '/analytics/all', icon: LayoutGrid },
+  {
+    label: 'Voicedrop',
+    path: '/analytics/voicedrop',
+    icon: PhoneCall,
+    children: [{ label: 'Blast Details', path: '/analytics/voicedrop/blast-details' }],
+  },
+  { label: 'Conference', path: '/analytics/conference', icon: Users },
+  { label: 'Multicall', path: '/analytics/multicall', icon: PhoneForwarded },
+];
+
+/** Every path a node's own link should read as "current" for, itself included. */
+function collectPaths(node: NavNode, into: string[] = []): string[] {
+  into.push(node.path);
+  for (const child of node.children ?? []) collectPaths(child, into);
+  return into;
+}
+
+interface NavRowProps {
+  node: NavNode;
+  depth: number;
+  isCollapsed: boolean;
+  openSections: Set<string>;
+  toggle: (label: string) => void;
+  isActivePath: (path: string) => boolean;
+}
+
+function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }: NavRowProps) {
+  const hasChildren = !!node.children?.length;
+  const isOpen = openSections.has(node.label);
+  // A parent reads as active whenever the current route is anywhere under it,
+  // not only on its own exact path — Analytics stays highlighted from every
+  // service tab, and Voicedrop stays highlighted on its Blast Details page.
+  const isActive = collectPaths(node).some(isActivePath);
+
+  return (
+    <div>
+      <div className="flex items-center gap-0.5">
+        <Link
+          to={node.path}
+          title={isCollapsed ? node.label : undefined}
+          style={isCollapsed ? undefined : { paddingLeft: 12 + depth * 16 }}
+          className={clsx(
+            'flex-1 flex items-center gap-3 py-2.5 rounded-md text-sm font-medium transition-colors min-w-0',
+            isCollapsed ? 'justify-center px-0' : 'px-3',
+            isActive
+              ? 'bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
+              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50',
+          )}
+        >
+          {node.icon ? (
+            <node.icon className="w-5 h-5 shrink-0" />
+          ) : (
+            !isCollapsed && <span className="w-5 h-5 shrink-0" />
+          )}
+          {!isCollapsed && <span className="whitespace-nowrap truncate">{node.label}</span>}
+        </Link>
+
+        {hasChildren && !isCollapsed && (
+          <button
+            type="button"
+            onClick={() => toggle(node.label)}
+            aria-label={isOpen ? `Collapse ${node.label}` : `Expand ${node.label}`}
+            aria-expanded={isOpen}
+            className="p-2 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
+          >
+            {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
+
+      {hasChildren && !isCollapsed && isOpen && (
+        <div className="mt-1 space-y-1">
+          {node.children!.map((child) => (
+            <NavRow
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              isCollapsed={isCollapsed}
+              openSections={openSections}
+              toggle={toggle}
+              isActivePath={isActivePath}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Layout() {
   const { theme, toggleTheme } = useUIStore();
@@ -17,6 +120,7 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
 
   // Ensure theme is applied to document
   useEffect(() => {
@@ -27,14 +131,36 @@ export function Layout() {
     }
   }, [theme]);
 
-  const navItems = [
-    { icon: PieChart, label: 'Analytics', path: '/analytics' },
-  ];
+  const isActivePath = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(`${path}/`);
 
-  const isSectionActive = (path: string) =>
-    path === '/'
-      ? location.pathname === '/' || location.pathname === '/analytics'
-      : location.pathname === path || location.pathname.startsWith(`${path}/`);
+  // Auto-expand whichever sections the current route is inside — landing
+  // straight on /analytics/voicedrop/blast-details (a refresh, a bookmark)
+  // should open Analytics and Voicedrop without the user hunting for them.
+  // A union, not a replace, so a manual collapse elsewhere on the tree isn't
+  // fought on every navigation.
+  useEffect(() => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      const visit = (node: NavNode) => {
+        if (node.children?.some((child) => collectPaths(child).some(isActivePath))) {
+          next.add(node.label);
+        }
+        node.children?.forEach(visit);
+      };
+      NAV.forEach(visit);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  const toggleSection = (label: string) =>
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
 
   const handleLogout = () => {
     logout();
@@ -66,27 +192,17 @@ export function Layout() {
 
         {/* Main Nav */}
         <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = isSectionActive(item.path);
-            return (
-              <div key={item.label} className="space-y-1">
-                <Link
-                  to={item.path}
-                  title={isSidebarCollapsed ? item.label : undefined}
-                  className={clsx(
-                    "flex items-center gap-3 py-2.5 rounded-md text-sm font-medium transition-colors",
-                    isSidebarCollapsed ? "justify-center px-0" : "px-3",
-                    isActive
-                      ? "bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20"
-                      : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50"
-                  )}
-                >
-                  <item.icon className="w-5 h-5 shrink-0" />
-                  {!isSidebarCollapsed && <span className="whitespace-nowrap">{item.label}</span>}
-                </Link>
-              </div>
-            );
-          })}
+          {NAV.map((node) => (
+            <NavRow
+              key={node.path}
+              node={node}
+              depth={0}
+              isCollapsed={isSidebarCollapsed}
+              openSections={openSections}
+              toggle={toggleSection}
+              isActivePath={isActivePath}
+            />
+          ))}
         </div>
 
         {/* Footer: Logout + Collapse */}

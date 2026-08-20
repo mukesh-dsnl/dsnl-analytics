@@ -11,7 +11,7 @@ is actually present, so the predicates read the same either way.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.schemas.cdr import CdrFilter
 
@@ -55,20 +55,23 @@ class WhereClause:
         return bool(self.sql)
 
 
-def needs_codr(service: Optional[str], want_service_type: bool = False) -> bool:
+def needs_codr(f: CdrFilter, want_service_type: bool = False) -> bool:
     """
     Whether this query has to join CODR.
 
-    True only when the answer actually depends on MODULE_TYPE: filtering to
-    conference or multicall, or reporting SERVICE_TYPE as a column. Every other
-    query stays a plain CDR scan, which on a network share is the difference
-    that matters.
+    True when the answer depends on MODULE_TYPE (filtering to conference or
+    multicall, or reporting SERVICE_TYPE as a column), or when CPIN is set —
+    CHAIR_PIN lives on CODR, not CDR, so any CPIN filter needs the join
+    regardless of which service tab it was set from. Every other query stays a
+    plain CDR scan, which on a network share is the difference that matters.
     """
     if want_service_type:
         return True
-    if service in UNRESTRICTED_SERVICE:
+    if f.cpin:
+        return True
+    if f.service in UNRESTRICTED_SERVICE:
         return False
-    return _SERVICE_PREDICATES.get(service, ("", False))[1]
+    return _SERVICE_PREDICATES.get(f.service, ("", False))[1]
 
 
 def build_where(f: CdrFilter) -> WhereClause:
@@ -100,6 +103,12 @@ def build_where(f: CdrFilter) -> WhereClause:
     if f.conf_num:
         predicates.append("CAST(c.CONF_NUM AS VARCHAR) = ?")
         params.append(str(f.conf_num).strip())
+
+    # CHAIR_PIN lives on CODR (o), not CDR — needs_codr() guarantees the join
+    # is present whenever this fires.
+    if f.cpin:
+        predicates.append("CAST(o.CHAIR_PIN AS VARCHAR) = ?")
+        params.append(str(f.cpin).strip())
 
     # Both date bounds are inclusive. CALL_DATE is the documented day of the
     # call; START_DATETIME stands in for the rows where it is null.
