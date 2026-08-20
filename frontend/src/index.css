@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand blue. Generates bg-primary / text-primary / border-primary. */
+  --color-primary: #2ea3f2;
+  --color-primary-hover: #1b8fe0;
+  /* Tint for selected rows and subtle brand washes. */
+  --color-primary-subtle: #eff8fe;
+
+  /* The whole app already expresses its accent as blue-50..blue-950 across ~15
+     components. Rather than rewrite every one of those classes, the built-in
+     blue ramp is redefined around the brand, so existing markup renders in
+     brand colour and stays internally consistent. #2ea3f2 sits at 500, and the
+     rest is a matched ramp — Tailwind's stock blue is a darker, more violet
+     hue that would clash sitting next to the new header. */
+  --color-blue-50: #eff8fe;
+  --color-blue-100: #daeffd;
+  --color-blue-200: #bce2fb;
+  --color-blue-300: #8cd0f8;
+  --color-blue-400: #5ab8f5;
+  --color-blue-500: #2ea3f2;
+  --color-blue-600: #1b8fe0;
+  --color-blue-700: #1873b4;
+  --color-blue-800: #195f92;
+  --color-blue-900: #1a5079;
+  --color-blue-950: #11324f;
+
+  /* Inter, loaded from Google Fonts in index.html. The stack after it is the
+     fallback while the webfont is still in flight. */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Neutral surfaces. Kept as tokens because several components reference the
+     same two darks; the app background is one step lighter than the panels,
+     which is the contrast relationship the layout was built around. */
+  --color-surface: #ffffff;
+  --color-surface-dark: #09090b;
+  --color-canvas-dark: #111113;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+body {
+  @apply font-sans bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 antialiased h-screen overflow-hidden transition-colors duration-300;
+  /* Inter's optical sizing and tighter default tracking are what give the
+     dashboard its dense, crisp feel. */
+  font-optical-sizing: auto;
+  letter-spacing: -0.011em;
+}
+
+#root {
+  @apply h-full flex flex-col;
+}
+
+/* Custom scrollbar for terminal and lists */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-300 dark:bg-zinc-700;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-400 dark:bg-zinc-600;
+}
