@@ -105,6 +105,13 @@ export interface CdrCoverage {
   bucket?: string;
 }
 
+/** One category's count, split by dial direction — the hover breakdown for Call Ratio and Call Duration. */
+export interface DirectionSplitDatum {
+  label: string;
+  dial_in: number;
+  dial_out: number;
+}
+
 /** Every panel, from the one request that fills the page. */
 export interface CdrDashboard {
   summary: CdrSummary;
@@ -118,6 +125,11 @@ export interface CdrDashboard {
   location: CategoryDatum[];
   /** Call lifecycle for dial-out rows: initiated, ringed, connected, ended — Voicedrop only. */
   call_funnel: CategoryDatum[];
+  /** Same four stages, split Dial In / Dial Out — Initiated/Ringed read as nearly all Dial Out by design. */
+  call_funnel_direction: DirectionSplitDatum[];
+  /** Connected-call duration in minutes, bucketed — Voicedrop only. */
+  call_duration: CategoryDatum[];
+  call_duration_direction: DirectionSplitDatum[];
   coverage: CdrCoverage;
 }
 

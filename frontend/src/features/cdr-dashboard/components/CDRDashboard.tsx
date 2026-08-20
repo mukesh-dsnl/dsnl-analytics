@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import clsx from 'clsx';
 import {
   ArrowLeftRight,
   Hash,
+  Hourglass,
   MapPin,
   PhoneCall,
   PhoneOutgoing,
@@ -13,6 +16,7 @@ import {
   Users,
   Waypoints,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cdrApi } from '../api';
 import type { CallCubeRow, CategoryDatum, CdrFilters } from '../api';
 import { formatCount, formatMinutes, useChartTheme } from '../chartTheme';
@@ -20,6 +24,7 @@ import { CategoryBarChart } from './CategoryBarChart';
 import { ChartCard } from './ChartCard';
 import { CrossTabTooltip } from './CrossTabTooltip';
 import type { CubeDimension } from '../cubeDimensions';
+import { DirectionSplitTooltip } from './DirectionSplitTooltip';
 import { KpiCard } from './KpiCard';
 import { PeakPortsChart } from './PeakPortsChart';
 
@@ -29,6 +34,29 @@ const EMPTY_CUBE_ROWS: CallCubeRow[] = [];
 interface CDRDashboardProps {
   filters: CdrFilters;
 }
+
+type ChartId =
+  | 'call_ratio'
+  | 'call_duration'
+  | 'call_direction'
+  | 'connection_status'
+  | 'location'
+  | 'peak_ports'
+  | 'service_provider'
+  | 'reblast'
+  | 'disconnect_reason';
+
+const CHART_META: { id: ChartId; label: string; icon: LucideIcon; voicedropOnly?: boolean }[] = [
+  { id: 'call_ratio', label: 'Call Ratio', icon: PhoneOutgoing, voicedropOnly: true },
+  { id: 'call_duration', label: 'Call Duration', icon: Hourglass, voicedropOnly: true },
+  { id: 'call_direction', label: 'Dial In vs Dial Out', icon: ArrowLeftRight },
+  { id: 'connection_status', label: 'Connected vs Not Connected', icon: PlugZap },
+  { id: 'location', label: 'Location', icon: MapPin },
+  { id: 'peak_ports', label: 'Peak Ports', icon: Waypoints },
+  { id: 'service_provider', label: 'Service Provider', icon: Radio },
+  { id: 'reblast', label: 'Reblast', icon: Repeat2 },
+  { id: 'disconnect_reason', label: 'Disconnect Reason', icon: Unplug },
+];
 
 /** Row height for horizontal bar charts, so long category lists stay readable. */
 const barsHeight = (count: number) => Math.max(200, Math.min(count, 12) * 32 + 32);
@@ -82,13 +110,23 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   const disconnects = data?.disconnect_reason ?? [];
   const locations = data?.location ?? [];
   const funnel = data?.call_funnel ?? [];
+  const funnelDirection = data?.call_funnel_direction ?? [];
+  const duration = data?.call_duration ?? [];
+  const durationDirection = data?.call_duration_direction ?? [];
 
-  // Voicedrop only — PROCEEDING/ALERT (initiated/ringed) are dial-out fields,
-  // meaningless for the dial-in services.
+  // Voicedrop only — PROCEEDING/ALERT (initiated/ringed) and call duration
+  // are dial-out-shaped concepts, meaningless for the dial-in services.
   const isVoicedrop = filters.service === 'voicedrop';
   const initiated = funnel.find((d) => d.label === 'Call Initiated')?.value ?? 0;
   const connected = funnel.find((d) => d.label === 'Call Connected')?.value ?? 0;
   const connectRate = initiated > 0 ? Math.round((connected / initiated) * 100) : null;
+
+  // Picking one chart title below focuses the grid on just that chart —
+  // "All" (the default) shows the whole page as before.
+  const [selectedChart, setSelectedChart] = useState<ChartId | null>(null);
+  const visibleCharts = CHART_META.filter((c) => !c.voicedropOnly || isVoicedrop);
+  const showChart = (id: ChartId) => selectedChart === null || selectedChart === id;
+  const focused = (id: ChartId) => selectedChart === id;
 
   return (
     <div className="space-y-6">
@@ -128,13 +166,50 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
         />
       </div>
 
+      {/* Chart picker — pick one to focus the grid on it, or stay on All. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mr-1">
+          Charts
+        </span>
+        <button
+          type="button"
+          onClick={() => setSelectedChart(null)}
+          aria-pressed={selectedChart === null}
+          className={clsx(
+            'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+            selectedChart === null
+              ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
+              : 'text-zinc-500 border-zinc-200 dark:text-zinc-400 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+          )}
+        >
+          All
+        </button>
+        {visibleCharts.map((chart) => (
+          <button
+            key={chart.id}
+            type="button"
+            onClick={() => setSelectedChart((prev) => (prev === chart.id ? null : chart.id))}
+            aria-pressed={selectedChart === chart.id}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+              selectedChart === chart.id
+                ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
+                : 'text-zinc-500 border-zinc-200 dark:text-zinc-400 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+            )}
+          >
+            <chart.icon className="w-3.5 h-3.5" />
+            {chart.label}
+          </button>
+        ))}
+      </div>
+
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {isVoicedrop && (
-          <div className="lg:col-span-2">
+        {isVoicedrop && showChart('call_ratio') && (
+          <div className={clsx(focused('call_ratio') || selectedChart === null ? 'lg:col-span-2' : undefined)}>
             <ChartCard
               title="Call Ratio"
-              subtitle="Call Initiated → Ringed → Connected → Ended"
+              subtitle="Hover a bar for its dial-in / dial-out mix"
               icon={PhoneOutgoing}
               isLoading={isPending}
               error={error}
@@ -153,142 +228,198 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 ) : undefined
               }
             >
-              <CategoryBarChart data={funnel} valueName="Calls" height={260} />
+              <CategoryBarChart
+                data={funnel}
+                valueName="Calls"
+                height={260}
+                showValueLabels
+                tooltipContent={(datum) => (
+                  <DirectionSplitTooltip label={datum.label} value={datum.value} splits={funnelDirection} />
+                )}
+              />
             </ChartCard>
           </div>
         )}
 
-        <ChartCard
-          title="Dial In vs Dial Out"
-          subtitle="Hover a bar for its connection, location and provider mix"
-          icon={ArrowLeftRight}
-          isLoading={isPending}
-          error={error}
-          isEmpty={isEmptyList(data?.call_direction)}
-        >
-          <CategoryBarChart
-            data={data?.call_direction ?? []}
-            valueName="Calls"
-            height={260}
-            showValueLabels
-            tooltipContent={crossTabTooltip('direction')}
-          />
-        </ChartCard>
+        {isVoicedrop && showChart('call_duration') && (
+          <div className={clsx(focused('call_duration') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Call Duration"
+              subtitle="Connected calls by length, in seconds — hover a bar for its dial-in / dial-out mix"
+              icon={Hourglass}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.call_duration)}
+              height={260}
+            >
+              <CategoryBarChart
+                data={duration}
+                valueName="Calls"
+                height={260}
+                showValueLabels
+                tooltipContent={(datum) => (
+                  <DirectionSplitTooltip label={datum.label} value={datum.value} splits={durationDirection} />
+                )}
+              />
+            </ChartCard>
+          </div>
+        )}
 
-        <ChartCard
-          title="Connected vs Not Connected"
-          subtitle="Hover a bar for its dial direction, location and provider mix"
-          icon={PlugZap}
-          isLoading={isPending}
-          error={error}
-          isEmpty={isEmptyList(data?.connection_status)}
-        >
-          <CategoryBarChart
-            data={data?.connection_status ?? []}
-            valueName="Calls"
-            height={260}
-            colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
-            showValueLabels
-            tooltipContent={crossTabTooltip('connection')}
-          />
-        </ChartCard>
+        {showChart('call_direction') && (
+          <div className={clsx(focused('call_direction') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Dial In vs Dial Out"
+              subtitle="Hover a bar for its connection, location and provider mix"
+              icon={ArrowLeftRight}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.call_direction)}
+            >
+              <CategoryBarChart
+                data={data?.call_direction ?? []}
+                valueName="Calls"
+                height={260}
+                showValueLabels
+                tooltipContent={crossTabTooltip('direction')}
+              />
+            </ChartCard>
+          </div>
+        )}
 
-        <ChartCard
-          title="Location"
-          subtitle="Hover a bar for its connection, direction and provider mix"
-          icon={MapPin}
-          isLoading={isPending}
-          error={error}
-          isEmpty={isEmptyList(data?.location)}
-        >
-          <CategoryBarChart
-            data={locations}
-            valueName="Calls"
-            height={260}
-            showValueLabels
-            tooltipContent={crossTabTooltip('location')}
-          />
-        </ChartCard>
+        {showChart('connection_status') && (
+          <div className={clsx(focused('connection_status') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Connected vs Not Connected"
+              subtitle="Hover a bar for its dial direction, location and provider mix"
+              icon={PlugZap}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.connection_status)}
+            >
+              <CategoryBarChart
+                data={data?.connection_status ?? []}
+                valueName="Calls"
+                height={260}
+                colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
+                showValueLabels
+                tooltipContent={crossTabTooltip('connection')}
+              />
+            </ChartCard>
+          </div>
+        )}
 
-        <div className="lg:col-span-2">
-          <ChartCard
-            title="Peak Ports"
-            subtitle={BUCKET_LABEL[data?.coverage.bucket ?? ''] ?? 'Highest concurrent ports per bucket'}
-            icon={Waypoints}
-            isLoading={isPending}
-            error={error}
-            isEmpty={peakPorts.length === 0}
-            height={280}
-          >
-            <PeakPortsChart data={peakPorts} height={280} />
-          </ChartCard>
-        </div>
+        {showChart('location') && (
+          <div className={clsx(focused('location') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Location"
+              subtitle="Hover a bar for its connection, direction and provider mix"
+              icon={MapPin}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.location)}
+            >
+              <CategoryBarChart
+                data={locations}
+                valueName="Calls"
+                height={260}
+                showValueLabels
+                tooltipContent={crossTabTooltip('location')}
+              />
+            </ChartCard>
+          </div>
+        )}
 
-        <ChartCard
-          title="Service Provider"
-          subtitle="Hover a bar for its connection, direction and location mix"
-          icon={Radio}
-          isLoading={isPending}
-          error={error}
-          isEmpty={providers.length === 0}
-          height={barsHeight(providers.length)}
-        >
-          <CategoryBarChart
-            data={providers}
-            valueName="Calls"
-            orientation="bars"
-            height={barsHeight(providers.length)}
-            showValueLabels
-            tooltipContent={crossTabTooltip('provider')}
-          />
-        </ChartCard>
+        {showChart('peak_ports') && (
+          <div className="lg:col-span-2">
+            <ChartCard
+              title="Peak Ports"
+              subtitle={BUCKET_LABEL[data?.coverage.bucket ?? ''] ?? 'Highest concurrent ports per bucket'}
+              icon={Waypoints}
+              isLoading={isPending}
+              error={error}
+              isEmpty={peakPorts.length === 0}
+              height={280}
+            >
+              <PeakPortsChart data={peakPorts} height={280} />
+            </ChartCard>
+          </div>
+        )}
 
-        <ChartCard
-          title="Reblast"
-          subtitle="Retries broken down by stage"
-          icon={Repeat2}
-          isLoading={isPending}
-          error={error}
-          isEmpty={reblastStages.length === 0}
-          height={barsHeight(reblastStages.length)}
-          headerSlot={
-            !isPending && !error ? (
-              <div className="text-right shrink-0">
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                  Total
-                </p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
-                  {formatCount(data?.reblast.total ?? 0)}
-                </p>
-              </div>
-            ) : undefined
-          }
-        >
-          <CategoryBarChart
-            data={reblastStages}
-            valueName="Reblasts"
-            height={barsHeight(reblastStages.length)}
-          />
-        </ChartCard>
+        {showChart('service_provider') && (
+          <div className={clsx(focused('service_provider') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Service Provider"
+              subtitle="Hover a bar for its connection, direction and location mix"
+              icon={Radio}
+              isLoading={isPending}
+              error={error}
+              isEmpty={providers.length === 0}
+              height={barsHeight(providers.length)}
+            >
+              <CategoryBarChart
+                data={providers}
+                valueName="Calls"
+                orientation="bars"
+                height={barsHeight(providers.length)}
+                showValueLabels
+                tooltipContent={crossTabTooltip('provider')}
+              />
+            </ChartCard>
+          </div>
+        )}
 
-        <div className="lg:col-span-2">
-          <ChartCard
-            title="Disconnect Reason"
-            subtitle="Calls by disconnect cause"
-            icon={Unplug}
-            isLoading={isPending}
-            error={error}
-            isEmpty={disconnects.length === 0}
-            height={barsHeight(disconnects.length)}
-          >
-            <CategoryBarChart
-              data={disconnects}
-              valueName="Calls"
-              orientation="bars"
+        {showChart('reblast') && (
+          <div className={clsx(focused('reblast') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Reblast"
+              subtitle="Retries broken down by stage"
+              icon={Repeat2}
+              isLoading={isPending}
+              error={error}
+              isEmpty={reblastStages.length === 0}
+              height={barsHeight(reblastStages.length)}
+              headerSlot={
+                !isPending && !error ? (
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                      Total
+                    </p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
+                      {formatCount(data?.reblast.total ?? 0)}
+                    </p>
+                  </div>
+                ) : undefined
+              }
+            >
+              <CategoryBarChart
+                data={reblastStages}
+                valueName="Reblasts"
+                height={barsHeight(reblastStages.length)}
+              />
+            </ChartCard>
+          </div>
+        )}
+
+        {showChart('disconnect_reason') && (
+          <div className="lg:col-span-2">
+            <ChartCard
+              title="Disconnect Reason"
+              subtitle="Calls by disconnect cause"
+              icon={Unplug}
+              isLoading={isPending}
+              error={error}
+              isEmpty={disconnects.length === 0}
               height={barsHeight(disconnects.length)}
-            />
-          </ChartCard>
-        </div>
+            >
+              <CategoryBarChart
+                data={disconnects}
+                valueName="Calls"
+                orientation="bars"
+                height={barsHeight(disconnects.length)}
+              />
+            </ChartCard>
+          </div>
+        )}
       </div>
     </div>
   );

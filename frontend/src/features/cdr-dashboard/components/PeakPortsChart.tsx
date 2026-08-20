@@ -19,10 +19,11 @@ interface PeakPortsChartProps {
 /**
  * Peak concurrent ports per time bucket.
  *
- * One series, so no legend — the panel title names it. The fill is a low-alpha
- * wash under a 2px line: it reads as "area under the curve" without competing
- * with the line for attention. Point markers appear only when the series is
- * sparse enough that each one is a real reading rather than pixel noise.
+ * One series, so no legend — the panel title names it. The fill is a flat
+ * half-opacity wash of the series colour under a 2px line: solid rather than
+ * fading, so the area under the curve reads with the same weight start to
+ * end. Point markers appear only when the series is sparse enough that each
+ * one is a real reading rather than pixel noise.
  */
 export function PeakPortsChart({ data, height }: PeakPortsChartProps) {
   const theme = useChartTheme();
@@ -32,13 +33,6 @@ export function PeakPortsChart({ data, height }: PeakPortsChartProps) {
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
-        <defs>
-          <linearGradient id="cdr-peak-ports-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={theme.series1} stopOpacity={0.28} />
-            <stop offset="100%" stopColor={theme.series1} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-
         <CartesianGrid stroke={theme.grid} strokeWidth={1} vertical={false} />
 
         <XAxis
@@ -69,7 +63,8 @@ export function PeakPortsChart({ data, height }: PeakPortsChartProps) {
           name="Peak ports"
           stroke={theme.series1}
           strokeWidth={MARK.lineWidth}
-          fill="url(#cdr-peak-ports-fill)"
+          fill={theme.series1}
+          fillOpacity={0.5}
           dot={showDots ? { r: MARK.dotRadius, fill: theme.series1, strokeWidth: 0 } : false}
           activeDot={{
             r: MARK.activeDotRadius,

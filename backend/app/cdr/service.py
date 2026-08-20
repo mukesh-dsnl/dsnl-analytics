@@ -61,7 +61,40 @@ DASHBOARD_PANELS = (
     "disconnect_reason",
     "location",
     "call_funnel",
+    "call_funnel_direction",
+    "call_duration",
+    "call_duration_direction",
 )
+
+# Fixed display order for the two bucketed panels — sorting by count would
+# scramble a sequence that's meant to read left to right.
+_FUNNEL_STAGE_ORDER = {"Call Initiated": 0, "Call Ringed": 1, "Call Connected": 2, "Call Ended": 3}
+_DURATION_BUCKET_ORDER = {"0-10": 0, "11-30": 1, "31-60": 2, "60+": 3}
+
+# Same mapping as call_direction's CASE below — kept as one constant since the
+# two direction-split panels both need it and have to stay in step with it.
+_DIRECTION_EXPR = "CASE CALLTYPE WHEN 0 THEN 'Dial In' WHEN 1 THEN 'Dial Out' ELSE 'Unknown' END"
+
+
+def _direction_split_sql(panel: str, stages: list[tuple[str, str]]) -> str:
+    """
+    A (panel, label, value) UNION-ALL block per stage, each further split by
+    dial direction via a "<stage>::<direction>" label — decoded back into
+    {label, dial_in, dial_out} rows by _split_by_direction in _shape.
+
+    Kept in the same (panel, label, value) triple every other branch uses so
+    this still stacks into the single dashboard statement instead of costing
+    its own read of the range.
+    """
+    branches = [
+        f"""
+    SELECT '{panel}' AS panel,
+           '{stage}::' || {_DIRECTION_EXPR} AS label,
+           CAST(COUNT(*) FILTER (WHERE {condition}) AS DOUBLE) AS value
+    FROM slice GROUP BY 2"""
+        for stage, condition in stages
+    ]
+    return "\nUNION ALL".join(branches)
 
 
 class DatasetNotReady(RuntimeError):
@@ -367,6 +400,49 @@ _PANEL_SQL: dict[str, str] = {
     SELECT 'call_funnel', 'Call Ended',
            CAST(COUNT(*) FILTER (WHERE DISCONNECT_DATETIME IS NOT NULL) AS DOUBLE)
     FROM slice""",
+    # Same four stages, each split Dial In / Dial Out. Initiated and Ringed
+    # come from PROCEEDING/ALERT, which the data dictionary documents as
+    # dial-out-only fields, so those two stages should read as nearly all
+    # Dial Out — that's the real signal, not a bug in the split.
+    "call_funnel_direction": _direction_split_sql(
+        "call_funnel_direction",
+        [
+            ("Call Initiated", "PROCEEDING IS NOT NULL"),
+            ("Call Ringed", "ALERT IS NOT NULL"),
+            ("Call Connected", "IS_CONNECTED"),
+            ("Call Ended", "DISCONNECT_DATETIME IS NOT NULL"),
+        ],
+    ),
+    # Connected-call duration in seconds, bucketed. Only connected calls have
+    # a meaningful duration — an unconnected row's CONNECTED_SECONDS is 0,
+    # which would otherwise pad the 0-10 bucket with calls that never happened.
+    "call_duration": """
+    SELECT 'call_duration' AS panel, '0-10' AS label,
+           CAST(COUNT(*) FILTER (WHERE IS_CONNECTED AND CONNECTED_SECONDS <= 10) AS DOUBLE) AS value
+    FROM slice
+    UNION ALL
+    SELECT 'call_duration', '11-30',
+           CAST(COUNT(*) FILTER (WHERE IS_CONNECTED AND CONNECTED_SECONDS > 10
+                                        AND CONNECTED_SECONDS <= 30) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    SELECT 'call_duration', '31-60',
+           CAST(COUNT(*) FILTER (WHERE IS_CONNECTED AND CONNECTED_SECONDS > 30
+                                        AND CONNECTED_SECONDS <= 60) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    SELECT 'call_duration', '60+',
+           CAST(COUNT(*) FILTER (WHERE IS_CONNECTED AND CONNECTED_SECONDS > 60) AS DOUBLE)
+    FROM slice""",
+    "call_duration_direction": _direction_split_sql(
+        "call_duration_direction",
+        [
+            ("0-10", "IS_CONNECTED AND CONNECTED_SECONDS <= 10"),
+            ("11-30", "IS_CONNECTED AND CONNECTED_SECONDS > 10 AND CONNECTED_SECONDS <= 30"),
+            ("31-60", "IS_CONNECTED AND CONNECTED_SECONDS > 30 AND CONNECTED_SECONDS <= 60"),
+            ("60+", "IS_CONNECTED AND CONNECTED_SECONDS > 60"),
+        ],
+    ),
     # CONFDIAL_REBLAST_COUNT > 0 is what marks a row as reblasted —
     # REBLAST_COUNT and DIALLIST_REBLAST_COUNT are both documented as unused.
     # AID_COUNT carries the attempt sequence: 0 initial, 1-3 successive.
@@ -469,6 +545,20 @@ def _map_disconnect_reasons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _by_value([{"label": r, "value": v} for r, v in totals.items()])
 
 
+def _split_by_direction(rows: list[dict[str, Any]], order: dict[str, int]) -> list[dict[str, Any]]:
+    """Decode "<stage>::<direction>" labels from _direction_split_sql back into {label, dial_in, dial_out}."""
+    grouped: dict[str, dict[str, float]] = {}
+    for row in rows:
+        stage, _, direction = row["label"].partition("::")
+        bucket = grouped.setdefault(stage, {"Dial In": 0.0, "Dial Out": 0.0})
+        if direction in bucket:
+            bucket[direction] = row["value"]
+    return [
+        {"label": stage, "dial_in": int(vals["Dial In"]), "dial_out": int(vals["Dial Out"])}
+        for stage, vals in sorted(grouped.items(), key=lambda kv: order.get(kv[0], 99))
+    ]
+
+
 def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     """One panel's rows in the form its endpoint documents."""
     if panel == "summary":
@@ -489,8 +579,13 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     if panel == "call_funnel":
         # Stage order, not value order — sorting by count would scramble the
         # lifecycle sequence the chart is meant to read left to right.
-        order = {"Call Initiated": 0, "Call Ringed": 1, "Call Connected": 2, "Call Ended": 3}
-        return sorted(rows, key=lambda r: order[r["label"]])
+        return sorted(rows, key=lambda r: _FUNNEL_STAGE_ORDER[r["label"]])
+    if panel == "call_duration":
+        return sorted(rows, key=lambda r: _DURATION_BUCKET_ORDER[r["label"]])
+    if panel == "call_funnel_direction":
+        return _split_by_direction(rows, _FUNNEL_STAGE_ORDER)
+    if panel == "call_duration_direction":
+        return _split_by_direction(rows, _DURATION_BUCKET_ORDER)
     return _by_value(rows)
 
 
@@ -513,6 +608,7 @@ _LABEL_KEY = {
     "disconnect_reason": "reason",
     "location": "location",
     "call_funnel": "stage",
+    "call_duration": "duration_bucket",
 }
 
 
@@ -529,7 +625,7 @@ def query_panel(f: CdrFilter, panel: str) -> dict:
         rows = [{"dtmf_count": shaped}]
     elif panel == "reblast":
         rows = [{"stage": r["label"], "count": r["value"]} for r in shaped["stages"]]
-    elif panel == "peak_ports":
+    elif panel in ("peak_ports", "call_funnel_direction", "call_duration_direction"):
         rows = shaped
     else:
         rows = [{_LABEL_KEY[panel]: r["label"], "count": r["value"]} for r in shaped]
