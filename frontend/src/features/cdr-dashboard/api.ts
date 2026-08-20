@@ -52,18 +52,21 @@ export interface CdrFilters {
   account_id: string | null;
   crn: string | null;
   conf_num: string | null;
+  /** Chairperson PIN — CODR.CHAIR_PIN. Only offered on Conference/Multicall. */
+  cpin: string | null;
   time_from: string | null;
   time_to: string | null;
 }
 
 /** A filter set for one day, with nothing else narrowed. */
-export const filtersForDay = (day: string): CdrFilters => ({
+export const filtersForDay = (day: string, service: CdrService = 'all'): CdrFilters => ({
   date_from: day,
   date_to: day,
-  service: 'all',
+  service,
   account_id: null,
   crn: null,
   conf_num: null,
+  cpin: null,
   time_from: null,
   time_to: null,
 });
@@ -112,6 +115,9 @@ export interface CdrDashboard {
   service_provider: CategoryDatum[];
   reblast: CdrReblast;
   disconnect_reason: CategoryDatum[];
+  location: CategoryDatum[];
+  /** Call lifecycle for dial-out rows: initiated, ringed, connected, ended — Voicedrop only. */
+  call_funnel: CategoryDatum[];
   coverage: CdrCoverage;
 }
 

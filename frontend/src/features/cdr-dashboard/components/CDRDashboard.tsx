@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeftRight,
   Hash,
+  MapPin,
   PhoneCall,
+  PhoneOutgoing,
   PlugZap,
   Radio,
   Repeat2,
@@ -60,6 +62,15 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   const reblastStages = data?.reblast.stages ?? [];
   const providers = data?.service_provider ?? [];
   const disconnects = data?.disconnect_reason ?? [];
+  const locations = data?.location ?? [];
+  const funnel = data?.call_funnel ?? [];
+
+  // Voicedrop only — PROCEEDING/ALERT (initiated/ringed) are dial-out fields,
+  // meaningless for the dial-in services.
+  const isVoicedrop = filters.service === 'voicedrop';
+  const initiated = funnel.find((d) => d.label === 'Call Initiated')?.value ?? 0;
+  const connected = funnel.find((d) => d.label === 'Call Connected')?.value ?? 0;
+  const connectRate = initiated > 0 ? Math.round((connected / initiated) * 100) : null;
 
   return (
     <div className="space-y-6">
@@ -101,6 +112,34 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {isVoicedrop && (
+          <div className="lg:col-span-2">
+            <ChartCard
+              title="Call Ratio"
+              subtitle="Call Initiated → Ringed → Connected → Ended"
+              icon={PhoneOutgoing}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.call_funnel)}
+              height={260}
+              headerSlot={
+                !isPending && !error && connectRate !== null ? (
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                      Connect Rate
+                    </p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
+                      {connectRate}%
+                    </p>
+                  </div>
+                ) : undefined
+              }
+            >
+              <CategoryBarChart data={funnel} valueName="Calls" height={260} />
+            </ChartCard>
+          </div>
+        )}
+
         <ChartCard
           title="Dial In vs Dial Out"
           subtitle="Calls by direction"
@@ -126,6 +165,17 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
             height={260}
             colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
           />
+        </ChartCard>
+
+        <ChartCard
+          title="Location"
+          subtitle="Calls by bridge server location"
+          icon={MapPin}
+          isLoading={isPending}
+          error={error}
+          isEmpty={isEmptyList(data?.location)}
+        >
+          <CategoryBarChart data={locations} valueName="Calls" height={260} />
         </ChartCard>
 
         <div className="lg:col-span-2">

@@ -28,7 +28,7 @@ htmlcov/
 *.egg-info/
 .eggs/
 .egg/
-
+backend/docs/
 # Logs and databases
 *.log
 *.sqlite3

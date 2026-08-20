@@ -54,6 +54,8 @@ DASHBOARD_PANELS = (
     "service_provider",
     "reblast",
     "disconnect_reason",
+    "location",
+    "call_funnel",
 )
 
 
@@ -182,6 +184,7 @@ def _applied(f: CdrFilter, where: WhereClause, joined: bool) -> dict[str, Any]:
 # the parquet reader skips the rest entirely, which is most of the 42.
 
 _SLICE_COLUMNS = """c.CALLTYPE,
+           c.LOCATION_ID,
            c.SERVICE_PROVIDER,
            c.DISCONNECT_REASON,
            c.AID_COUNT,
@@ -191,6 +194,12 @@ _SLICE_COLUMNS = """c.CALLTYPE,
            c.CONF_NUM,
            c.CONFEREE_SEQ_NO,
            c.START_DATETIME,
+           -- Call-funnel stage timestamps (data dictionary #12-15). PROCEEDING
+           -- and ALERT are dial-out only, which is what makes this panel
+           -- meaningful for Voicedrop specifically.
+           c.PROCEEDING,
+           c.ALERT,
+           c.DISCONNECT_DATETIME,
            -- The moment the port is handed back, and the end of the interval
            -- the peak-ports sweep below measures. Guarded two ways: a null
            -- release makes the call instantaneous rather than unbounded, and a
@@ -310,7 +319,7 @@ _PANEL_SQL: dict[str, str] = {
     # Per the data dictionary CALLTYPE is 1 = dial in, 0 = dial out.
     "call_direction": """
     SELECT 'call_direction' AS panel,
-           CASE CALLTYPE WHEN 1 THEN 'Dial In' WHEN 0 THEN 'Dial Out'
+           CASE CALLTYPE WHEN 0 THEN 'Dial In' WHEN 1 THEN 'Dial Out'
                          ELSE 'Unknown' END AS label,
            CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice GROUP BY 2""",
@@ -324,6 +333,35 @@ _PANEL_SQL: dict[str, str] = {
            CAST(SERVICE_PROVIDER AS VARCHAR) AS label,
            CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice GROUP BY 2""",
+    # LOCATION_ID names the bridge server (data dictionary #4). Shown as
+    # "L<id>" rather than the bare number, since that's how the bridges are
+    # referred to operationally.
+    "location": """
+    SELECT 'location' AS panel,
+           'L' || CAST(LOCATION_ID AS VARCHAR) AS label,
+           CAST(COUNT(*) AS DOUBLE) AS value
+    FROM slice GROUP BY 2""",
+    # The call lifecycle for dial-out (Voicedrop) rows, one count per stage:
+    # blasted, rang, connected, ended. Each is independent — a row not counted
+    # at one stage can still be counted at a later one (an unanswered blast
+    # still carries a disconnect) — so this is not a strict funnel where every
+    # stage is a subset of the last.
+    "call_funnel": """
+    SELECT 'call_funnel' AS panel, 'Call Initiated' AS label,
+           CAST(COUNT(*) FILTER (WHERE PROCEEDING IS NOT NULL) AS DOUBLE) AS value
+    FROM slice
+    UNION ALL
+    SELECT 'call_funnel', 'Call Ringed',
+           CAST(COUNT(*) FILTER (WHERE ALERT IS NOT NULL) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    SELECT 'call_funnel', 'Call Connected',
+           CAST(COUNT(*) FILTER (WHERE IS_CONNECTED) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    SELECT 'call_funnel', 'Call Ended',
+           CAST(COUNT(*) FILTER (WHERE DISCONNECT_DATETIME IS NOT NULL) AS DOUBLE)
+    FROM slice""",
     # CONFDIAL_REBLAST_COUNT > 0 is what marks a row as reblasted —
     # REBLAST_COUNT and DIALLIST_REBLAST_COUNT are both documented as unused.
     # AID_COUNT carries the attempt sequence: 0 initial, 1-3 successive.
@@ -366,7 +404,7 @@ def compute_panels(
     if not wanted:
         raise ValueError(f"No known panels requested. Known: {', '.join(_PANEL_SQL)}.")
 
-    joined = needs_codr(f.service)
+    joined = needs_codr(f)
     unit = _bucket_unit(f.span_days)
     sweep = "peak_ports" in wanted
     cte, where, day_count = _slice_cte(f, joined, sweep, unit)
@@ -443,6 +481,11 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
         return {"total": sum(r["value"] for r in stages), "stages": stages}
     if panel == "disconnect_reason":
         return _map_disconnect_reasons(rows)
+    if panel == "call_funnel":
+        # Stage order, not value order — sorting by count would scramble the
+        # lifecycle sequence the chart is meant to read left to right.
+        order = {"Call Initiated": 0, "Call Ringed": 1, "Call Connected": 2, "Call Ended": 3}
+        return sorted(rows, key=lambda r: order[r["label"]])
     return _by_value(rows)
 
 
@@ -463,6 +506,8 @@ _LABEL_KEY = {
     "connection_status": "connection_status",
     "service_provider": "service_provider",
     "disconnect_reason": "reason",
+    "location": "location",
+    "call_funnel": "stage",
 }
 
 
@@ -493,7 +538,7 @@ def query_panel(f: CdrFilter, panel: str) -> dict:
 
 def query_records(req: CdrRecordsRequest) -> dict:
     """Raw rows for the range, newest first, paginated."""
-    joined = needs_codr(req.service)
+    joined = needs_codr(req)
     from_clause, day_count = _from_clause(req, joined)
     where = build_where(req)
 
@@ -531,7 +576,7 @@ def query_records(req: CdrRecordsRequest) -> dict:
 
 def query_by_date(f: CdrFilter) -> dict:
     """Daily breakdown, oldest first."""
-    joined = needs_codr(f.service)
+    joined = needs_codr(f)
     from_clause, _ = _from_clause(f, joined)
     where = build_where(f)
     limit = get_settings().CDR_MAX_ROWS_PER_QUERY

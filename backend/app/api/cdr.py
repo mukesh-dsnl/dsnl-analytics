@@ -22,6 +22,7 @@ Single-panel endpoints, one chart each:
     POST /api/cdr/query/reblast              reblasts by attempt stage
     POST /api/cdr/query/dtmf                 conferees who entered digits
     POST /api/cdr/query/disconnect-reason    disconnect causes
+    POST /api/cdr/query/location             calls by bridge server location
 
 Every query endpoint takes the same filter body (app/schemas/cdr.py::CdrFilter),
 in which `date_from` and `date_to` are required. The single-panel routes each
@@ -121,6 +122,8 @@ _PANEL_ROUTES: list[tuple[str, str, str]] = [
     ("reblast", "reblast", "Reblasted conferees by attempt stage."),
     ("dtmf", "dtmf", "Count of conferees who entered DTMF digits."),
     ("disconnect-reason", "disconnect_reason", "Disconnect causes for the range."),
+    ("location", "location", "Record count per bridge server location (L1, L2, ...)."),
+    ("call-funnel", "call_funnel", "Call lifecycle: initiated, ringed, connected, ended."),
 ]
 
 
