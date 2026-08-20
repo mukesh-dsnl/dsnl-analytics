@@ -142,6 +142,14 @@ class CdrReblast(BaseModel):
     stages: list[CategoryDatum] = Field(default_factory=list)
 
 
+class DirectionSplitDatum(BaseModel):
+    """One category's count, split by dial direction — the hover breakdown for Call Ratio and Call Duration."""
+
+    label: str
+    dial_in: int = 0
+    dial_out: int = 0
+
+
 class CdrCoverage(BaseModel):
     """Which days the answer was actually built from."""
 
@@ -175,6 +183,13 @@ class CdrDashboardResponse(BaseModel):
     disconnect_reason: list[CategoryDatum]
     location: list[CategoryDatum]
     call_funnel: list[CategoryDatum]
+    # Same four stages as call_funnel, each split by dial direction — the
+    # Call Ratio chart's hover reads from this instead of re-deriving it.
+    call_funnel_direction: list[DirectionSplitDatum]
+    # Connected-call duration, bucketed in minutes — Voicedrop only, like
+    # call_funnel, since that's the page this was built for.
+    call_duration: list[CategoryDatum]
+    call_duration_direction: list[DirectionSplitDatum]
     filters_applied: dict[str, Any]
     coverage: CdrCoverage
 
