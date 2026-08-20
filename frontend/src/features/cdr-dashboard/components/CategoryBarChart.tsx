@@ -1,8 +1,10 @@
-﻿import {
+import type { ReactNode } from 'react';
+import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -24,6 +26,10 @@ interface CategoryBarChartProps {
   /** Per-category colour. Defaults to the single categorical hue for all bars. */
   colorFor?: (datum: CategoryDatum, index: number) => string;
   height: number;
+  /** Prints each bar's own value above (columns) or beside (bars) it, not just on hover. */
+  showValueLabels?: boolean;
+  /** Replaces the default hover readout — for a bar that has more to say than its own total. */
+  tooltipContent?: (datum: CategoryDatum) => ReactNode;
 }
 
 const truncate = (value: string, max: number) =>
@@ -43,18 +49,21 @@ export function CategoryBarChart({
   orientation = 'columns',
   colorFor,
   height,
+  showValueLabels = false,
+  tooltipContent,
 }: CategoryBarChartProps) {
   const theme = useChartTheme();
   const fill = (datum: CategoryDatum, index: number) => colorFor?.(datum, index) ?? theme.series1;
 
   const tickStyle = { fill: theme.axis, fontSize: 11 };
+  const labelStyle = { fill: theme.axis, fontSize: 11, fontWeight: 600 };
 
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart
         data={data}
         layout={orientation === 'bars' ? 'vertical' : 'horizontal'}
-        margin={{ top: 8, right: 12, bottom: 4, left: 4 }}
+        margin={{ top: showValueLabels ? 20 : 8, right: orientation === 'bars' ? 40 : 12, bottom: 4, left: 4 }}
         barCategoryGap={MARK.barCategoryGap}
       >
         <CartesianGrid
@@ -104,7 +113,14 @@ export function CategoryBarChart({
 
         <Tooltip
           cursor={{ fill: theme.grid, fillOpacity: 0.4 }}
-          content={<ChartTooltip formatter={formatCount} />}
+          content={
+            tooltipContent
+              ? ({ active, payload }) => {
+                  if (!active || !payload || payload.length === 0) return null;
+                  return tooltipContent(payload[0].payload as CategoryDatum);
+                }
+              : <ChartTooltip formatter={formatCount} />
+          }
         />
 
         <Bar
@@ -116,6 +132,14 @@ export function CategoryBarChart({
           {data.map((datum, index) => (
             <Cell key={`${datum.label}-${index}`} fill={fill(datum, index)} />
           ))}
+          {showValueLabels && (
+            <LabelList
+              dataKey="value"
+              position={orientation === 'bars' ? 'right' : 'top'}
+              formatter={(value: unknown) => formatCount(Number(value))}
+              style={labelStyle}
+            />
+          )}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

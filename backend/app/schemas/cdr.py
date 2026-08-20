@@ -177,3 +177,28 @@ class CdrDashboardResponse(BaseModel):
     call_funnel: list[CategoryDatum]
     filters_applied: dict[str, Any]
     coverage: CdrCoverage
+
+
+class CallCubeRow(BaseModel):
+    """
+    One combination of location, connection status, call direction and
+    service provider, and how many calls fall in it.
+
+    The joint distribution — not four independent breakdowns — is what lets
+    the Blast Details charts answer "of the calls in this bar, how many were
+    dial-in vs dial-out" on hover, rather than only "how many calls total".
+    """
+
+    location: str
+    is_connected: bool
+    call_direction: str
+    service_provider: str
+    count: int
+
+
+class CallCubeResponse(BaseModel):
+    """The whole cube in one payload — small by construction, a few dozen rows for typical ranges."""
+
+    rows: list[CallCubeRow]
+    total_calls: int
+    coverage: CdrCoverage
