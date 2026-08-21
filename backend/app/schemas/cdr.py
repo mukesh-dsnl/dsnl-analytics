@@ -123,6 +123,11 @@ class CdrSummary(BaseModel):
     total_calls: int = 0
     total_participants: int = 0
     minutes_usage: int = 0
+    # Distinct CRN + CONF_NUM pairs — one conference/multicall room, however
+    # many call legs it generated. Meaningful once the service is scoped to
+    # Conference or Multicall; the frontend leaves it off the All/Voicedrop
+    # KPI rows.
+    total_conferences: int = 0
 
 
 class CategoryDatum(BaseModel):

@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   Hash,
   Hourglass,
+  Layers,
   MapPin,
   PhoneCall,
   PhoneOutgoing,
@@ -50,11 +51,11 @@ type ChartId =
 const CHART_META: { id: ChartId; label: string; icon: LucideIcon; voicedropOnly?: boolean }[] = [
   { id: 'call_ratio', label: 'Call Ratio', icon: PhoneOutgoing, voicedropOnly: true },
   { id: 'call_duration', label: 'Call Duration', icon: Hourglass, voicedropOnly: true },
-  { id: 'call_direction', label: 'Dial In vs Dial Out', icon: ArrowLeftRight },
   { id: 'connection_status', label: 'Connected vs Not Connected', icon: PlugZap },
+  { id: 'call_direction', label: 'Dial In vs Dial Out', icon: ArrowLeftRight },
   { id: 'location', label: 'Location', icon: MapPin },
-  { id: 'peak_ports', label: 'Peak Ports', icon: Waypoints },
   { id: 'service_provider', label: 'Service Provider', icon: Radio },
+  { id: 'peak_ports', label: 'Peak Ports', icon: Waypoints },
   { id: 'reblast', label: 'Reblast', icon: Repeat2 },
   { id: 'disconnect_reason', label: 'Disconnect Reason', icon: Unplug },
 ];
@@ -133,6 +134,10 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   // Voicedrop only — PROCEEDING/ALERT (initiated/ringed) and call duration
   // are dial-out-shaped concepts, meaningless for the dial-in services.
   const isVoicedrop = filters.service === 'voicedrop';
+  // Total Conference (distinct CRN + CONF_NUM) only means "one room" for the
+  // two services actually built from rooms — on All or Voicedrop it would
+  // just restate a number close to total_calls.
+  const showTotalConferences = filters.service === 'conference' || filters.service === 'multicall';
   const initiated = funnel.find((d) => d.label === 'Call Initiated')?.value ?? 0;
   const connected = funnel.find((d) => d.label === 'Call Connected')?.value ?? 0;
   const connectRate = initiated > 0 ? Math.round((connected / initiated) * 100) : null;
@@ -147,7 +152,12 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   return (
     <div className="space-y-6">
       {/* Headline figures */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div
+        className={clsx(
+          'grid grid-cols-1 sm:grid-cols-2 gap-4',
+          showTotalConferences ? 'xl:grid-cols-5' : 'xl:grid-cols-4',
+        )}
+      >
         <KpiCard
           label="Total Calls"
           value={formatCount(data?.summary.total_calls ?? 0)}
@@ -163,6 +173,16 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           error={error}
           accent="bg-violet-500/10 border-violet-500/20 text-violet-500"
         />
+        {showTotalConferences && (
+          <KpiCard
+            label="Total Conference"
+            value={formatCount(data?.summary.total_conferences ?? 0)}
+            icon={Layers}
+            isLoading={isPending}
+            error={error}
+            accent="bg-sky-500/10 border-sky-500/20 text-sky-500"
+          />
+        )}
         <KpiCard
           label="Minutes Usage"
           value={formatCount(data?.summary.minutes_usage ?? 0)}
@@ -221,7 +241,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isVoicedrop && showChart('call_ratio') && (
-          <div className={clsx(focused('call_ratio') || selectedChart === null ? 'lg:col-span-2' : undefined)}>
+          <div className={clsx(focused('call_ratio') ? 'lg:col-span-2' : undefined)}>
             <ChartCard
               title="Call Ratio"
               subtitle="Hover a bar for its dial-in / dial-out mix"
@@ -282,28 +302,6 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           </div>
         )}
 
-        {showChart('call_direction') && (
-          <div className={clsx(focused('call_direction') ? 'lg:col-span-2' : undefined)}>
-            <ChartCard
-              title="Dial In vs Dial Out"
-              subtitle="Hover a bar for its connection, location and provider mix"
-              icon={ArrowLeftRight}
-              isLoading={isPending}
-              error={error}
-              isEmpty={isEmptyList(data?.call_direction)}
-            >
-              <CategoryBarChart
-                data={data?.call_direction ?? []}
-                valueName="Calls"
-                height={260}
-                multicolor
-                showValueLabels
-                tooltipContent={crossTabTooltip('direction')}
-              />
-            </ChartCard>
-          </div>
-        )}
-
         {showChart('connection_status') && (
           <div className={clsx(focused('connection_status') ? 'lg:col-span-2' : undefined)}>
             <ChartCard
@@ -321,6 +319,28 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
                 showValueLabels
                 tooltipContent={crossTabTooltip('connection')}
+              />
+            </ChartCard>
+          </div>
+        )}
+
+        {showChart('call_direction') && (
+          <div className={clsx(focused('call_direction') ? 'lg:col-span-2' : undefined)}>
+            <ChartCard
+              title="Dial In vs Dial Out"
+              subtitle="Hover a bar for its connection, location and provider mix"
+              icon={ArrowLeftRight}
+              isLoading={isPending}
+              error={error}
+              isEmpty={isEmptyList(data?.call_direction)}
+            >
+              <CategoryBarChart
+                data={data?.call_direction ?? []}
+                valueName="Calls"
+                height={260}
+                multicolor
+                showValueLabels
+                tooltipContent={crossTabTooltip('direction')}
               />
             </ChartCard>
           </div>
@@ -348,22 +368,6 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           </div>
         )}
 
-        {showChart('peak_ports') && (
-          <div className="lg:col-span-2">
-            <ChartCard
-              title="Peak Ports"
-              subtitle={BUCKET_LABEL[data?.coverage.bucket ?? ''] ?? 'Highest concurrent ports per bucket'}
-              icon={Waypoints}
-              isLoading={isPending}
-              error={error}
-              isEmpty={peakPorts.length === 0}
-              height={280}
-            >
-              <PeakPortsChart data={peakPorts} height={280} />
-            </ChartCard>
-          </div>
-        )}
-
         {showChart('service_provider') && (
           <div className={clsx(focused('service_provider') ? 'lg:col-span-2' : undefined)}>
             <ChartCard
@@ -384,6 +388,22 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 showValueLabels
                 tooltipContent={crossTabTooltip('provider')}
               />
+            </ChartCard>
+          </div>
+        )}
+
+        {showChart('peak_ports') && (
+          <div className="lg:col-span-2">
+            <ChartCard
+              title="Peak Ports"
+              subtitle={BUCKET_LABEL[data?.coverage.bucket ?? ''] ?? 'Highest concurrent ports per bucket'}
+              icon={Waypoints}
+              isLoading={isPending}
+              error={error}
+              isEmpty={peakPorts.length === 0}
+              height={280}
+            >
+              <PeakPortsChart data={peakPorts} height={280} />
             </ChartCard>
           </div>
         )}
