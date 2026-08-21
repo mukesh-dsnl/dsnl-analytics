@@ -112,8 +112,6 @@ def coverage() -> dict:
     """
     settings = get_settings()
     result: dict = {
-        "cdr_path": str(root("cdr")),
-        "codr_path": str(root("codr")),
         "max_range_days": settings.CDR_MAX_RANGE_DAYS,
     }
 

@@ -93,8 +93,6 @@ class CdrLakeStatus(BaseModel):
     available: bool
     cdr: CdrLakeSide
     codr: CdrLakeSide
-    cdr_path: str
-    codr_path: str
     max_range_days: int
     default_date: Optional[str] = None
 

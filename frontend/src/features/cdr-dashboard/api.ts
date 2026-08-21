@@ -28,8 +28,6 @@ export interface CdrStatus {
   available: boolean;
   cdr: CdrLakeSide;
   codr: CdrLakeSide;
-  cdr_path: string;
-  codr_path: string;
   max_range_days: number;
   /** The day the dashboard should open on — yesterday, or the newest day held. */
   default_date?: string;
