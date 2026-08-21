@@ -460,13 +460,15 @@ _PANEL_SQL: dict[str, str] = {
            CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice GROUP BY 2""",
     # How each blast splits across AID_COUNT (0 initial, 1-3 successive retry
-    # attempts). Encoded as "Blast N::AID M" and unpacked in _shape — the same
-    # trick the direction-split panels use, so this still stacks into the one
-    # dashboard statement instead of costing its own read of the range.
+    # attempts), and each of those again by connection status. Encoded as
+    # "Blast N::AID M::Connected|Not Connected" and unpacked in _shape — the
+    # same trick the direction-split panels use, so this still stacks into the
+    # one dashboard statement instead of costing its own read of the range.
     "reblast_aid": """
     SELECT 'reblast_aid' AS panel,
            'Blast ' || CAST(CONFDIAL_REBLAST_COUNT AS VARCHAR)
-                    || '::AID ' || CAST(AID_COUNT AS VARCHAR) AS label,
+                    || '::AID ' || CAST(AID_COUNT AS VARCHAR)
+                    || '::' || CASE WHEN IS_CONNECTED THEN 'Connected' ELSE 'Not Connected' END AS label,
            CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice GROUP BY 2""",
     # Grouped as the raw numeric code; the code -> label mapping is applied in
@@ -576,18 +578,25 @@ def _trailing_int(label: str) -> int:
 
 
 def _split_reblast_aid(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Decode "Blast N::AID M" into one entry per blast, each carrying its AID breakdown."""
-    grouped: dict[str, dict[str, float]] = {}
+    """Decode "Blast N::AID M::Connected|Not Connected" into a Blast -> AID -> connection-status tree."""
+    grouped: dict[str, dict[str, dict[str, float]]] = {}
     for row in rows:
-        blast, _, aid = row["label"].partition("::")
-        grouped.setdefault(blast, {})[aid] = row["value"]
+        blast, _, rest = row["label"].partition("::")
+        aid, _, status = rest.partition("::")
+        bucket = grouped.setdefault(blast, {}).setdefault(aid, {"Connected": 0.0, "Not Connected": 0.0})
+        if status in bucket:
+            bucket[status] = row["value"]
 
     return [
         {
             "label": blast,
             "aid": [
-                {"label": aid, "value": value}
-                for aid, value in sorted(aids.items(), key=lambda kv: _trailing_int(kv[0]))
+                {
+                    "label": aid,
+                    "connected": int(counts["Connected"]),
+                    "not_connected": int(counts["Not Connected"]),
+                }
+                for aid, counts in sorted(aids.items(), key=lambda kv: _trailing_int(kv[0]))
             ],
         }
         for blast, aids in sorted(grouped.items(), key=lambda kv: _trailing_int(kv[0]))
