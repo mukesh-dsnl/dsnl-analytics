@@ -142,11 +142,19 @@ class CdrReblast(BaseModel):
     stages: list[CategoryDatum] = Field(default_factory=list)
 
 
+class ReblastAidConnectionDatum(BaseModel):
+    """One AID_COUNT value within a blast, split Connected / Not Connected."""
+
+    label: str
+    connected: int = 0
+    not_connected: int = 0
+
+
 class ReblastAidDatum(BaseModel):
     """One blast, and how its calls split across AID_COUNT — the Reblast chart's hover."""
 
     label: str
-    aid: list[CategoryDatum] = Field(default_factory=list)
+    aid: list[ReblastAidConnectionDatum] = Field(default_factory=list)
 
 
 class DirectionSplitDatum(BaseModel):

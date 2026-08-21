@@ -96,10 +96,17 @@ export interface CdrReblast {
   stages: CategoryDatum[];
 }
 
+/** One AID_COUNT value within a blast, split Connected / Not Connected. */
+export interface ReblastAidConnectionDatum {
+  label: string;
+  connected: number;
+  not_connected: number;
+}
+
 /** One blast, and how its calls split across AID_COUNT — the Reblast chart's hover. */
 export interface ReblastAidDatum {
   label: string;
-  aid: CategoryDatum[];
+  aid: ReblastAidConnectionDatum[];
 }
 
 /** Which days the answer was built from, and at what time resolution. */
