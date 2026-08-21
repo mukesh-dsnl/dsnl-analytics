@@ -183,13 +183,23 @@ export function Layout() {
           "h-16 flex items-center bg-primary border-b border-black/10 shrink-0",
           isSidebarCollapsed ? "justify-center" : "px-6"
         )}>
-          <Link to="/" className="flex items-center gap-3 group">
+          <Link to="/" className="flex items-center gap-3 group overflow-hidden">
             <div className="w-8 h-8 rounded-md bg-white/15 flex items-center justify-center border border-white/25 group-hover:bg-white/25 transition-colors shrink-0">
               <EqualizerIcon className="text-white" sx={{ fontSize: 18 }} />
             </div>
-            {!isSidebarCollapsed && (
-              <span className="text-lg font-semibold tracking-tight text-white whitespace-nowrap">DSNL Analytics</span>
-            )}
+            {/* Always mounted — only its width/opacity animate. Conditionally
+                unmounting this on collapse made it vanish the instant state
+                flipped, a frame before the sidebar itself had even started
+                shrinking; this keeps the text and the box collapsing together
+                instead of the text popping out ahead of it. */}
+            <span
+              className={clsx(
+                "text-lg font-semibold tracking-tight text-white whitespace-nowrap overflow-hidden transition-[max-width,opacity] duration-300",
+                isSidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[160px] opacity-100",
+              )}
+            >
+              DSNL Analytics
+            </span>
           </Link>
         </div>
 
