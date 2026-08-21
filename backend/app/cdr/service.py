@@ -350,6 +350,15 @@ _PANEL_SQL: dict[str, str] = {
     UNION ALL
     SELECT 'summary', 'minutes_usage',
            CAST(COALESCE(CEIL(SUM(CONNECTED_SECONDS) / 60.0), 0) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    -- Per Business_Rule.md, CRN + CONF_NUM together uniquely identify one
+    -- conference/multicall room — CRN alone is reused across bookings. Only
+    -- meaningful once the service is scoped to Conference or Multicall; on
+    -- All or Voicedrop it's still computed (this is one pass regardless) but
+    -- the frontend leaves it off those two KPI rows.
+    SELECT 'summary', 'total_conferences',
+           CAST(COUNT(DISTINCT (CRN, CONF_NUM)) AS DOUBLE)
     FROM slice""",
     "dtmf": """
     SELECT 'dtmf' AS panel, 'dtmf_count' AS label, CAST(COUNT(*) AS DOUBLE) AS value
@@ -624,6 +633,7 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
             "total_calls": int(_scalar(rows, "total_calls")),
             "total_participants": int(_scalar(rows, "total_participants")),
             "minutes_usage": int(_scalar(rows, "minutes_usage")),
+            "total_conferences": int(_scalar(rows, "total_conferences")),
         }
     if panel == "dtmf":
         return int(_scalar(rows, "dtmf_count"))

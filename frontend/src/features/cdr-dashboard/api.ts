@@ -77,6 +77,8 @@ export interface CdrSummary {
   total_calls: number;
   total_participants: number;
   minutes_usage: number;
+  /** Distinct CRN + CONF_NUM pairs — meaningful for Conference and Multicall only. */
+  total_conferences: number;
 }
 
 /** One bar / one row of a categorical breakdown. */
