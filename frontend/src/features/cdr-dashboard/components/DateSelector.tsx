@@ -1,74 +1,125 @@
-import { CalendarRange } from 'lucide-react';
-import type { CdrFilters, CdrStatus } from '../api';
-import { clampDate } from '../dateRange';
+import { Suspense, lazy } from 'react';
+import { CalendarIcon, Loader2 } from 'lucide-react';
+import type { DateRange } from 'react-day-picker';
 
-const DATE_INPUT_CLASS =
-  'bg-transparent text-sm text-zinc-900 dark:text-white outline-none w-[125px] ' +
-  '[&::-webkit-calendar-picker-indicator]:dark:invert [&::-webkit-calendar-picker-indicator]:opacity-50';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import type { CdrStatus } from '../api';
+
+/**
+ * The grid itself is loaded on first open, not with the app.
+ *
+ * This control sits in the header, so it mounts on every route — but the
+ * calendar only ever renders inside the popover. Importing it eagerly would
+ * put react-day-picker (~55kB gzipped) in the initial bundle to render a
+ * button. Radix keeps the content unmounted while closed, so the import fires
+ * on the first click and is cached from then on.
+ *
+ * Only the type import above stays static — types erase at build time.
+ */
+const Calendar = lazy(() =>
+  import('@/components/ui/calendar').then((m) => ({ default: m.Calendar })),
+);
 
 interface DateSelectorProps {
-  value: CdrFilters;
-  onChange: (next: CdrFilters) => void;
+  /** Inclusive ISO `YYYY-MM-DD` bounds. */
+  from: string;
+  to: string;
+  onChange: (from: string, to: string) => void;
   status: CdrStatus;
+  /** `brand` for the blue header band; `outline` on a normal surface. */
+  variant?: 'brand' | 'outline';
 }
 
 /**
- * The date range control, sized to sit on the same line as the service filters.
+ * ISO `YYYY-MM-DD` ⇄ Date, both pinned to local midnight.
  *
- * It belongs beside them rather than inside the filter panel because it is
- * not an ordinary filter: it decides which daily export files the backend
- * opens, so it sets what the query costs as much as what it returns.
+ * Deliberately not `new Date(iso)`, which parses a bare date as UTC and lands
+ * on the previous day for anyone west of Greenwich — the picker would then
+ * highlight a different day than the one the filter holds.
  */
-export function DateSelector({ value, onChange, status }: DateSelectorProps) {
+const toDate = (iso: string): Date => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** Built from the local parts, not toISOString() — that converts to UTC and can shift the day. */
+const toIso = (date: Date): string =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+/** "Aug 01, 2026". Intl rather than date-fns, which would otherwise be the one
+ *  heavy import keeping this header control out of a lazy chunk. */
+const toDisplay = (date: Date): string =>
+  date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+
+/**
+ * The analytics date range control, living in the header.
+ *
+ * It sits there rather than on the page because it is not an ordinary filter:
+ * it decides which daily export files the backend opens, so it applies to
+ * every analytics page and sets what a query costs as much as what it returns.
+ * The lake only holds the days between status.cdr.date_min and date_max, so
+ * everything outside that is disabled rather than clamped after the fact.
+ */
+export function DateSelector({ from, to, onChange, status, variant = 'outline' }: DateSelectorProps) {
   const min = status.cdr.date_min;
   const max = status.cdr.date_max;
 
+  const selected: DateRange = { from: toDate(from), to: toDate(to) };
+
   /**
-   * Moving one end drags the other along when the range would otherwise end
-   * up backwards — picking a "from" after the current "to" means you want
-   * that day, not an error message.
+   * react-day-picker reports the in-progress range too — the first click
+   * gives `from` with no `to`. Committing `to = from` there keeps the filter
+   * a valid one-day range while the second click is still pending, rather
+   * than emitting a half-open range the backend would reject.
    */
-  const setFrom = (raw: string) => {
-    if (!raw) return;
-    const from = clampDate(raw, min, max);
-    onChange({ ...value, date_from: from, date_to: value.date_to < from ? from : value.date_to });
+  const handleSelect = (range: DateRange | undefined) => {
+    if (!range?.from) return;
+    const nextFrom = toIso(range.from);
+    onChange(nextFrom, range.to ? toIso(range.to) : nextFrom);
   };
 
-  const setTo = (raw: string) => {
-    if (!raw) return;
-    const to = clampDate(raw, min, max);
-    onChange({ ...value, date_to: to, date_from: value.date_from > to ? to : value.date_from });
-  };
+  const fromText = toDisplay(toDate(from));
+  const label = from === to ? fromText : `${fromText} - ${toDisplay(toDate(to))}`;
 
   return (
-    <div className="flex items-center gap-2 px-3 h-[46px] rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] transition-colors duration-300">
-      <CalendarRange className="w-4 h-4 shrink-0 text-zinc-400" />
-
-      <label htmlFor="cdr-date-from" className="sr-only">
-        From date
-      </label>
-      <input
-        id="cdr-date-from"
-        type="date"
-        value={value.date_from}
-        min={min}
-        max={max}
-        onChange={(e) => setFrom(e.target.value)}
-        className={DATE_INPUT_CLASS}
-      />
-      <span className="text-zinc-300 dark:text-zinc-600 select-none">–</span>
-      <label htmlFor="cdr-date-to" className="sr-only">
-        To date
-      </label>
-      <input
-        id="cdr-date-to"
-        type="date"
-        value={value.date_to}
-        min={min}
-        max={max}
-        onChange={(e) => setTo(e.target.value)}
-        className={DATE_INPUT_CLASS}
-      />
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant={variant}
+          size="sm"
+          id="cdr-date-range"
+          className="justify-start px-3 font-normal"
+        >
+          <CalendarIcon className={variant === 'brand' ? 'text-white/70' : 'text-zinc-400'} />
+          {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="end">
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center w-[560px] max-w-[80vw] h-[336px]">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+            </div>
+          }
+        >
+          <Calendar
+            mode="range"
+            defaultMonth={toDate(from)}
+            selected={selected}
+            onSelect={handleSelect}
+            numberOfMonths={2}
+            startMonth={min ? toDate(min) : undefined}
+            endMonth={max ? toDate(max) : undefined}
+            disabled={[
+              ...(min ? [{ before: toDate(min) }] : []),
+              ...(max ? [{ after: toDate(max) }] : []),
+            ]}
+          />
+        </Suspense>
+      </PopoverContent>
+    </Popover>
   );
 }

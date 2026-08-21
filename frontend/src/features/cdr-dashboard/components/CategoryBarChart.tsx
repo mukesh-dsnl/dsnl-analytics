@@ -23,8 +23,16 @@ interface CategoryBarChartProps {
    * are long or numerous, where rotated x-ticks would be unreadable.
    */
   orientation?: 'columns' | 'bars';
-  /** Per-category colour. Defaults to the single categorical hue for all bars. */
+  /** Per-category colour. Overrides `multicolor` — used where the split carries real polarity. */
   colorFor?: (datum: CategoryDatum, index: number) => string;
+  /**
+   * Paint each bar its own categorical hue, assigned by slot order.
+   *
+   * Ignored past 8 categories: the ramp has eight slots and a 9th hue is
+   * never generated or cycled — beyond that the axis alone carries identity,
+   * so the chart falls back to the single series hue.
+   */
+  multicolor?: boolean;
   height: number;
   /** Prints each bar's own value above (columns) or beside (bars) it, not just on hover. */
   showValueLabels?: boolean;
@@ -48,12 +56,15 @@ export function CategoryBarChart({
   valueName = 'Calls',
   orientation = 'columns',
   colorFor,
+  multicolor = false,
   height,
   showValueLabels = false,
   tooltipContent,
 }: CategoryBarChartProps) {
   const theme = useChartTheme();
-  const fill = (datum: CategoryDatum, index: number) => colorFor?.(datum, index) ?? theme.series1;
+  const useSlots = multicolor && data.length <= theme.categorical.length;
+  const fill = (datum: CategoryDatum, index: number) =>
+    colorFor?.(datum, index) ?? (useSlots ? theme.categorical[index] : theme.series1);
 
   const tickStyle = { fill: theme.axis, fontSize: 11 };
   const labelStyle = { fill: theme.axis, fontSize: 11, fontWeight: 600 };

@@ -60,6 +60,7 @@ DASHBOARD_PANELS = (
     "reblast",
     "disconnect_reason",
     "location",
+    "reblast_aid",
     "call_funnel",
     "call_funnel_direction",
     "call_duration",
@@ -443,14 +444,31 @@ _PANEL_SQL: dict[str, str] = {
             ("60+", "IS_CONNECTED AND CONNECTED_SECONDS > 60"),
         ],
     ),
-    # CONFDIAL_REBLAST_COUNT > 0 is what marks a row as reblasted —
-    # REBLAST_COUNT and DIALLIST_REBLAST_COUNT are both documented as unused.
-    # AID_COUNT carries the attempt sequence: 0 initial, 1-3 successive.
+    # Which blast a conferee's number went out on. CONFDIAL_REBLAST_COUNT is
+    # the only column that carries this: the data dictionary defines it as
+    # "at which blast the Conferee's number is dialled out", while
+    # REBLAST_COUNT and DIALLIST_REBLAST_COUNT are both documented as unused
+    # and measure that way in the exports too — REBLAST_COUNT is 0 on every
+    # row, DIALLIST_REBLAST_COUNT only ever 0 or the sentinel 255.
+    #
+    # Blast 0 (the initial dial) is charted rather than filtered out: it is
+    # the largest group, and the AID_COUNT breakdown behind it is exactly what
+    # the hover exists to show.
     "reblast": """
     SELECT 'reblast' AS panel,
-           CAST(AID_COUNT AS VARCHAR) AS label,
+           'Blast ' || CAST(CONFDIAL_REBLAST_COUNT AS VARCHAR) AS label,
            CAST(COUNT(*) AS DOUBLE) AS value
-    FROM slice WHERE CONFDIAL_REBLAST_COUNT > 0 GROUP BY 2""",
+    FROM slice GROUP BY 2""",
+    # How each blast splits across AID_COUNT (0 initial, 1-3 successive retry
+    # attempts). Encoded as "Blast N::AID M" and unpacked in _shape — the same
+    # trick the direction-split panels use, so this still stacks into the one
+    # dashboard statement instead of costing its own read of the range.
+    "reblast_aid": """
+    SELECT 'reblast_aid' AS panel,
+           'Blast ' || CAST(CONFDIAL_REBLAST_COUNT AS VARCHAR)
+                    || '::AID ' || CAST(AID_COUNT AS VARCHAR) AS label,
+           CAST(COUNT(*) AS DOUBLE) AS value
+    FROM slice GROUP BY 2""",
     # Grouped as the raw numeric code; the code -> label mapping is applied in
     # Python from disconnect_reasons.json so new codes need no SQL change.
     "disconnect_reason": """
@@ -545,6 +563,37 @@ def _map_disconnect_reasons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _by_value([{"label": r, "value": v} for r, v in totals.items()])
 
 
+def _trailing_int(label: str) -> int:
+    """The number off the end of "Blast 12" / "AID 3", for numeric ordering.
+
+    Sorting these lexicographically would read Blast 1, Blast 10, Blast 11,
+    Blast 2 — the labels are text, but the axis they describe is a sequence.
+    """
+    try:
+        return int(label.rsplit(" ", 1)[1])
+    except (IndexError, ValueError):
+        return 10**6
+
+
+def _split_reblast_aid(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Decode "Blast N::AID M" into one entry per blast, each carrying its AID breakdown."""
+    grouped: dict[str, dict[str, float]] = {}
+    for row in rows:
+        blast, _, aid = row["label"].partition("::")
+        grouped.setdefault(blast, {})[aid] = row["value"]
+
+    return [
+        {
+            "label": blast,
+            "aid": [
+                {"label": aid, "value": value}
+                for aid, value in sorted(aids.items(), key=lambda kv: _trailing_int(kv[0]))
+            ],
+        }
+        for blast, aids in sorted(grouped.items(), key=lambda kv: _trailing_int(kv[0]))
+    ]
+
+
 def _split_by_direction(rows: list[dict[str, Any]], order: dict[str, int]) -> list[dict[str, Any]]:
     """Decode "<stage>::<direction>" labels from _direction_split_sql back into {label, dial_in, dial_out}."""
     grouped: dict[str, dict[str, float]] = {}
@@ -572,8 +621,14 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     if panel == "peak_ports":
         return [{"bucket": r["label"], "peak": r["value"]} for r in _by_label(rows)]
     if panel == "reblast":
-        stages = _by_label(rows)
-        return {"total": sum(r["value"] for r in stages), "stages": stages}
+        stages = sorted(rows, key=lambda r: _trailing_int(r["label"]))
+        # The headline figure reads as "how many were actually reblasted", so
+        # Blast 0 — the initial dial — is left out of it even though it is
+        # charted alongside the rest.
+        total = sum(r["value"] for r in stages if _trailing_int(r["label"]) > 0)
+        return {"total": total, "stages": stages}
+    if panel == "reblast_aid":
+        return _split_reblast_aid(rows)
     if panel == "disconnect_reason":
         return _map_disconnect_reasons(rows)
     if panel == "call_funnel":
@@ -624,8 +679,8 @@ def query_panel(f: CdrFilter, panel: str) -> dict:
     elif panel == "dtmf":
         rows = [{"dtmf_count": shaped}]
     elif panel == "reblast":
-        rows = [{"stage": r["label"], "count": r["value"]} for r in shaped["stages"]]
-    elif panel in ("peak_ports", "call_funnel_direction", "call_duration_direction"):
+        rows = [{"blast": r["label"], "count": r["value"]} for r in shaped["stages"]]
+    elif panel in ("peak_ports", "call_funnel_direction", "call_duration_direction", "reblast_aid"):
         rows = shaped
     else:
         rows = [{_LABEL_KEY[panel]: r["label"], "count": r["value"]} for r in shaped]

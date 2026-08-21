@@ -142,6 +142,13 @@ class CdrReblast(BaseModel):
     stages: list[CategoryDatum] = Field(default_factory=list)
 
 
+class ReblastAidDatum(BaseModel):
+    """One blast, and how its calls split across AID_COUNT — the Reblast chart's hover."""
+
+    label: str
+    aid: list[CategoryDatum] = Field(default_factory=list)
+
+
 class DirectionSplitDatum(BaseModel):
     """One category's count, split by dial direction — the hover breakdown for Call Ratio and Call Duration."""
 
@@ -180,6 +187,7 @@ class CdrDashboardResponse(BaseModel):
     peak_ports: list[PeakPortDatum]
     service_provider: list[CategoryDatum]
     reblast: CdrReblast
+    reblast_aid: list[ReblastAidDatum]
     disconnect_reason: list[CategoryDatum]
     location: list[CategoryDatum]
     call_funnel: list[CategoryDatum]

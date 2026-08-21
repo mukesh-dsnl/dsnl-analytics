@@ -4,9 +4,8 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import { filtersForDay } from '../api';
 import type { CdrFilters, CdrService, CdrStatus } from '../api';
 import { spanDays } from '../dateRange';
-import { useCdrStatus, useDebouncedValue } from '../hooks';
+import { useCdrStatus, useDateRange, useDebouncedValue } from '../hooks';
 import { CDRDashboard } from '../components/CDRDashboard';
-import { DateSelector } from '../components/DateSelector';
 import { ServiceFilterBar } from '../components/ServiceFilterBar';
 import type { DetailField } from '../components/ServiceFilterBar';
 
@@ -81,9 +80,14 @@ export function CDRDashboardPage({ service }: CDRDashboardPageProps) {
  * instead of an effect that resets the filters after the first render.
  */
 function Analytics({ service, status }: { service: CdrService; status: CdrStatus }) {
-  const [filters, setFilters] = useState<CdrFilters>(() =>
-    filtersForDay(status.default_date ?? status.cdr.date_max ?? new Date().toISOString().slice(0, 10), service),
-  );
+  // The date range lives in the header now, so it comes from the shared store
+  // rather than from this page's own state — which is also what keeps it
+  // steady while navigating between the service pages.
+  const { from, to } = useDateRange(status);
+
+  // Everything except the dates. Seeded with `from` only so the shape is
+  // complete; the dates the query actually uses are spliced in below.
+  const [filters, setFilters] = useState<CdrFilters>(() => filtersForDay(from, service));
 
   const fields = SERVICE_FIELDS[service];
 
@@ -100,8 +104,8 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   const isSettling = typed !== debouncedTyped;
 
   const query = useMemo<CdrFilters>(
-    () => ({ ...filters, ...debouncedTyped, service }),
-    [filters, debouncedTyped, service],
+    () => ({ ...filters, ...debouncedTyped, service, date_from: from, date_to: to }),
+    [filters, debouncedTyped, service, from, to],
   );
 
   const span = spanDays(query.date_from, query.date_to);
@@ -133,10 +137,6 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
             </p>
           </Banner>
         )}
-
-        <div className="flex items-center justify-end gap-4 flex-wrap">
-          <DateSelector value={filters} onChange={setFilters} status={status} />
-        </div>
 
         <ServiceFilterBar fields={fields} value={filters} onChange={setFilters} isPending={isSettling} />
 
