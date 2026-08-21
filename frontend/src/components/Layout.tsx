@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import EqualizerIcon from '@mui/icons-material/Equalizer';
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
@@ -26,12 +27,7 @@ interface NavNode {
 
 const NAV: NavNode[] = [
   { label: 'All', path: '/analytics/all', icon: LayoutGrid },
-  {
-    label: 'Voicedrop',
-    path: '/analytics/voicedrop',
-    icon: PhoneCall,
-    children: [{ label: 'Blast Details', path: '/analytics/voicedrop/blast-details' }],
-  },
+  { label: 'Voicedrop', path: '/analytics/voicedrop', icon: PhoneCall },
   { label: 'Conference', path: '/analytics/conference', icon: Users },
   { label: 'Multicall', path: '/analytics/multicall', icon: PhoneForwarded },
 ];
@@ -173,7 +169,11 @@ export function Layout() {
 
       {/* Left Sidebar */}
       <aside className={clsx(
-        "bg-white dark:bg-[#09090B] flex flex-col shrink-0 z-20 transition-all duration-300",
+        // width-only transition: the header/content column beside this is a
+        // separate flex-1 sibling with no width transition of its own, so it
+        // never animates — it just occupies whatever space this leaves it,
+        // frame by frame, as this alone resizes.
+        "bg-white dark:bg-[#09090B] flex flex-col shrink-0 z-20 transition-[width] duration-300",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
         {/* Logo. The right border lives on the sections *below* this one, not
@@ -185,7 +185,7 @@ export function Layout() {
         )}>
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-8 h-8 rounded-md bg-white/15 flex items-center justify-center border border-white/25 group-hover:bg-white/25 transition-colors shrink-0">
-              <span className="text-white font-mono font-bold text-sm">{'>_'}</span>
+              <EqualizerIcon className="text-white" sx={{ fontSize: 18 }} />
             </div>
             {!isSidebarCollapsed && (
               <span className="text-lg font-semibold tracking-tight text-white whitespace-nowrap">DSNL Analytics</span>

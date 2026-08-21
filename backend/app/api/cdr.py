@@ -137,6 +137,7 @@ _PANEL_ROUTES: list[tuple[str, str, str]] = [
     ("dtmf", "dtmf", "Count of conferees who entered DTMF digits."),
     ("disconnect-reason", "disconnect_reason", "Disconnect causes for the range."),
     ("location", "location", "Record count per bridge server location (L1, L2, ...)."),
+    ("minutes-by-location", "minutes_by_location", "Connected-call minutes by location, split by dial direction."),
     ("call-funnel", "call_funnel", "Call lifecycle: initiated, ringed, connected, ended."),
     ("call-funnel-direction", "call_funnel_direction", "Call lifecycle stages, split by dial direction."),
     ("call-duration", "call_duration", "Connected-call duration, bucketed in minutes."),

@@ -60,6 +60,7 @@ DASHBOARD_PANELS = (
     "reblast",
     "disconnect_reason",
     "location",
+    "minutes_by_location",
     "reblast_aid",
     "call_funnel",
     "call_funnel_direction",
@@ -389,6 +390,17 @@ _PANEL_SQL: dict[str, str] = {
            'L' || CAST(LOCATION_ID AS VARCHAR) AS label,
            CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice GROUP BY 2""",
+    # Billable seconds (see CONNECTED_SECONDS above), by location and by dial
+    # direction within it — the Minutes Usage KPI's hover. Left in raw seconds
+    # here; _split_minutes_by_location converts to minutes per line so the
+    # location total and its two direction lines are each rounded up on their
+    # own terms, the same way the top-line minutes_usage figure is.
+    "minutes_by_location": """
+    SELECT 'minutes_by_location' AS panel,
+           'L' || CAST(LOCATION_ID AS VARCHAR) || '::' ||
+           CASE CALLTYPE WHEN 0 THEN 'Dial In' WHEN 1 THEN 'Dial Out' ELSE 'Unknown' END AS label,
+           CAST(COALESCE(SUM(CONNECTED_SECONDS), 0) AS DOUBLE) AS value
+    FROM slice GROUP BY 2""",
     # The call lifecycle for dial-out (Voicedrop) rows, one count per stage:
     # blasted, rang, connected, ended. Each is independent — a row not counted
     # at one stage can still be counted at a later one (an unanswered blast
@@ -612,6 +624,32 @@ def _split_reblast_aid(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _ceil_minutes(seconds: float) -> int:
+    """Whole seconds rounded up to the next minute — matches the top-line minutes_usage formula, per line."""
+    return -(-int(seconds) // 60) if seconds > 0 else 0
+
+
+def _split_minutes_by_location(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Decode "L<n>::Dial In|Dial Out" seconds into {label, minutes, dial_in, dial_out}, busiest location first."""
+    grouped: dict[str, dict[str, float]] = {}
+    for row in rows:
+        location, _, direction = row["label"].partition("::")
+        bucket = grouped.setdefault(location, {"Dial In": 0.0, "Dial Out": 0.0})
+        if direction in bucket:
+            bucket[direction] = row["value"]
+
+    ranked = sorted(grouped.items(), key=lambda kv: kv[1]["Dial In"] + kv[1]["Dial Out"], reverse=True)
+    return [
+        {
+            "label": location,
+            "minutes": _ceil_minutes(vals["Dial In"] + vals["Dial Out"]),
+            "dial_in": _ceil_minutes(vals["Dial In"]),
+            "dial_out": _ceil_minutes(vals["Dial Out"]),
+        }
+        for location, vals in ranked
+    ]
+
+
 def _split_by_direction(rows: list[dict[str, Any]], order: dict[str, int]) -> list[dict[str, Any]]:
     """Decode "<stage>::<direction>" labels from _direction_split_sql back into {label, dial_in, dial_out}."""
     grouped: dict[str, dict[str, float]] = {}
@@ -648,6 +686,8 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
         return {"total": total, "stages": stages}
     if panel == "reblast_aid":
         return _split_reblast_aid(rows)
+    if panel == "minutes_by_location":
+        return _split_minutes_by_location(rows)
     if panel == "disconnect_reason":
         return _map_disconnect_reasons(rows)
     if panel == "call_funnel":
@@ -699,7 +739,13 @@ def query_panel(f: CdrFilter, panel: str) -> dict:
         rows = [{"dtmf_count": shaped}]
     elif panel == "reblast":
         rows = [{"blast": r["label"], "count": r["value"]} for r in shaped["stages"]]
-    elif panel in ("peak_ports", "call_funnel_direction", "call_duration_direction", "reblast_aid"):
+    elif panel in (
+        "peak_ports",
+        "call_funnel_direction",
+        "call_duration_direction",
+        "reblast_aid",
+        "minutes_by_location",
+    ):
         rows = shaped
     else:
         rows = [{_LABEL_KEY[panel]: r["label"], "count": r["value"]} for r in shaped]

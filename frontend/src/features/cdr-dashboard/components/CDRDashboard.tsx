@@ -26,6 +26,7 @@ import { ChartCard } from './ChartCard';
 import { CrossTabTooltip } from './CrossTabTooltip';
 import type { CubeDimension } from '../cubeDimensions';
 import { DirectionSplitTooltip } from './DirectionSplitTooltip';
+import { MinutesByLocationTooltip } from './MinutesByLocationTooltip';
 import { ReblastAidTooltip } from './ReblastAidTooltip';
 import { KpiCard } from './KpiCard';
 import { PeakPortsChart } from './PeakPortsChart';
@@ -189,6 +190,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           icon={Timer}
           isLoading={isPending}
           error={error}
+          tooltip={<MinutesByLocationTooltip breakdown={data?.minutes_by_location ?? []} />}
           accent="bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
         />
         <KpiCard

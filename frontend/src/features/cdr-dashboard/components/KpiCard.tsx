@@ -1,4 +1,5 @@
-﻿import { Loader2 } from 'lucide-react';
+﻿import type { ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -11,6 +12,8 @@ interface KpiCardProps {
   error?: Error | null;
   /** Tailwind classes for the icon tile — the only colour on the card. */
   accent?: string;
+  /** A richer breakdown shown on hover — only offered once the figure itself has loaded. */
+  tooltip?: ReactNode;
 }
 
 /**
@@ -29,9 +32,17 @@ export function KpiCard({
   isLoading,
   error,
   accent = 'bg-blue-500/10 border-blue-500/20 text-blue-500',
+  tooltip,
 }: KpiCardProps) {
+  const showTooltip = tooltip && !isLoading && !error;
+
   return (
-    <div className="bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg px-5 py-4 flex items-center gap-4 transition-colors duration-300">
+    <div
+      className={clsx(
+        'relative bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg px-5 py-4 flex items-center gap-4 transition-colors duration-300',
+        showTooltip && 'group cursor-default',
+      )}
+    >
       <div
         className={clsx(
           'w-11 h-11 rounded-md border flex items-center justify-center shrink-0',
@@ -59,6 +70,15 @@ export function KpiCard({
           </p>
         )}
       </div>
+
+      {/* Invisible rather than unmounted, so hovering never has to wait on
+          the tooltip's own content to mount — it's already there, just
+          transparent and un-clickable until the card is hovered or focused. */}
+      {showTooltip && (
+        <div className="absolute left-0 top-full mt-2 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150 pointer-events-none">
+          {tooltip}
+        </div>
+      )}
     </div>
   );
 }

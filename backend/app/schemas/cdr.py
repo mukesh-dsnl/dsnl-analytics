@@ -170,6 +170,15 @@ class DirectionSplitDatum(BaseModel):
     dial_out: int = 0
 
 
+class LocationMinutesDatum(BaseModel):
+    """One location's connected-call minutes, split by dial direction — the Minutes Usage KPI's hover."""
+
+    label: str
+    minutes: int = 0
+    dial_in: int = 0
+    dial_out: int = 0
+
+
 class CdrCoverage(BaseModel):
     """Which days the answer was actually built from."""
 
@@ -203,6 +212,7 @@ class CdrDashboardResponse(BaseModel):
     reblast_aid: list[ReblastAidDatum]
     disconnect_reason: list[CategoryDatum]
     location: list[CategoryDatum]
+    minutes_by_location: list[LocationMinutesDatum]
     call_funnel: list[CategoryDatum]
     # Same four stages as call_funnel, each split by dial direction — the
     # Call Ratio chart's hover reads from this instead of re-deriving it.
