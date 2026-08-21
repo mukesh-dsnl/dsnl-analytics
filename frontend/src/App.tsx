@@ -13,9 +13,6 @@ import { Login } from './pages/Login';
 const CDRDashboardPage = lazy(() =>
   import('./features/cdr-dashboard/pages/CDRDashboardPage').then((m) => ({ default: m.CDRDashboardPage })),
 );
-const BlastDetailsPage = lazy(() =>
-  import('./features/cdr-dashboard/pages/BlastDetailsPage').then((m) => ({ default: m.BlastDetailsPage })),
-);
 
 function RouteFallback() {
   return (
@@ -58,14 +55,6 @@ function App() {
                   element={
                     <Suspense fallback={<RouteFallback />}>
                       <CDRDashboardPage service="voicedrop" />
-                    </Suspense>
-                  }
-                />
-                <Route
-                  path="voicedrop/blast-details"
-                  element={
-                    <Suspense fallback={<RouteFallback />}>
-                      <BlastDetailsPage />
                     </Suspense>
                   }
                 />

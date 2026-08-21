@@ -128,6 +128,14 @@ export interface DirectionSplitDatum {
   dial_out: number;
 }
 
+/** One location's connected-call minutes, split by dial direction — the Minutes Usage KPI's hover. */
+export interface LocationMinutesDatum {
+  label: string;
+  minutes: number;
+  dial_in: number;
+  dial_out: number;
+}
+
 /** Every panel, from the one request that fills the page. */
 export interface CdrDashboard {
   summary: CdrSummary;
@@ -140,6 +148,8 @@ export interface CdrDashboard {
   reblast_aid: ReblastAidDatum[];
   disconnect_reason: CategoryDatum[];
   location: CategoryDatum[];
+  /** Connected-call minutes by location, split by dial direction — the Minutes Usage KPI's hover. */
+  minutes_by_location: LocationMinutesDatum[];
   /** Call lifecycle for dial-out rows: initiated, ringed, connected, ended — Voicedrop only. */
   call_funnel: CategoryDatum[];
   /** Same four stages, split Dial In / Dial Out — Initiated/Ringed read as nearly all Dial Out by design. */
