@@ -12,10 +12,3 @@ export function spanDays(from: string, to: string): number {
   const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`);
   return Math.floor(ms / 86_400_000) + 1;
 }
-
-/** Hold an ISO date inside the range the lake actually covers. */
-export function clampDate(value: string, min?: string, max?: string): string {
-  if (min && value < min) return min;
-  if (max && value > max) return max;
-  return value;
-}

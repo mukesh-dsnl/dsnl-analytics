@@ -19,12 +19,13 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cdrApi } from '../api';
 import type { CallCubeRow, CategoryDatum, CdrFilters } from '../api';
-import { formatCount, formatMinutes, useChartTheme } from '../chartTheme';
+import { formatCount, useChartTheme } from '../chartTheme';
 import { CategoryBarChart } from './CategoryBarChart';
 import { ChartCard } from './ChartCard';
 import { CrossTabTooltip } from './CrossTabTooltip';
 import type { CubeDimension } from '../cubeDimensions';
 import { DirectionSplitTooltip } from './DirectionSplitTooltip';
+import { ReblastAidTooltip } from './ReblastAidTooltip';
 import { KpiCard } from './KpiCard';
 import { PeakPortsChart } from './PeakPortsChart';
 
@@ -60,6 +61,20 @@ const CHART_META: { id: ChartId; label: string; icon: LucideIcon; voicedropOnly?
 
 /** Row height for horizontal bar charts, so long category lists stay readable. */
 const barsHeight = (count: number) => Math.max(200, Math.min(count, 12) * 32 + 32);
+
+/**
+ * Which categorical slot each Call Ratio stage takes.
+ *
+ * Ringed and Ended are swapped against their positional slots (1 and 3), so
+ * the hue follows the stage by name rather than by its place in the array —
+ * which also keeps the pairing stable if a stage is ever added or reordered.
+ */
+const FUNNEL_SLOT: Record<string, number> = {
+  'Call Initiated': 0,
+  'Call Ringed': 3,
+  'Call Connected': 2,
+  'Call Ended': 1,
+};
 
 /**
  * "Not Connected" is a failure state, not just another category, so the two
@@ -106,6 +121,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   const isEmptyList = (rows: CategoryDatum[] | undefined) => !rows || rows.length === 0;
   const peakPorts = data?.peak_ports ?? [];
   const reblastStages = data?.reblast.stages ?? [];
+  const reblastAid = data?.reblast_aid ?? [];
   const providers = data?.service_provider ?? [];
   const disconnects = data?.disconnect_reason ?? [];
   const locations = data?.location ?? [];
@@ -149,8 +165,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
         />
         <KpiCard
           label="Minutes Usage"
-          value={formatMinutes(data?.summary.minutes_usage ?? 0)}
-          unit="min"
+          value={formatCount(data?.summary.minutes_usage ?? 0)}
           icon={Timer}
           isLoading={isPending}
           error={error}
@@ -232,6 +247,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 data={funnel}
                 valueName="Calls"
                 height={260}
+                colorFor={(datum, index) => theme.categorical[FUNNEL_SLOT[datum.label] ?? index]}
                 showValueLabels
                 tooltipContent={(datum) => (
                   <DirectionSplitTooltip label={datum.label} value={datum.value} splits={funnelDirection} />
@@ -256,6 +272,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 data={duration}
                 valueName="Calls"
                 height={260}
+                multicolor
                 showValueLabels
                 tooltipContent={(datum) => (
                   <DirectionSplitTooltip label={datum.label} value={datum.value} splits={durationDirection} />
@@ -279,6 +296,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 data={data?.call_direction ?? []}
                 valueName="Calls"
                 height={260}
+                multicolor
                 showValueLabels
                 tooltipContent={crossTabTooltip('direction')}
               />
@@ -322,6 +340,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 data={locations}
                 valueName="Calls"
                 height={260}
+                multicolor
                 showValueLabels
                 tooltipContent={crossTabTooltip('location')}
               />
@@ -361,6 +380,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 valueName="Calls"
                 orientation="bars"
                 height={barsHeight(providers.length)}
+                multicolor
                 showValueLabels
                 tooltipContent={crossTabTooltip('provider')}
               />
@@ -369,10 +389,10 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
         )}
 
         {showChart('reblast') && (
-          <div className={clsx(focused('reblast') ? 'lg:col-span-2' : undefined)}>
+          <div className="lg:col-span-2">
             <ChartCard
               title="Reblast"
-              subtitle="Retries broken down by stage"
+              subtitle="Calls by which blast they went out on — hover a bar for its AID breakdown"
               icon={Repeat2}
               isLoading={isPending}
               error={error}
@@ -382,7 +402,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 !isPending && !error ? (
                   <div className="text-right shrink-0">
                     <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                      Total
+                      Reblasted
                     </p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
                       {formatCount(data?.reblast.total ?? 0)}
@@ -391,10 +411,22 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 ) : undefined
               }
             >
+              {/* Horizontal: a busy day runs to ~18 blasts, and "Blast 12" as a
+                  rotated x-tick is unreadable well before that. */}
               <CategoryBarChart
                 data={reblastStages}
-                valueName="Reblasts"
+                valueName="Calls"
+                orientation="bars"
                 height={barsHeight(reblastStages.length)}
+                multicolor
+                showValueLabels
+                tooltipContent={(datum) => (
+                  <ReblastAidTooltip
+                    label={datum.label}
+                    value={datum.value}
+                    breakdown={reblastAid}
+                  />
+                )}
               />
             </ChartCard>
           </div>
@@ -416,6 +448,8 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
                 valueName="Calls"
                 orientation="bars"
                 height={barsHeight(disconnects.length)}
+                multicolor
+                showValueLabels
               />
             </ChartCard>
           </div>

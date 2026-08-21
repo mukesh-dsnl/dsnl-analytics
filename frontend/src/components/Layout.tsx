@@ -15,6 +15,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
+import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 
 interface NavNode {
   label: string;
@@ -172,12 +173,14 @@ export function Layout() {
 
       {/* Left Sidebar */}
       <aside className={clsx(
-        "bg-white border-r border-zinc-200 dark:bg-[#09090B] dark:border-zinc-800/60 flex flex-col shrink-0 z-20 transition-all duration-300",
+        "bg-white dark:bg-[#09090B] flex flex-col shrink-0 z-20 transition-all duration-300",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
-        {/* Logo */}
+        {/* Logo. The right border lives on the sections *below* this one, not
+            on the aside, so the brand band runs unbroken from the logo across
+            the header — no seam splitting the two halves of the blue. */}
         <div className={clsx(
-          "h-16 flex items-center bg-primary border-b border-black/10",
+          "h-16 flex items-center bg-primary border-b border-black/10 shrink-0",
           isSidebarCollapsed ? "justify-center" : "px-6"
         )}>
           <Link to="/" className="flex items-center gap-3 group">
@@ -190,23 +193,47 @@ export function Layout() {
           </Link>
         </div>
 
-        {/* Main Nav */}
-        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
-          {NAV.map((node) => (
-            <NavRow
-              key={node.path}
-              node={node}
-              depth={0}
-              isCollapsed={isSidebarCollapsed}
-              openSections={openSections}
-              toggle={toggleSection}
-              isActivePath={isActivePath}
-            />
-          ))}
+        {/* Nav, then the empty space below it — which is itself the collapse
+            control. A real <button> rather than a click handler on a div, so
+            it is reachable by Tab and operable with Enter/Space; the hint only
+            surfaces on hover/focus, which is what keeps the column clean. */}
+        <div className="flex-1 flex flex-col overflow-y-auto border-r border-zinc-200 dark:border-zinc-800/60">
+          <nav className="py-6 px-4 space-y-1">
+            {NAV.map((node) => (
+              <NavRow
+                key={node.path}
+                node={node}
+                depth={0}
+                isCollapsed={isSidebarCollapsed}
+                openSections={openSections}
+                toggle={toggleSection}
+                isActivePath={isActivePath}
+              />
+            ))}
+          </nav>
+
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none"
+          >
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 dark:text-zinc-600 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-zinc-100 dark:group-hover:bg-zinc-800/50 transition-all duration-200">
+              {isSidebarCollapsed ? (
+                <ChevronRight className="w-3.5 h-3.5" />
+              ) : (
+                <>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  Collapse
+                </>
+              )}
+            </span>
+          </button>
         </div>
 
-        {/* Footer: Logout + Collapse */}
-        <div className="p-4 space-y-1 border-t border-zinc-200 dark:border-zinc-800/60 transition-colors duration-300">
+        {/* Footer: identity + sign out */}
+        <div className="p-4 space-y-1 border-t border-r border-zinc-200 dark:border-zinc-800/60 shrink-0 transition-colors duration-300">
           {!isSidebarCollapsed && username && (
             <div className="px-3 pb-2 text-xs text-zinc-400 dark:text-zinc-500 truncate">Signed in as <span className="font-medium text-zinc-600 dark:text-zinc-300">{username}</span></div>
           )}
@@ -221,32 +248,23 @@ export function Layout() {
             <LogOut className="w-5 h-5 shrink-0" />
             {!isSidebarCollapsed && <span className="whitespace-nowrap">Logout</span>}
           </button>
-          <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            className={clsx(
-              "w-full flex items-center gap-3 py-2.5 rounded-md text-sm font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors",
-              isSidebarCollapsed ? "justify-center px-0" : "px-3"
-            )}
-          >
-            {isSidebarCollapsed ? <ChevronRight className="w-5 h-5 shrink-0" /> : <ChevronLeft className="w-5 h-5 shrink-0" />}
-            {!isSidebarCollapsed && <span className="whitespace-nowrap">Collapse</span>}
-          </button>
         </div>
       </aside>
 
       {/* Main Column */}
-      <div className="flex-1 flex flex-col min-w-0 bg-zinc-50 dark:bg-[#111113] relative transition-colors duration-300">
-        <header className="h-16 bg-primary border-b border-black/10 flex items-center justify-end px-6 shrink-0 z-10 sticky top-0">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-              className="p-2 rounded-md text-white hover:bg-white/15 transition-colors"
-            >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
-          </div>
+      <div className="flex-1 flex flex-col min-w-0 bg-zinc-50 dark:bg-[#111113] transition-colors duration-300">
+        {/* The date range lives here rather than on the page: it applies to
+            every analytics route, so it belongs above the outlet — and it
+            fills what was otherwise an empty band. */}
+        <header className="h-16 bg-primary border-b border-black/10 flex items-center justify-end gap-3 px-6 shrink-0 z-10 sticky top-0">
+          <HeaderDateRange />
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            className="p-2 rounded-md text-white hover:bg-white/15 transition-colors"
+          >
+            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
         </header>
 
         {/* Main Content Area */}

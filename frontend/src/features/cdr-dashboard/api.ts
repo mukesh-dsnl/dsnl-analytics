@@ -91,8 +91,15 @@ export interface PeakPortDatum {
 }
 
 export interface CdrReblast {
+  /** Reblasted conferees — Blast 0, the initial dial, is excluded from this figure. */
   total: number;
   stages: CategoryDatum[];
+}
+
+/** One blast, and how its calls split across AID_COUNT — the Reblast chart's hover. */
+export interface ReblastAidDatum {
+  label: string;
+  aid: CategoryDatum[];
 }
 
 /** Which days the answer was built from, and at what time resolution. */
@@ -121,6 +128,7 @@ export interface CdrDashboard {
   peak_ports: PeakPortDatum[];
   service_provider: CategoryDatum[];
   reblast: CdrReblast;
+  reblast_aid: ReblastAidDatum[];
   disconnect_reason: CategoryDatum[];
   location: CategoryDatum[];
   /** Call lifecycle for dial-out rows: initiated, ringed, connected, ended — Voicedrop only. */
