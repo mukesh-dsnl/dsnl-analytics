@@ -24,11 +24,25 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
       showOutsideDays={showOutsideDays}
       className={cn('p-3', className)}
       classNames={{
-        months: 'flex flex-col sm:flex-row gap-4',
+        // `relative` matters here, not just cosmetic: Nav renders as this
+        // element's direct child and positions itself with `absolute` (see
+        // the `nav` class below). Without a positioned ancestor here, that
+        // absolute positioning escapes to whatever ancestor further up
+        // happens to be positioned instead — which is what silently broke
+        // the prev/next buttons' click targets.
+        months: 'relative flex flex-col sm:flex-row gap-4',
         month: 'flex flex-col gap-4',
         month_caption: 'flex justify-center pt-1 relative items-center h-9',
         caption_label: 'text-sm font-semibold text-zinc-900 dark:text-white',
-        nav: 'flex items-center gap-1 absolute inset-x-3 top-3 justify-between pointer-events-none',
+        // z-10 is load-bearing, not decorative: month_caption also has
+        // `relative`, and CSS paints same-z-index positioned elements in DOM
+        // order — month_caption renders after nav, so without this it paints
+        // on top and silently eats the click before it ever reaches the
+        // prev/next buttons underneath, even though those buttons carry
+        // pointer-events-auto. Confirmed via elementFromPoint() at the
+        // button's own screen center: it returned the caption div, not the
+        // button, until this was added.
+        nav: 'z-10 flex items-center gap-1 absolute inset-x-3 top-3 justify-between pointer-events-none',
         button_previous:
           'pointer-events-auto h-7 w-7 inline-flex items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-800 ' +
           'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 disabled:opacity-30 disabled:pointer-events-none transition-colors',
