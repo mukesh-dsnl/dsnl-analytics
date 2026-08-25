@@ -13,6 +13,11 @@ import { Login } from './pages/Login';
 const CDRDashboardPage = lazy(() =>
   import('./features/cdr-dashboard/pages/CDRDashboardPage').then((m) => ({ default: m.CDRDashboardPage })),
 );
+const CampaignMetricsPage = lazy(() =>
+  import('./features/campaign-metrics/pages/CampaignMetricsPage').then((m) => ({
+    default: m.CampaignMetricsPage,
+  })),
+);
 
 function RouteFallback() {
   return (
@@ -71,6 +76,33 @@ function App() {
                   element={
                     <Suspense fallback={<RouteFallback />}>
                       <CDRDashboardPage service="multicall" />
+                    </Suspense>
+                  }
+                />
+              </Route>
+              <Route path="campaign-metrics">
+                <Route index element={<Navigate to="voicedrop" replace />} />
+                <Route
+                  path="voicedrop"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CampaignMetricsPage service="voicedrop" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="conference"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CampaignMetricsPage service="conference" />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="multicall"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <CampaignMetricsPage service="multicall" />
                     </Suspense>
                   }
                 />
