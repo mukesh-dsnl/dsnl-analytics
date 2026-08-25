@@ -41,6 +41,23 @@ export const useDateRangeStore = create<DateRangeState>((set) => ({
   setRange: (dateFrom, dateTo) => set({ dateFrom, dateTo }),
 }));
 
+/**
+ * The Campaign Metrics single-day selection — its own store, not a field on
+ * useDateRangeStore, because Campaign Metrics takes exactly one date rather
+ * than a range and its header control lives on a different set of routes.
+ * Same null-until-seeded shape as the date range, for the same reason: only
+ * the backend's lake status knows which day to open on.
+ */
+interface CampaignDateState {
+  date: string | null;
+  setDate: (date: string) => void;
+}
+
+export const useCampaignDateStore = create<CampaignDateState>((set) => ({
+  date: null,
+  setDate: (date) => set({ date }),
+}));
+
 interface UIState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;

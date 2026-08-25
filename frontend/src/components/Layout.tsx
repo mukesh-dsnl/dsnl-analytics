@@ -6,6 +6,7 @@ import {
   ChevronRight,
   LayoutGrid,
   LogOut,
+  Megaphone,
   Moon,
   PhoneCall,
   PhoneForwarded,
@@ -17,6 +18,7 @@ import EqualizerIcon from '@mui/icons-material/Equalizer';
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
+import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 
 interface NavNode {
   label: string;
@@ -30,6 +32,18 @@ const NAV: NavNode[] = [
   { label: 'Voicedrop', path: '/analytics/voicedrop', icon: PhoneCall },
   { label: 'Conference', path: '/analytics/conference', icon: Users },
   { label: 'Multicall', path: '/analytics/multicall', icon: PhoneForwarded },
+  {
+    label: 'Campaign Metrics',
+    // Same path as its first child — clicking the parent label itself is how
+    // it "defaults to routing to the Voicedrop view".
+    path: '/campaign-metrics/voicedrop',
+    icon: Megaphone,
+    children: [
+      { label: 'Voicedrop', path: '/campaign-metrics/voicedrop' },
+      { label: 'Conference', path: '/campaign-metrics/conference' },
+      { label: 'Multicall', path: '/campaign-metrics/multicall' },
+    ],
+  },
 ];
 
 /** Every path a node's own link should read as "current" for, itself included. */
@@ -263,11 +277,14 @@ export function Layout() {
 
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0 bg-zinc-50 dark:bg-[#111113] transition-colors duration-300">
-        {/* The date range lives here rather than on the page: it applies to
-            every analytics route, so it belongs above the outlet — and it
-            fills what was otherwise an empty band. */}
+        {/* The date control lives here rather than on the page: it applies to
+            every route in its module, so it belongs above the outlet — and it
+            fills what was otherwise an empty band. Campaign Metrics gets its
+            own single-date control instead of the analytics date range,
+            since the two modules read the lake differently (one day vs a
+            range) and hold their selections in separate stores. */}
         <header className="h-16 bg-primary border-b border-black/10 flex items-center justify-end gap-3 px-6 shrink-0 z-10 sticky top-0">
-          <HeaderDateRange />
+          {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
