@@ -32,6 +32,8 @@ export interface AccountMetricsRow extends CampaignMetricsRow {
 export interface AccountCrnMetricsRow extends CampaignMetricsRow {
   crn: string;
   total_minutes: number;
+  /** CODR.CHAIR_PIN — Conference and Multicall only; null for Voicedrop. */
+  cpin: string | null;
 }
 
 export interface ServiceProviderMetricsRow extends CampaignMetricsRow {
@@ -98,6 +100,9 @@ export interface InsightBlast {
 export interface AccountInsight {
   account: string;
   crn: string | null;
+  /** Room identity, from the CODR join — both null for Voicedrop. */
+  cpin: string | null;
+  conf_num: string | null;
   summary: InsightSummary;
   failed: InsightFailure;
   disconnect_reasons: InsightDisconnectReason[];
@@ -128,8 +133,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const campaignApi = {
-  accountWise: (filters: CampaignFilter): Promise<{ rows: AccountMetricsRow[] }> =>
-    post('account-wise', filters),
+  /**
+   * `search` matches account id, CRN, or (Conference/Multicall) chairperson PIN.
+   * Matched server-side because CRN and CPIN aren't in the account-level rows
+   * this table holds — there is nothing here to filter them against.
+   */
+  accountWise: (
+    filters: CampaignFilter,
+    search?: string | null,
+  ): Promise<{ rows: AccountMetricsRow[] }> =>
+    post('account-wise', { ...filters, search: search?.trim() || null }),
 
   /** CRN breakdown within one account — fetched lazily as each row is expanded. */
   accountCrn: (

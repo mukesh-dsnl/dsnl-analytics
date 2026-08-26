@@ -21,6 +21,26 @@ class CampaignFilter(BaseModel):
     service: CampaignService
 
 
+class AccountWiseRequest(CampaignFilter):
+    """
+    CampaignFilter plus a free-text search.
+
+    The term is matched against the account id, its CRNs, and — for Conference
+    and Multicall, where CODR is joined — the chairperson PIN. Matching happens
+    server-side because CRN and CPIN are not in the account-level payload the
+    table already holds, so the client has nothing to filter on.
+    """
+
+    search: Optional[str] = None
+
+    @field_validator("search")
+    @classmethod
+    def _blank_search_to_none(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strip() or None
+
+
 class AccountCrnRequest(CampaignFilter):
     """CampaignFilter plus which account's CRNs to break down."""
 
@@ -52,6 +72,9 @@ class AccountMetricsRow(CampaignMetricsRow):
 class AccountCrnMetricsRow(CampaignMetricsRow):
     crn: str
     total_minutes: int = 0
+    # CODR.CHAIR_PIN, so only populated for Conference and Multicall — Voicedrop
+    # never joins CODR and has no chairperson.
+    cpin: Optional[str] = None
 
 
 class ServiceProviderMetricsRow(CampaignMetricsRow):
@@ -157,6 +180,11 @@ class InsightBlast(BaseModel):
 class AccountInsightResponse(BaseModel):
     account: str
     crn: Optional[str] = None
+    # Identity of the room(s) in scope. Both come from the CODR join, so both
+    # stay null for Voicedrop. Comma-joined on the rare scope covering more than
+    # one room.
+    cpin: Optional[str] = None
+    conf_num: Optional[str] = None
     summary: InsightSummary
     failed: InsightFailure
     disconnect_reasons: list[InsightDisconnectReason] = Field(default_factory=list)
