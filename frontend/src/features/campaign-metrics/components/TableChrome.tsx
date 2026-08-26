@@ -12,10 +12,19 @@ import clsx from 'clsx';
 import type { SortState } from '../useSortableRows';
 import { PAGE_SIZE } from '../usePagination';
 
-/** Shared shell every Campaign Metrics table renders inside — loading, error and empty states, once. */
+/**
+ * Shared shell every Campaign Metrics table renders inside — loading, error and
+ * empty states, once.
+ *
+ * A flex column with `min-h-0`: that is what lets the rows scroll inside the
+ * card while the header row, the tabs above and the pager below all stay put.
+ * Without `min-h-0` a flex child refuses to shrink below its content, the card
+ * grows to fit every row, and the page scrolls instead — taking the table's own
+ * header off screen with it.
+ */
 export function TableCard({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg overflow-hidden transition-colors duration-300">
+    <div className="flex flex-col min-h-0 bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg overflow-hidden transition-colors duration-300">
       {children}
     </div>
   );
@@ -47,8 +56,17 @@ export function TableStatus({ isLoading, error, isEmpty }: { isLoading: boolean;
   return null;
 }
 
+/**
+ * Header cells stay put while the rows scroll under them.
+ *
+ * The bottom rule is an inset box-shadow rather than `border-b`: with
+ * `border-collapse`, a border on a sticky cell is painted by the table and
+ * scrolls away with it, leaving the pinned header sitting on the rows with no
+ * separation. A shadow belongs to the cell and travels with it.
+ */
 export const TH_CLASS =
-  'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400';
+  'sticky top-0 z-20 bg-white dark:bg-[#09090B] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 ' +
+  'shadow-[inset_0_-1px_0_theme(colors.zinc.200)] dark:shadow-[inset_0_-1px_0_theme(colors.zinc.800)]';
 export const TH_CLASS_RIGHT = `${TH_CLASS} text-right`;
 export const TD_CLASS = 'px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300 tabular-nums';
 export const TD_CLASS_RIGHT = `${TD_CLASS} text-right`;

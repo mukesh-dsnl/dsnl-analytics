@@ -19,15 +19,21 @@ interface AccountWiseTableProps {
   error: Error | null;
   sort: SortState<SortKey>;
   onSort: (key: SortKey) => void;
+  /**
+   * Whether to reserve the CPIN column. True for Conference and Multicall,
+   * where CODR supplies a chairperson PIN per CRN; false for Voicedrop, which
+   * has none and would otherwise carry a column empty on every row.
+   */
+  showCpin: boolean;
 }
 
-const COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
-  { key: 'account', label: 'Account', align: 'left' },
-  { key: 'total_size', label: 'Total Size', align: 'right' },
-  { key: 'connected_size', label: 'Connected Size', align: 'right' },
-  { key: 'not_connected_size', label: 'Not Connected Size', align: 'right' },
-  { key: 'connected_percentage', label: 'Connected %', align: 'right' },
-  { key: 'total_minutes', label: 'Total Minutes', align: 'right' },
+/** The five measures, shared by the account rows and the CRN rows beneath them. */
+const MEASURE_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'total_size', label: 'Total Size' },
+  { key: 'connected_size', label: 'Connected Size' },
+  { key: 'not_connected_size', label: 'Not Connected Size' },
+  { key: 'connected_percentage', label: 'Connected %' },
+  { key: 'total_minutes', label: 'Total Minutes' },
 ];
 
 /** Numeric cells share one class so the two row levels align on the decimal. */
@@ -50,6 +56,7 @@ export function AccountWiseTable({
   error,
   sort,
   onSort,
+  showCpin,
 }: AccountWiseTableProps) {
   // Paged from the already-sorted list, so sorting reorders the whole table
   // rather than shuffling only the page in view.
@@ -65,19 +72,34 @@ export function AccountWiseTable({
       <TableCard>
         <TableStatus isLoading={isLoading} error={error} isEmpty={isEmpty} />
         {!isLoading && !error && !isEmpty && (
-          <div className="overflow-x-auto">
+          // The only scrolling element: rows move under a pinned header rather
+          // than the whole card sliding up the page.
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-zinc-200 dark:border-zinc-800/60">
+                <tr>
                   <th className={`${TH_CLASS} w-10`} />
-                  {COLUMNS.map((column) => (
+                  <SortableHeader
+                    label="Account"
+                    sortKey="account"
+                    sort={sort}
+                    onSort={onSort}
+                    align="left"
+                  />
+                  {/* Reserved but unlabelled: a CPIN belongs to a room, not an
+                      account, so nothing on this level of the table ever fills
+                      it. The column still has to exist here to keep the CRN
+                      rows aligned with the account row above them, and the
+                      sub-header names it where it actually carries values. */}
+                  {showCpin && <th className={`${TH_CLASS} w-32`} />}
+                  {MEASURE_COLUMNS.map((column) => (
                     <SortableHeader
                       key={column.key}
                       label={column.label}
                       sortKey={column.key}
                       sort={sort}
                       onSort={onSort}
-                      align={column.align}
+                      align="right"
                     />
                   ))}
                   <th className={`${TH_CLASS} w-14`} />
@@ -89,6 +111,7 @@ export function AccountWiseTable({
                     key={row.account}
                     filters={filters}
                     row={row}
+                    showCpin={showCpin}
                     onChart={(crn) => setCharting({ account: row.account, crn })}
                   />
                 ))}
@@ -116,10 +139,11 @@ export function AccountWiseTable({
 interface AccountRowProps {
   filters: CampaignFilter;
   row: AccountMetricsRow;
+  showCpin: boolean;
   onChart: (crn?: string) => void;
 }
 
-function AccountRow({ filters, row, onChart }: AccountRowProps) {
+function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const { data, isPending, error } = useQuery({
@@ -130,6 +154,8 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
   });
 
   const children = data?.rows ?? [];
+  // Chevron + account + optional CPIN + five measures + chart button.
+  const columnCount = 8 + (showCpin ? 1 : 0);
   // An open account and its CRNs read as one tinted block, so the drill-down is
   // visibly bounded rather than blending into the rows after it.
   const openCell = isOpen ? 'bg-blue-50/60 dark:bg-blue-500/[0.07]' : '';
@@ -174,6 +200,8 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
             </span>
           </span>
         </td>
+        {/* Empty on the account row: a CPIN belongs to a room, not an account. */}
+        {showCpin && <td className={clsx('px-4 py-3', openCell)} />}
         <td className={clsx(NUM_PARENT, openCell)}>{row.total_size.toLocaleString()}</td>
         <td className={clsx(NUM_PARENT, openCell)}>{row.connected_size.toLocaleString()}</td>
         <td className={clsx(NUM_PARENT, openCell)}>{row.not_connected_size.toLocaleString()}</td>
@@ -191,15 +219,21 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
 
       {isOpen && (
         <>
-          {/* The sub-header renames only the first column — the other five are
-              the same measures as above, so repeating their names is what makes
-              the drill-down read as a continuation rather than a new table. */}
+          {/* The sub-header renames only the identity columns — the five
+              measures are the same ones above, so repeating their names is what
+              makes the drill-down read as a continuation rather than a new
+              table. */}
           <tr className="bg-blue-50/60 dark:bg-blue-500/[0.07]">
             <td />
             <td className="pl-12 pr-4 pt-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               CRN
             </td>
-            {COLUMNS.slice(1).map((column) => (
+            {showCpin && (
+              <td className="px-4 pt-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                CPIN
+              </td>
+            )}
+            {MEASURE_COLUMNS.map((column) => (
               <td
                 key={column.key}
                 className="px-4 pt-2 pb-1.5 text-right text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
@@ -210,10 +244,14 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
             <td />
           </tr>
 
-          {isPending && <SubRowMessage loading>Loading CRNs…</SubRowMessage>}
-          {error && <SubRowMessage tone="error">{(error as Error).message}</SubRowMessage>}
+          {isPending && <SubRowMessage span={columnCount - 1} loading>Loading CRNs…</SubRowMessage>}
+          {error && (
+            <SubRowMessage span={columnCount - 1} tone="error">
+              {(error as Error).message}
+            </SubRowMessage>
+          )}
           {!isPending && !error && children.length === 0 && (
-            <SubRowMessage>No CRNs for this account.</SubRowMessage>
+            <SubRowMessage span={columnCount - 1}>No CRNs for this account.</SubRowMessage>
           )}
 
           {children.map((child, index) => (
@@ -235,20 +273,14 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
                     />
                     <span className="absolute left-0 top-1/2 w-3 h-px bg-zinc-300 dark:bg-zinc-700" />
                   </span>
-                  {/* CPIN rides inside the CRN cell rather than taking a column
-                      of its own: a seventh column would exist only on the child
-                      rows and would pull every figure out of line with the
-                      account row above it. */}
-                  <span className="pl-2 text-sm text-zinc-600 dark:text-zinc-400">
-                    {child.crn}
-                    {child.cpin && (
-                      <span className="ml-2 text-xs text-zinc-400 dark:text-zinc-500">
-                        CPIN {child.cpin}
-                      </span>
-                    )}
-                  </span>
+                  <span className="pl-2 text-sm text-zinc-600 dark:text-zinc-400">{child.crn}</span>
                 </span>
               </td>
+              {showCpin && (
+                <td className="px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-400 tabular-nums">
+                  {child.cpin ?? '—'}
+                </td>
+              )}
               <td className={NUM_CHILD}>{child.total_size.toLocaleString()}</td>
               <td className={NUM_CHILD}>{child.connected_size.toLocaleString()}</td>
               <td className={NUM_CHILD}>{child.not_connected_size.toLocaleString()}</td>
@@ -267,7 +299,7 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
 
           {/* Closes the tinted block so the next account starts cleanly. */}
           <tr className="border-b border-blue-200 dark:border-blue-500/30">
-            <td colSpan={8} className="h-1.5 bg-blue-50/60 dark:bg-blue-500/[0.07]" />
+            <td colSpan={columnCount} className="h-1.5 bg-blue-50/60 dark:bg-blue-500/[0.07]" />
           </tr>
         </>
       )}
@@ -302,10 +334,12 @@ function ChartButton({ label, onClick }: { label: string; onClick: () => void })
 
 function SubRowMessage({
   children,
+  span,
   tone,
   loading,
 }: {
   children: React.ReactNode;
+  span: number;
   tone?: 'error';
   loading?: boolean;
 }) {
@@ -313,7 +347,7 @@ function SubRowMessage({
     <tr className="bg-blue-50/60 dark:bg-blue-500/[0.07]">
       <td />
       <td
-        colSpan={7}
+        colSpan={span}
         className={clsx(
           'pl-12 pr-4 py-2.5 text-xs',
           tone === 'error' ? 'text-red-600 dark:text-red-400' : 'text-zinc-400',

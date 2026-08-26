@@ -55,10 +55,12 @@ export function SimpleMetricsTable({
     <TableCard>
       <TableStatus isLoading={isLoading} error={error} isEmpty={isEmpty} />
       {!isLoading && !error && !isEmpty && (
-        <div className="overflow-x-auto">
+        // The only scrolling element: rows move under a pinned header rather
+        // than the whole card sliding up the page.
+        <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800/60">
+              <tr>
                 {columns.map((column) => (
                   <SortableHeader
                     key={column.key}
