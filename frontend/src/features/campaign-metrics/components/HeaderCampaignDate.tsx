@@ -16,5 +16,7 @@ export function HeaderCampaignDate() {
 
 function Ready({ status }: { status: CdrStatus }) {
   const { date, setDate } = useCampaignDate(status);
-  return <SingleDateSelector date={date} onChange={setDate} status={status} variant="brand" />;
+  // `outline`, not `brand`: the header is a light surface inside the content
+  // panel now, not the filled blue band the brand variant was drawn for.
+  return <SingleDateSelector date={date} onChange={setDate} status={status} variant="outline" />;
 }

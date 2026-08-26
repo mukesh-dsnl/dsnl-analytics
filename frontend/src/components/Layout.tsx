@@ -77,12 +77,17 @@ function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }
           to={node.path}
           title={isCollapsed ? node.label : undefined}
           style={isCollapsed ? undefined : { paddingLeft: 12 + depth * 16 }}
+          // Sits on the glass panel, so identity comes from translucent white
+          // rather than the zinc/blue ramp the content panel uses — a light
+          // surface tint would punch a hole in the blur.
           className={clsx(
-            'flex-1 flex items-center gap-3 py-2.5 rounded-md text-sm font-medium transition-colors min-w-0',
+            'flex-1 flex items-center gap-3 py-2.5 rounded-xl text-sm font-medium transition-colors min-w-0',
             isCollapsed ? 'justify-center px-0' : 'px-3',
             isActive
-              ? 'bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
-              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50',
+              ? 'bg-white/25 text-white border border-white/30 shadow-sm'
+              // Pure white, not a tint: white on the brand blue is already only
+              // 2.75:1, so there is no contrast to spend on softening it.
+              : 'text-white hover:bg-white/15 border border-transparent',
           )}
         >
           {node.icon ? (
@@ -99,7 +104,7 @@ function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }
             onClick={() => toggle(node.label)}
             aria-label={isOpen ? `Collapse ${node.label}` : `Expand ${node.label}`}
             aria-expanded={isOpen}
-            className="p-2 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
+            className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/12 transition-colors shrink-0"
           >
             {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
@@ -179,22 +184,29 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 overflow-hidden font-sans transition-colors duration-300">
+    // The ground is the same brand blue as the sidebar, so the gutter around
+    // the content panel reads as a continuation of it rather than as a separate
+    // surface — the sidebar and the margin are one field of colour with the
+    // panel inset into it.
+    //
+    // Flat rather than a gradient, and that matters: any gradient would drift
+    // away from the sidebar's flat fill somewhere along its length and put a
+    // visible seam exactly where the two are supposed to be continuous.
+    <div className="flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100 bg-primary">
 
-      {/* Left Sidebar */}
+      {/* Left Sidebar — flush to the edge, full height, solid brand blue */}
       <aside className={clsx(
-        // width-only transition: the header/content column beside this is a
-        // separate flex-1 sibling with no width transition of its own, so it
-        // never animates — it just occupies whatever space this leaves it,
-        // frame by frame, as this alone resizes.
-        "bg-white dark:bg-[#09090B] flex flex-col shrink-0 z-20 transition-[width] duration-300",
+        // width-only transition: the content column beside this is a separate
+        // flex-1 sibling with no width transition of its own, so it never
+        // animates — it just occupies whatever space this leaves it, frame by
+        // frame, as this alone resizes.
+        "flex flex-col shrink-0 z-20 bg-primary transition-[width] duration-300",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
-        {/* Logo. The right border lives on the sections *below* this one, not
-            on the aside, so the brand band runs unbroken from the logo across
-            the header — no seam splitting the two halves of the blue. */}
+        {/* Logo. No divider under it — the panel is one unbroken field of
+            brand blue, and spacing alone separates the regions. */}
         <div className={clsx(
-          "h-16 flex items-center bg-primary border-b border-black/10 shrink-0",
+          "h-16 flex items-center shrink-0",
           isSidebarCollapsed ? "justify-center" : "px-6"
         )}>
           <Link to="/" className="flex items-center gap-3 group overflow-hidden">
@@ -221,8 +233,8 @@ export function Layout() {
             control. A real <button> rather than a click handler on a div, so
             it is reachable by Tab and operable with Enter/Space; the hint only
             surfaces on hover/focus, which is what keeps the column clean. */}
-        <div className="flex-1 flex flex-col overflow-y-auto border-r border-zinc-200 dark:border-zinc-800/60">
-          <nav className="py-6 px-4 space-y-1">
+        <div className="flex-1 flex flex-col overflow-y-auto">
+          <nav className="py-6 px-3 space-y-1">
             {NAV.map((node) => (
               <NavRow
                 key={node.path}
@@ -243,7 +255,7 @@ export function Layout() {
             title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className="flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none"
           >
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 dark:text-zinc-600 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-zinc-100 dark:group-hover:bg-zinc-800/50 transition-all duration-200">
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-white/12 transition-all duration-200">
               {isSidebarCollapsed ? (
                 <ChevronRight className="w-3.5 h-3.5" />
               ) : (
@@ -257,15 +269,17 @@ export function Layout() {
         </div>
 
         {/* Footer: identity + sign out */}
-        <div className="p-4 space-y-1 border-t border-r border-zinc-200 dark:border-zinc-800/60 shrink-0 transition-colors duration-300">
+        <div className="p-3 space-y-1 shrink-0">
           {!isSidebarCollapsed && username && (
-            <div className="px-3 pb-2 text-xs text-zinc-400 dark:text-zinc-500 truncate">Signed in as <span className="font-medium text-zinc-600 dark:text-zinc-300">{username}</span></div>
+            <div className="px-3 pb-2 text-xs text-white/75 truncate">Signed in as <span className="font-medium text-white">{username}</span></div>
           )}
           <button
             onClick={handleLogout}
             title={isSidebarCollapsed ? "Logout" : undefined}
             className={clsx(
-              "w-full flex items-center gap-3 py-2.5 rounded-md text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors",
+              // Rose rather than the content panel's red-600: a saturated red
+              // on translucent glass over a blue gradient goes muddy.
+              "w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-medium text-rose-100 hover:bg-rose-500/25 transition-colors",
               isSidebarCollapsed ? "justify-center px-0" : "px-3"
             )}
           >
@@ -275,20 +289,32 @@ export function Layout() {
         </div>
       </aside>
 
-      {/* Main Column */}
-      <div className="flex-1 flex flex-col min-w-0 bg-zinc-50 dark:bg-[#111113] transition-colors duration-300">
+      {/* Main content — the one floating panel. The gutter lives on this
+          wrapper rather than on the row, so the sidebar stays flush left while
+          the panel still floats clear of all four edges.
+
+          Opaque rather than glass, and it keeps the same zinc scroll surface it
+          always had: every card inside it is white, and those need a slightly
+          darker ground to read as raised. `overflow-hidden` is what makes the
+          corners actually clip the header and the scroll area. */}
+      <div className="flex-1 min-w-0 p-3">
+      {/* No border: against the brand blue the panel edge is already a hard
+          value change, and a light hairline there would read as a halo. */}
+      <div className="h-full flex flex-col rounded-2xl overflow-hidden
+                      shadow-lg shadow-black/10
+                      bg-zinc-50 dark:bg-[#111113]">
         {/* The date control lives here rather than on the page: it applies to
-            every route in its module, so it belongs above the outlet — and it
-            fills what was otherwise an empty band. Campaign Metrics gets its
-            own single-date control instead of the analytics date range,
-            since the two modules read the lake differently (one day vs a
-            range) and hold their selections in separate stores. */}
-        <header className="h-16 bg-primary border-b border-black/10 flex items-center justify-end gap-3 px-6 shrink-0 z-10 sticky top-0">
+            every route in its module, so it belongs above the outlet. Campaign
+            Metrics gets its own single-date control instead of the analytics
+            date range, since the two modules read the lake differently (one day
+            vs a range) and hold their selections in separate stores. */}
+        <header className="h-16 flex items-center justify-end gap-3 px-6 shrink-0 z-10
+                           bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60">
           {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            className="p-2 rounded-md text-white hover:bg-white/15 transition-colors"
+            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
           >
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -298,6 +324,7 @@ export function Layout() {
         <main className="flex-1 overflow-y-auto relative">
           <Outlet />
         </main>
+      </div>
       </div>
     </div>
   );
