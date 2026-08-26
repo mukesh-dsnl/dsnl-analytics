@@ -21,5 +21,7 @@ export function HeaderDateRange() {
 
 function Ready({ status }: { status: CdrStatus }) {
   const { from, to, setRange } = useDateRange(status);
-  return <DateSelector from={from} to={to} onChange={setRange} status={status} variant="brand" />;
+  // `outline`, not `brand`: the header is a light surface inside the content
+  // panel now, not the filled blue band the brand variant was drawn for.
+  return <DateSelector from={from} to={to} onChange={setRange} status={status} variant="outline" />;
 }
