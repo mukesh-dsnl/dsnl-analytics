@@ -93,7 +93,13 @@ export function DateSelector({ from, to, onChange, status, variant = 'outline' }
           id="cdr-date-range"
           // h-10 overrides the size variant's h-9 (cn is twMerge, so the later
           // utility wins) to match the filter inputs sharing this header row.
-          className="h-10 justify-start px-3 font-normal"
+          //
+          // The open state wears the same blue ring the inputs show on focus.
+          // Keyed off Radix's data-state rather than :focus-visible, which only
+          // fires for keyboard focus — clicking the trigger would otherwise
+          // leave it unhighlighted while its calendar is open.
+          className="h-10 justify-start px-3 font-normal
+                     data-[state=open]:ring-2 data-[state=open]:ring-blue-500 data-[state=open]:border-transparent"
         >
           <CalendarIcon className={variant === 'brand' ? 'text-white/70' : 'text-zinc-400'} />
           {label}

@@ -94,7 +94,7 @@ export function ServiceFilterBar({ fields, value, onChange, isPending }: Service
     // collapse to zero when there isn't — so this centres while it fits and
     // still scrolls from its true start once it doesn't. Centring the container
     // instead would push the overflow off the left edge, out of reach.
-    <div className="flex items-center gap-3 min-w-max py-1 mx-auto">
+    <div className="relative flex items-center gap-3 min-w-max py-1 mx-auto">
       {fields.map((key) => {
         const field = FIELD_CATALOG[key];
         const currentValue = value[key] ?? '';
@@ -161,14 +161,15 @@ export function ServiceFilterBar({ fields, value, onChange, isPending }: Service
         <RotateCcw className="w-4 h-4" />
       </button>
 
-      {/* Always present, and always the same width — only the text inside comes
-          and goes. Mounting this on demand changed the row's total width, and
-          because the row is centred (mx-auto) that re-centred every field on
-          the first keystroke and again when the debounce settled, so the whole
-          bar appeared to jump while being typed into. */}
+      {/* Taken out of the flow entirely and hung off the row's right edge, so
+          it contributes nothing to the row's width. That is what lets the
+          inputs centre on their own width alone: in flow, this changed the
+          total width and — because the row is centred — re-centred every field
+          on the first keystroke and again when the debounce settled, so the bar
+          appeared to jump while being typed into. */}
       <span
         aria-live="polite"
-        className="w-16 shrink-0 text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap"
+        className="absolute left-full ml-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap pointer-events-none"
       >
         {isPending ? 'Applying…' : ''}
       </span>
