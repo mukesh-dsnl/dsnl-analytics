@@ -119,7 +119,10 @@ class CdrRecordsResponse(CdrQueryResponse):
 
 class CdrSummary(BaseModel):
     total_calls: int = 0
-    total_participants: int = 0
+    # Distinct trailing-10-digit phone numbers in the slice — TEL_DIGIT on
+    # dial-out legs, CLI on dial-in ones. Counts subscribers reached, where
+    # total_calls counts the attempts made at them.
+    total_phone_numbers: int = 0
     minutes_usage: int = 0
     # Distinct CRN + CONF_NUM pairs — one conference/multicall room, however
     # many call legs it generated. Meaningful once the service is scoped to

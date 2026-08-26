@@ -12,9 +12,9 @@ import {
   PlugZap,
   Radio,
   Repeat2,
+  Smartphone,
   Timer,
   Unplug,
-  Users,
   Waypoints,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -180,9 +180,17 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   // two services actually built from rooms — on All or Voicedrop it would
   // just restate a number close to total_calls.
   const showTotalConferences = filters.service === 'conference' || filters.service === 'multicall';
-  const initiated = funnel.find((d) => d.label === 'Call Initiated')?.value ?? 0;
-  const connected = funnel.find((d) => d.label === 'Call Connected')?.value ?? 0;
-  const connectRate = initiated > 0 ? Math.round((connected / initiated) * 100) : null;
+  // Connect rate is read off the two-bar split — the connected bar as a share
+  // of both — and belongs to that chart alone. The Call Ratio card carried one
+  // too, against calls *initiated*, but a dial-out-only denominator made it a
+  // different number under the same name; one rate, in one place.
+  const connectionStatus = data?.connection_status ?? [];
+  const connectionTotal = connectionStatus.reduce((sum, d) => sum + d.value, 0);
+  const connectedCalls = connectionStatus
+    .filter((d) => !isNotConnected(d.label))
+    .reduce((sum, d) => sum + d.value, 0);
+  const connectionRate =
+    connectionTotal > 0 ? Math.round((connectedCalls / connectionTotal) * 100) : null;
 
   // Picking one chart title below focuses the grid on just that chart —
   // "All" (the default) shows the whole page as before.
@@ -208,9 +216,9 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           error={error}
         />
         <KpiCard
-          label="Total Participants"
-          value={formatCount(data?.summary.total_participants ?? 0)}
-          icon={Users}
+          label="Total Phone Numbers"
+          value={formatCount(data?.summary.total_phone_numbers ?? 0)}
+          icon={Smartphone}
           isLoading={isPending}
           error={error}
           accent="bg-violet-500/10 border-violet-500/20 text-violet-500"
@@ -283,18 +291,6 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
               error={error}
               isEmpty={isEmptyList(data?.call_funnel)}
               height={260}
-              headerSlot={
-                !isPending && !error && connectRate !== null ? (
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                      Connect Rate
-                    </p>
-                    <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
-                      {connectRate}%
-                    </p>
-                  </div>
-                ) : undefined
-              }
             >
               <CategoryBarChart
                 data={funnel}
@@ -344,9 +340,21 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
               isLoading={isPending}
               error={error}
               isEmpty={isEmptyList(data?.connection_status)}
+              headerSlot={
+                !isPending && !error && connectionRate !== null ? (
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                      Connect Rate
+                    </p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white leading-tight">
+                      {connectionRate}%
+                    </p>
+                  </div>
+                ) : undefined
+              }
             >
               <CategoryBarChart
-                data={data?.connection_status ?? []}
+                data={connectionStatus}
                 valueName="Calls"
                 height={260}
                 colorFor={(datum) => (isNotConnected(datum.label) ? theme.critical : theme.good)}
