@@ -19,6 +19,7 @@ import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
+import { HeaderSlotContext } from './HeaderSlot';
 
 interface NavNode {
   label: string;
@@ -137,6 +138,10 @@ export function Layout() {
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
+  // A callback ref rather than useRef: the outlet below needs this node as a
+  // *value* to portal into, so it has to survive a render, and a plain ref
+  // would still be null on the render the children mount in.
+  const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
 
   // Ensure theme is applied to document
   useEffect(() => {
@@ -308,13 +313,25 @@ export function Layout() {
             Metrics gets its own single-date control instead of the analytics
             date range, since the two modules read the lake differently (one day
             vs a range) and hold their selections in separate stores. */}
-        <header className="h-16 flex items-center justify-end gap-3 px-6 shrink-0 z-10
+        <header className="h-[72px] flex items-center gap-5 px-6 shrink-0 z-10
                            bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60">
+          {/* Page-owned controls land here — the per-service filters. Layout
+              only provides the space; what goes in it is decided by whichever
+              page is mounted (see HeaderSlot). It takes the free width so the
+              date control and theme toggle stay pinned right.
+
+              `overflow-x-auto` with no visible scrollbar: on the six-field
+              services this row can outrun a narrow window, and a scrollbar
+              inside a 72px band would eat the inputs' bottom edge. */}
+          <div
+            ref={setHeaderSlot}
+            className="flex-1 min-w-0 flex items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          />
           {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+            className="p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
           >
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -322,7 +339,9 @@ export function Layout() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto relative">
-          <Outlet />
+          <HeaderSlotContext.Provider value={headerSlot}>
+            <Outlet />
+          </HeaderSlotContext.Provider>
         </main>
       </div>
       </div>

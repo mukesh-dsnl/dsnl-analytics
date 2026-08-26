@@ -2,24 +2,28 @@ import { RotateCcw, X } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type { CdrFilters } from '../api';
 
-/** The narrowing fields a service can offer. Date range lives beside the tabs, not here. */
+/** The narrowing fields a service can offer. Date range lives beside them in the header, not here. */
 export type DetailField = 'account_id' | 'crn' | 'conf_num' | 'cpin' | 'time_from' | 'time_to';
 
 const FIELD_CATALOG: Record<
   DetailField,
-  { label: string; type: 'text' | 'time'; placeholder?: string }
+  { label: string; type: 'text' | 'time'; placeholder?: string; width: string }
 > = {
-  account_id: { label: 'Account ID', type: 'text', placeholder: 'e.g. 109533' },
-  crn: { label: 'CRN', type: 'text', placeholder: 'e.g. 296567' },
-  conf_num: { label: 'Conf Num', type: 'text', placeholder: 'e.g. 4471' },
-  cpin: { label: 'CPIN', type: 'text', placeholder: 'e.g. 8708430' },
-  time_from: { label: 'Time From', type: 'time' },
-  time_to: { label: 'Time To', type: 'time' },
+  // Widths are set per field from what actually goes in them — an account id is
+  // six digits, a CPIN seven — rather than one uniform width that would leave
+  // the short fields padded and the long ones clipping their own placeholder.
+  account_id: { label: 'Account ID', type: 'text', placeholder: 'Account ID', width: 'w-36' },
+  crn: { label: 'CRN', type: 'text', placeholder: 'CRN', width: 'w-32' },
+  conf_num: { label: 'Conf Num', type: 'text', placeholder: 'Conf Num', width: 'w-32' },
+  cpin: { label: 'CPIN', type: 'text', placeholder: 'CPIN', width: 'w-32' },
+  time_from: { label: 'Time From', type: 'time', width: 'w-[124px]' },
+  time_to: { label: 'Time To', type: 'time', width: 'w-[124px]' },
 };
 
 const INPUT_CLASS =
-  'w-full px-3 py-2.5 rounded-md border bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 ' +
-  'text-zinc-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ' +
+  'h-10 px-3 rounded-lg border bg-white dark:bg-[#09090B] border-zinc-200 dark:border-zinc-800 ' +
+  'text-zinc-900 dark:text-white text-sm placeholder:text-zinc-400 ' +
+  'focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ' +
   '[&::-webkit-calendar-picker-indicator]:dark:invert [&::-webkit-calendar-picker-indicator]:opacity-50';
 
 /**
@@ -29,7 +33,7 @@ const INPUT_CLASS =
  * clearing a time field discoverable and consistent with the "x" everywhere
  * else in this app.
  */
-const TIME_INPUT_CLASS = `${INPUT_CLASS} pr-8 [&::-webkit-clear-button]:hidden [&::-webkit-inner-spin-button]:hidden`;
+const TIME_INPUT_CLASS = `${INPUT_CLASS} pr-7 [&::-webkit-clear-button]:hidden [&::-webkit-inner-spin-button]:hidden`;
 
 interface ServiceFilterBarProps {
   /** Which fields this service offers — All shows none of these, just the date range. */
@@ -41,13 +45,19 @@ interface ServiceFilterBarProps {
 }
 
 /**
- * The narrowing filters for the active service tab.
+ * The narrowing filters for the active service tab, as they appear in the app
+ * header beside the date control.
+ *
+ * Laid out as a single compact row rather than a labelled card: it shares a
+ * 64px band with the date picker and theme toggle, so each field carries its
+ * name as a placeholder and the two time inputs are labelled by a prefix
+ * instead of a stacked label. The row scrolls sideways rather than wrapping —
+ * the header's height is fixed, and a wrapped second line would push the date
+ * control out of the band.
  *
  * Each service (Voicedrop / Conference / Multicall) offers a different field
  * set — see CDRDashboardPage — because they don't share an identity scheme:
- * CPIN, for instance, only means anything once CODR is in the join. The date
- * range and service itself live one level up, applying no matter which of
- * these fields are shown.
+ * CPIN, for instance, only means anything once CODR is in the join.
  *
  * Fields write straight through on every keystroke; the debounce lives one
  * level up, on the value the query reads, so typing stays responsive while
@@ -79,71 +89,89 @@ export function ServiceFilterBar({ fields, value, onChange, isPending }: Service
   };
 
   return (
-    <div className="bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg px-5 py-4 transition-colors duration-300">
-      <div className="flex items-end gap-3 flex-wrap">
-        {fields.map((key) => {
-          const field = FIELD_CATALOG[key];
-          const currentValue = value[key] ?? '';
+    // `mx-auto` rather than `justify-center` on the scroll container above:
+    // auto margins on a flex item absorb the free space when there is any, and
+    // collapse to zero when there isn't — so this centres while it fits and
+    // still scrolls from its true start once it doesn't. Centring the container
+    // instead would push the overflow off the left edge, out of reach.
+    <div className="flex items-center gap-3 min-w-max py-1 mx-auto">
+      {fields.map((key) => {
+        const field = FIELD_CATALOG[key];
+        const currentValue = value[key] ?? '';
 
+        if (field.type === 'time') {
           return (
-            <div key={key} className="flex-1 min-w-[150px]">
-              <label
-                htmlFor={`cdr-filter-${key}`}
-                className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5"
-              >
-                {field.label}
-              </label>
-
-              {field.type === 'time' ? (
-                <div className="relative">
-                  <input
-                    id={`cdr-filter-${key}`}
-                    type="time"
-                    value={currentValue}
-                    onChange={(e) => set(key, e.target.value)}
-                    onClick={openTimePicker}
-                    className={`${TIME_INPUT_CLASS} cursor-pointer`}
-                  />
-                  {currentValue && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        set(key, '');
-                      }}
-                      aria-label={`Clear ${field.label}`}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ) : (
+            <div key={key} className="flex items-center gap-1.5 shrink-0">
+              {/* The label has to be visible, not just a placeholder: a native
+                  time input always renders "--:--", so there is no empty state
+                  for a placeholder to occupy. */}
+              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                {key === 'time_from' ? 'From' : 'To'}
+              </span>
+              <div className="relative">
                 <input
                   id={`cdr-filter-${key}`}
-                  type="text"
+                  type="time"
+                  aria-label={field.label}
                   value={currentValue}
-                  placeholder={field.placeholder}
                   onChange={(e) => set(key, e.target.value)}
-                  className={INPUT_CLASS}
+                  onClick={openTimePicker}
+                  className={`${TIME_INPUT_CLASS} ${field.width} cursor-pointer`}
                 />
-              )}
+                {currentValue && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      set(key, '');
+                    }}
+                    aria-label={`Clear ${field.label}`}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           );
-        })}
+        }
 
-        <button
-          type="button"
-          onClick={clear}
-          disabled={!hasAny}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Clear
-        </button>
-      </div>
+        return (
+          <input
+            key={key}
+            id={`cdr-filter-${key}`}
+            type="text"
+            aria-label={field.label}
+            value={currentValue}
+            placeholder={field.placeholder}
+            onChange={(e) => set(key, e.target.value)}
+            className={`${INPUT_CLASS} ${field.width} shrink-0`}
+          />
+        );
+      })}
 
-      {isPending && <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-3">Applying filters…</p>}
+      <button
+        type="button"
+        onClick={clear}
+        disabled={!hasAny}
+        title="Clear filters"
+        aria-label="Clear filters"
+        className="inline-flex items-center justify-center h-10 w-10 shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+      >
+        <RotateCcw className="w-4 h-4" />
+      </button>
+
+      {/* Always present, and always the same width — only the text inside comes
+          and goes. Mounting this on demand changed the row's total width, and
+          because the row is centred (mx-auto) that re-centred every field on
+          the first keystroke and again when the debounce settled, so the whole
+          bar appeared to jump while being typed into. */}
+      <span
+        aria-live="polite"
+        className="w-16 shrink-0 text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap"
+      >
+        {isPending ? 'Applying…' : ''}
+      </span>
     </div>
   );
 }
