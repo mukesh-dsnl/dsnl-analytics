@@ -14,7 +14,7 @@ SQL this module was built against:
 
     Total size     = COUNT(DISTINCT CONFEREE_SEQ_NO) for the scope
     Connected size = COUNT(DISTINCT CONFEREE_SEQ_NO) FILTER (WHERE the
-                     conferee actually joined — INCONF_DATETIME_EPOC > 0)
+                     conferee actually joined — INCONFERENCE IS NOT NULL)
 
 Not-connected is total minus connected rather than its own DISTINCT COUNT: a
 connected conferee's rows are always a subset of that scope's rows, so the
@@ -129,9 +129,9 @@ def _run(sql: str, params: list[Any]) -> list[dict[str, Any]]:
 _METRIC_COLUMNS = """
        COUNT(DISTINCT (c.CRN, c.CONFEREE_SEQ_NO))                                 AS total_size,
        COUNT(DISTINCT (c.CRN, c.CONFEREE_SEQ_NO))
-           FILTER (WHERE c.INCONF_DATETIME_EPOC > 0)                              AS connected_size,
+           FILTER (WHERE c.INCONFERENCE IS NOT NULL)                              AS connected_size,
        CAST(COALESCE(CEIL(SUM(
-           CASE WHEN c.INCONF_DATETIME_EPOC > 0
+           CASE WHEN c.INCONFERENCE IS NOT NULL
                 THEN c.RELEASE_DATETIME_EPOC - c.INCONF_DATETIME_EPOC
                 ELSE 0 END
        ) / 60.0), 0) AS DOUBLE)                                                   AS total_minutes"""
@@ -252,9 +252,11 @@ def query_location_wise(f: CampaignFilter) -> list[dict[str, Any]]:
 #   failed attempts 35,889 = 13,606 never-rang + 22,283 rang-unanswered
 #   = attempts (45,499) - connected attempts (9,610) exactly.
 #
-# "Connected" is INCONF_DATETIME_EPOC > 0 throughout — the data dictionary's
+# "Connected" is INCONFERENCE IS NOT NULL throughout — the data dictionary's
 # note on field 15 makes INCONFERENCE the timestamp that decides whether a
-# person actually joined, and 0/null means they never did.
+# person actually joined. Its epoch twin INCONF_DATETIME_EPOC > 0 agrees on
+# every row measured (56,593 voicedrop rows on 2026-08-17, zero disagreements),
+# so this is the same population expressed against the documented column.
 #
 # One statement, panel-encoded as (panel, label, value) triples and unpacked in
 # Python, so the popup costs a single read of the day's file rather than five.
@@ -267,6 +269,21 @@ _INSIGHT_SQL = """
     UNION ALL
     SELECT 'summary', 'connected_users',
            CAST(COUNT(DISTINCT (CRN, CONFEREE_SEQ_NO)) FILTER (WHERE CONNECTED) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    -- Connected users split by how the leg was established. These are counted
+    -- independently, so a conferee with both a connected dial-in and a
+    -- connected dial-out leg lands in both and the two need not sum to
+    -- connected_users — which is why the popup prints them as a breakdown
+    -- beside the headline rather than as a partition of it.
+    SELECT 'summary', 'connected_dial_out',
+           CAST(COUNT(DISTINCT (CRN, CONFEREE_SEQ_NO))
+                FILTER (WHERE CONNECTED AND IS_DIAL_OUT) AS DOUBLE)
+    FROM slice
+    UNION ALL
+    SELECT 'summary', 'connected_dial_in',
+           CAST(COUNT(DISTINCT (CRN, CONFEREE_SEQ_NO))
+                FILTER (WHERE CONNECTED AND NOT IS_DIAL_OUT) AS DOUBLE)
     FROM slice
     UNION ALL
     -- Failure split. ALERT is the ring timestamp (data dictionary #13), so a
@@ -367,13 +384,23 @@ def query_account_insight(
            c.ALERT,
            c.CONFDIAL_REBLAST_COUNT,
            c.AID_COUNT,
-           (c.INCONF_DATETIME_EPOC IS NOT NULL AND c.INCONF_DATETIME_EPOC <> 0) AS CONNECTED,
-           -- Empirically CALLTYPE = 1 is the dialled-out leg: on 2026-08-17 the
-           -- voicedrop rows split 55,565 / 1,028 between 1 and 0, and voicedrop
-           -- is by definition outbound blasting. This matches the mapping
-           -- cdr/service.py already uses, and contradicts the data dictionary's
-           -- field #5 text ("1-Dial In and 0-Dial Out"), which the data does not
-           -- bear out.
+           (c.INCONFERENCE IS NOT NULL) AS CONNECTED,
+           -- CALLTYPE = 1 is Dial Out and 0 is Dial In. This contradicts the
+           -- data dictionary's field #5 text ("1-Dial In and 0-Dial Out"), so
+           -- it was settled against the columns the dictionary itself marks as
+           -- direction-specific. On 2026-08-17's voicedrop rows:
+           --
+           --   CALLTYPE=1 (55,565): TEL_DIGIT 55,565 · PROCEEDING 55,171 ·
+           --                        ALERT 35,104 · CLI 0
+           --   CALLTYPE=0  (1,028): TEL_DIGIT 0 · PROCEEDING 0 · ALERT 0 ·
+           --                        CLI 1,028 · DID 1,028
+           --
+           -- TEL_DIGIT is "phone number for Dial Out calls" (#11) and
+           -- PROCEEDING/ALERT are "Only for Dial Out calls" (#12, #13); CLI is
+           -- "phone number for Dial In calls" (#9). Every one of those lands on
+           -- CALLTYPE=1 for outbound and CALLTYPE=0 for inbound, with no
+           -- overlap. Voicedrop being an outbound blast agrees. This is also
+           -- the mapping cdr/service.py already uses.
            (c.CALLTYPE = 1) AS IS_DIAL_OUT
     {from_clause}
     {where_sql}
@@ -470,6 +497,8 @@ def query_account_insight(
             "total_uploaded": uploaded,
             "dial_attempts": attempts,
             "connected_users": connected_users,
+            "connected_dial_in": scalar("summary", "connected_dial_in"),
+            "connected_dial_out": scalar("summary", "connected_dial_out"),
             "connect_percentage": pct(connected_users, uploaded),
         },
         "failed": {

@@ -1,42 +1,49 @@
-import { PercentagePill } from './PercentagePill';
-import { useSortableRows } from '../useSortableRows';
-import {
-  SortableHeader,
-  TableCard,
-  TableStatus,
-  TD_CLASS,
-  TD_CLASS_RIGHT,
-} from './TableChrome';
+import type { LucideIcon } from 'lucide-react';
+import { ConnectedBar } from './ConnectedBar';
+import type { SortState } from '../useSortableRows';
+import { usePagination } from '../usePagination';
+import { SortableHeader, TableCard, TablePager, TableStatus } from './TableChrome';
 import type { CampaignMetricsRow } from '../api';
 
-interface SimpleRow extends CampaignMetricsRow {
+export interface SimpleRow extends CampaignMetricsRow {
   label: string;
 }
 
-type SortKey = 'label' | keyof CampaignMetricsRow;
+export type SimpleSortKey = 'label' | keyof CampaignMetricsRow;
 
 interface SimpleMetricsTableProps {
   /** What the first column is called — "Service Provider" or "Location". */
   columnLabel: string;
+  /** Badge glyph for the first cell, matching the active view. */
+  icon: LucideIcon;
   rows: SimpleRow[] | undefined;
   isLoading: boolean;
   error: Error | null;
+  sort: SortState<SimpleSortKey>;
+  onSort: (key: SimpleSortKey) => void;
 }
+
+const NUM = 'px-4 py-3 text-right text-sm tabular-nums font-semibold text-zinc-900 dark:text-white';
 
 /**
  * The Service Provider Wise and Location Wise tables — identical shape, just
  * a different first column, so one component covers both rather than two
  * near-duplicates.
  */
-export function SimpleMetricsTable({ columnLabel, rows, isLoading, error }: SimpleMetricsTableProps) {
-  const { rows: sorted, sort, toggle } = useSortableRows<SimpleRow, SortKey>(rows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
+export function SimpleMetricsTable({
+  columnLabel,
+  icon: Icon,
+  rows,
+  isLoading,
+  error,
+  sort,
+  onSort,
+}: SimpleMetricsTableProps) {
+  const { pageRows, page, pageCount, total, setPage, isPaged } = usePagination(rows);
 
-  const isEmpty = !isLoading && !error && (sorted?.length ?? 0) === 0;
+  const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
 
-  const columns: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
+  const columns: { key: SimpleSortKey; label: string; align: 'left' | 'right' }[] = [
     { key: 'label', label: columnLabel, align: 'left' },
     { key: 'total_size', label: 'Total Size', align: 'right' },
     { key: 'connected_size', label: 'Connected Size', align: 'right' },
@@ -58,30 +65,45 @@ export function SimpleMetricsTable({ columnLabel, rows, isLoading, error }: Simp
                     label={column.label}
                     sortKey={column.key}
                     sort={sort}
-                    onSort={toggle}
+                    onSort={onSort}
                     align={column.align}
                   />
                 ))}
               </tr>
             </thead>
             <tbody>
-              {sorted!.map((row) => (
+              {pageRows!.map((row) => (
                 <tr
                   key={row.label}
                   className="border-b border-zinc-100 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
                 >
-                  <td className={`${TD_CLASS} font-medium text-zinc-900 dark:text-white`}>{row.label}</td>
-                  <td className={TD_CLASS_RIGHT}>{row.total_size.toLocaleString()}</td>
-                  <td className={TD_CLASS_RIGHT}>{row.connected_size.toLocaleString()}</td>
-                  <td className={TD_CLASS_RIGHT}>{row.not_connected_size.toLocaleString()}</td>
-                  <td className={TD_CLASS_RIGHT}>
-                    <PercentagePill value={row.connected_percentage} />
+                  <td className="px-4 py-3">
+                    <span className="flex items-center gap-2.5">
+                      <span
+                        aria-hidden="true"
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 shrink-0"
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-white">
+                        {row.label}
+                      </span>
+                    </span>
+                  </td>
+                  <td className={NUM}>{row.total_size.toLocaleString()}</td>
+                  <td className={NUM}>{row.connected_size.toLocaleString()}</td>
+                  <td className={NUM}>{row.not_connected_size.toLocaleString()}</td>
+                  <td className="px-4 py-3">
+                    <ConnectedBar value={row.connected_percentage} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {!isLoading && !error && !isEmpty && isPaged && (
+        <TablePager page={page} pageCount={pageCount} total={total} onPage={setPage} />
       )}
     </TableCard>
   );

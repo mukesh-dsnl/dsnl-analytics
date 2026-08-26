@@ -1,11 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Loader2, RadioTower, Table2, X } from 'lucide-react';
+import clsx from 'clsx';
 
 import { campaignApi } from '../api';
 import type { AccountInsight, CampaignFilter } from '../api';
-import { useChartTheme } from '../../cdr-dashboard/chartTheme';
-import { BlastAidChart, BlastAidLegend } from './BlastAidChart';
+import { useChartTooltip } from '../useChartTooltip';
+import { useInsightPalette } from '../insightPalette';
+import { BlastAidChart, BlastAidLegend, BlastAidTable } from './BlastAidChart';
+import { ChartTooltip } from './ChartTooltip';
+import { InsightStats } from './InsightStats';
 
 interface AccountInsightDialogProps {
   filters: CampaignFilter;
@@ -55,27 +60,30 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
         aria-modal="true"
         aria-label={`Campaign insight for account ${account}`}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl max-h-[88vh] flex flex-col bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl overflow-hidden"
+        className="w-full max-w-5xl max-h-[90vh] flex flex-col bg-zinc-50 dark:bg-[#0c0c0e] border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
       >
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+            <h2 className="text-base font-bold text-zinc-900 dark:text-white truncate">
               Account {account}
               {crn && <span className="text-zinc-400 dark:text-zinc-500"> · CRN {crn}</span>}
             </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">{filters.date}</p>
+            <p className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              <CalendarDays className="w-3.5 h-3.5" />
+              {filters.date}
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
+            className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-6">
+        <div className="overflow-y-auto p-5 space-y-4">
           {isPending ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -99,110 +107,155 @@ function InsightBody({ insight }: { insight: AccountInsight }) {
 
   return (
     <>
-      <StatStrip summary={summary} />
+      <InsightStats summary={summary} />
 
-      <Section title={`Failed attempts (${failed.total.toLocaleString()} total)`}>
-        <SplitBar
-          segments={[
-            {
-              label: `Never rang (no ALERT) — ${failed.never_rang.toLocaleString()}`,
-              value: failed.never_rang,
-              percentage: failed.never_rang_percentage,
-              slot: 7,
-            },
-            {
-              label: `Rang, unanswered — ${failed.rang_unanswered.toLocaleString()}`,
-              value: failed.rang_unanswered,
-              percentage: failed.rang_unanswered_percentage,
-              slot: 3,
-            },
-          ]}
-        />
-      </Section>
-
-      {disconnect_reasons.length > 0 && (
-        <Section title="Disconnect reasons (share of all failures)">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card title={`Failed attempts (${failed.total.toLocaleString()} total)`}>
           <SplitBar
-            segments={disconnect_reasons.map((r, index) => ({
-              label:
-                r.reason === 'Other'
-                  ? `Other — ${r.count.toLocaleString()}`
-                  : `Reason ${r.reason} — ${r.count.toLocaleString()}`,
-              value: r.count,
-              percentage: r.percentage,
-              slot: [7, 3, 4][index] ?? 4,
-            }))}
+            segments={[
+              {
+                label: 'Never rang (no ALERT)',
+                value: failed.never_rang,
+                percentage: failed.never_rang_percentage,
+                slot: 0,
+              },
+              {
+                label: 'Rang, unanswered',
+                value: failed.rang_unanswered,
+                percentage: failed.rang_unanswered_percentage,
+                slot: 1,
+              },
+            ]}
           />
-        </Section>
-      )}
+        </Card>
+
+        <Card title="Disconnect reasons (share of all failures)">
+          {disconnect_reasons.length > 0 ? (
+            <SplitBar
+              segments={disconnect_reasons.map((r, index) => ({
+                label: r.reason === 'Other' ? 'Other' : `Reason ${r.reason}`,
+                value: r.count,
+                percentage: r.percentage,
+                slot: index,
+              }))}
+            />
+          ) : (
+            <p className="text-xs text-zinc-400">No failed attempts to break down.</p>
+          )}
+        </Card>
+      </div>
 
       {carriers.length > 0 && (
-        <Section title={`Connect % by carrier (used: ${carriers.map((c) => c.carrier).join(' + ')})`}>
-          <CarrierBars carriers={carriers} />
-        </Section>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4">
+          <Card title={`Connect % by carrier (used: ${carriers.map((c) => c.carrier).join(' + ')})`}>
+            <CarrierBars carriers={carriers} />
+          </Card>
+          <div className="flex items-center gap-3 px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B] lg:w-56">
+            <span className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-sky-50 text-sky-500 dark:bg-sky-500/15 dark:text-sky-400 shrink-0">
+              <RadioTower className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                Total carriers used
+              </p>
+              <p className="text-2xl font-bold text-zinc-900 dark:text-white leading-tight tabular-nums">
+                {carriers.length}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
-      {blasts.length > 0 && (
-        <Section title="Blast and AID breakdown">
-          <div className="space-y-1">
-            <BlastAidLegend />
-            {blasts.map((blast) => (
-              <div key={blast.label} className="pt-3">
-                <p className="text-xs font-semibold text-zinc-900 dark:text-white mb-1">
-                  {blast.label}
-                </p>
-                <BlastAidChart aids={blast.aids} />
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {blasts.length > 0 && <BlastSection blasts={blasts} />}
     </>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section>
-      <h3 className="text-xs font-semibold text-zinc-900 dark:text-white mb-2.5">{title}</h3>
+    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B]">
+      <h3 className="text-xs font-semibold text-zinc-900 dark:text-white mb-3">{title}</h3>
       {children}
     </section>
   );
 }
 
-function StatStrip({ summary }: { summary: AccountInsight['summary'] }) {
-  const stats = [
-    { label: 'Total uploaded', value: summary.total_uploaded.toLocaleString() },
-    { label: 'Dial attempts', value: summary.dial_attempts.toLocaleString() },
-    { label: 'Connected users', value: summary.connected_users.toLocaleString() },
-  ];
+/** Bar chart or the same numbers as a table — the non-visual path to the figures. */
+type BlastView = 'chart' | 'table';
+
+function BlastSection({ blasts }: { blasts: AccountInsight['blasts'] }) {
+  const [view, setView] = useState<BlastView>('chart');
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          className="px-4 py-3 rounded-md border border-zinc-200 dark:border-zinc-800/60"
-        >
-          <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
-            {stat.label}
-          </p>
-          <p className="text-xl font-bold text-zinc-900 dark:text-white mt-0.5 tabular-nums">
-            {stat.value}
-          </p>
+    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B]">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-900 dark:text-white mb-2">
+            Blast and AID breakdown
+          </h3>
+          {view === 'chart' && <BlastAidLegend />}
         </div>
-      ))}
-      {/* Connect % is the figure the whole popup exists to explain, so it gets
-          the one filled tile rather than sitting as a fourth plain number. */}
-      <div className="px-4 py-3 rounded-md border border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10">
-        <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 truncate">
-          Connect %
-        </p>
-        <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-0.5 tabular-nums">
-          {summary.connect_percentage.toFixed(2)}%
-        </p>
+
+        <div className="flex items-center gap-1 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 shrink-0">
+          <ViewToggle
+            active={view === 'chart'}
+            onClick={() => setView('chart')}
+            icon={BarChart3}
+            label="Bar Chart"
+          />
+          <ViewToggle
+            active={view === 'table'}
+            onClick={() => setView('table')}
+            icon={Table2}
+            label="Table"
+          />
+        </div>
       </div>
-    </div>
+
+      <div className="space-y-4">
+        {blasts.map((blast) => (
+          <div key={blast.label}>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-white mb-1">
+              {blast.label}
+            </p>
+            {view === 'chart' ? (
+              <BlastAidChart aids={blast.aids} />
+            ) : (
+              <BlastAidTable aids={blast.aids} />
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ViewToggle({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof BarChart3;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={clsx(
+        'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+        active
+          ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
+          : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50',
+      )}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </button>
   );
 }
 
@@ -210,51 +263,81 @@ interface Segment {
   label: string;
   value: number;
   percentage: number;
-  /** Index into the app's validated categorical ramp. */
+  /** Index into the popup's own softened palette — see insightPalette.ts. */
   slot: number;
 }
 
 /**
  * A single 100%-wide bar split into labelled segments, with the legend below.
  *
- * Percentages are printed inside each segment, so the split is readable without
- * relying on the colours to carry it.
+ * Percentages are printed inside each segment and counts sit in the legend, so
+ * the split is fully readable without hovering; the tooltip is the precise
+ * reading on top of that, not the only one.
  */
 function SplitBar({ segments }: { segments: Segment[] }) {
-  const theme = useChartTheme();
+  const palette = useInsightPalette();
+  const { tooltip, show, hide } = useChartTooltip();
   const total = segments.reduce((sum, s) => sum + s.value, 0);
   if (total === 0) return <p className="text-xs text-zinc-400">Nothing to show.</p>;
 
+  const colorOf = (slot: number) => palette.split[slot] ?? palette.split[palette.split.length - 1];
+
   return (
-    <div className="space-y-2">
-      <div className="flex w-full h-7 rounded-md overflow-hidden gap-0.5">
-        {segments
-          .filter((s) => s.value > 0)
-          .map((segment) => (
-            <div
-              key={segment.label}
-              className="flex items-center justify-center min-w-0"
-              style={{
-                width: `${(segment.value / total) * 100}%`,
-                backgroundColor: theme.categorical[segment.slot],
-              }}
-              title={`${segment.label} (${segment.percentage.toFixed(1)}%)`}
-            >
-              <span className="text-[11px] font-semibold text-white truncate px-1">
-                {segment.percentage >= 8 ? `${segment.percentage.toFixed(1)}%` : ''}
-              </span>
-            </div>
-          ))}
+    <div className="space-y-3">
+      <div className="relative" data-tooltip-root>
+        <ChartTooltip state={tooltip} />
+        <div className="flex w-full h-8 rounded-lg overflow-hidden gap-0.5" onMouseLeave={hide}>
+          {segments
+            .filter((s) => s.value > 0)
+            .map((segment) => (
+              <div
+                key={segment.label}
+                className="flex items-center justify-center min-w-0 transition-opacity"
+                style={{
+                  width: `${(segment.value / total) * 100}%`,
+                  backgroundColor: colorOf(segment.slot),
+                  // Everything except the hovered segment recedes.
+                  opacity: tooltip !== null && tooltip.title !== segment.label ? 0.35 : 1,
+                }}
+                onMouseMove={(e) =>
+                  show(e, {
+                    title: segment.label,
+                    lines: [
+                      {
+                        label: 'Count',
+                        value: segment.value.toLocaleString(),
+                        color: colorOf(segment.slot),
+                      },
+                      { label: 'Share', value: `${segment.percentage.toFixed(1)}%` },
+                    ],
+                  })
+                }
+              >
+                <span className="text-[11px] font-bold text-white truncate px-1">
+                  {segment.percentage >= 8 ? `${segment.percentage.toFixed(1)}%` : ''}
+                </span>
+              </div>
+            ))}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
         {segments.map((segment) => (
-          <span key={segment.label} className="inline-flex items-center gap-1.5">
-            <span
-              className="w-2.5 h-2.5 rounded-sm shrink-0"
-              style={{ backgroundColor: theme.categorical[segment.slot] }}
-            />
-            {segment.label}
-          </span>
+          <div key={segment.label} className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+              <span
+                className="w-2.5 h-2.5 rounded-sm shrink-0"
+                style={{ backgroundColor: colorOf(segment.slot) }}
+              />
+              {segment.label}
+            </p>
+            <p className="text-xs font-semibold text-zinc-900 dark:text-white tabular-nums mt-0.5">
+              {segment.value.toLocaleString()}{' '}
+              <span className="font-normal text-zinc-400 dark:text-zinc-500">
+                ({segment.percentage.toFixed(1)}%)
+              </span>
+            </p>
+          </div>
         ))}
       </div>
     </div>
@@ -262,34 +345,59 @@ function SplitBar({ segments }: { segments: Segment[] }) {
 }
 
 function CarrierBars({ carriers }: { carriers: AccountInsight['carriers'] }) {
-  const theme = useChartTheme();
+  const palette = useInsightPalette();
+  const { tooltip, show, hide } = useChartTooltip();
   // Scaled against the best performer, not against 100%, so single-digit
   // connect rates stay comparable to each other instead of all reading as
   // slivers against an empty track.
   const peak = Math.max(...carriers.map((c) => c.connect_percentage), 0.01);
 
   return (
-    <div className="space-y-2">
-      {carriers.map((carrier, index) => (
-        <div key={carrier.carrier} className="flex items-center gap-3">
-          <span className="w-20 shrink-0 text-xs text-zinc-600 dark:text-zinc-400">
-            Carrier {carrier.carrier}
-          </span>
-          <div className="flex-1 h-5 min-w-0">
+    <div className="relative space-y-2.5" data-tooltip-root onMouseLeave={hide}>
+      <ChartTooltip state={tooltip} />
+      {carriers.map((carrier, index) => {
+        const title = `Carrier ${carrier.carrier}`;
+        const color = palette.carrier[index % palette.carrier.length];
+
+        return (
+          <div
+            key={carrier.carrier}
+            className="flex items-center gap-3 transition-opacity"
+            style={{ opacity: tooltip !== null && tooltip.title !== title ? 0.35 : 1 }}
+          >
+            <span className="w-20 shrink-0 text-xs text-zinc-600 dark:text-zinc-400">{title}</span>
+            {/* The whole track takes the hover, not just the painted portion —
+                a 6% bar is a sliver, and the row is what the reader is aiming at. */}
             <div
-              className="h-full rounded-sm"
-              style={{
-                width: `${Math.max((carrier.connect_percentage / peak) * 100, 1)}%`,
-                backgroundColor: theme.categorical[index % theme.categorical.length],
-              }}
-              title={`${carrier.connected.toLocaleString()} of ${carrier.total.toLocaleString()} connected`}
-            />
+              className="flex-1 h-2.5 min-w-0 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden"
+              onMouseMove={(e) =>
+                show(e, {
+                  title,
+                  lines: [
+                    {
+                      label: 'Connected',
+                      value: `${carrier.connected.toLocaleString()} of ${carrier.total.toLocaleString()}`,
+                      color,
+                    },
+                    { label: 'Connect %', value: `${carrier.connect_percentage.toFixed(2)}%` },
+                  ],
+                })
+              }
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.max((carrier.connect_percentage / peak) * 100, 1)}%`,
+                  backgroundColor: color,
+                }}
+              />
+            </div>
+            <span className="w-16 shrink-0 text-right text-xs font-semibold text-zinc-900 dark:text-white tabular-nums">
+              {carrier.connect_percentage.toFixed(2)}%
+            </span>
           </div>
-          <span className="w-14 shrink-0 text-right text-xs font-semibold text-zinc-900 dark:text-white tabular-nums">
-            {carrier.connect_percentage.toFixed(2)}%
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

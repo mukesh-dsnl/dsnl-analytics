@@ -1,16 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
 import { campaignApi } from '../api';
-import type { CampaignFilter, CampaignService } from '../api';
+import type { AccountMetricsRow, CampaignFilter, CampaignService } from '../api';
 import { useCdrStatus, useCampaignDate } from '../hooks';
+import { useSortableRows } from '../useSortableRows';
+import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
 import { AccountWiseTable } from '../components/AccountWiseTable';
 import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
+import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
+import { MetricsToolbar } from '../components/MetricsToolbar';
+import type { ToolbarTab } from '../components/MetricsToolbar';
 
 interface CampaignMetricsPageProps {
   service: CampaignService;
@@ -18,11 +22,17 @@ interface CampaignMetricsPageProps {
 
 type View = 'account' | 'provider' | 'location';
 
-const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
+const VIEWS: ToolbarTab<View>[] = [
   { id: 'account', label: 'Account wise', icon: Users },
   { id: 'provider', label: 'Service Provider wise', icon: Radio },
   { id: 'location', label: 'Location wise', icon: MapPin },
 ];
+
+const VIEW_META: Record<View, { column: string; placeholder: string; icon: typeof Radio }> = {
+  account: { column: 'Account', placeholder: 'Search account…', icon: Users },
+  provider: { column: 'Service Provider', placeholder: 'Search provider…', icon: Radio },
+  location: { column: 'Location', placeholder: 'Search location…', icon: MapPin },
+};
 
 function Banner({ children }: { children: ReactNode }) {
   return (
@@ -39,8 +49,7 @@ function Banner({ children }: { children: ReactNode }) {
  * Unlike the CDR analytics dashboard, this reads a single day rather than a
  * range — the date lives in its own header control (HeaderCampaignDate) and
  * store, so navigating between Campaign Metrics' three services keeps the
- * selected day the same way the analytics date range survives navigation
- * between its service pages.
+ * selected day.
  */
 export function CampaignMetricsPage({ service }: CampaignMetricsPageProps) {
   const { data: status, isPending, error, refetch } = useCdrStatus();
@@ -73,29 +82,100 @@ export function CampaignMetricsPage({ service }: CampaignMetricsPageProps) {
 function Metrics({ service, status }: { service: CampaignService; status: CdrStatus }) {
   const { date } = useCampaignDate(status);
   const [view, setView] = useState<View>('account');
+  const [search, setSearch] = useState('');
 
   const filters: CampaignFilter = { date, service };
   const queryKey = ['campaign', view, filters.date, filters.service] as const;
+  const enabled = status.available;
 
   const accountQuery = useQuery({
     queryKey,
     queryFn: () => campaignApi.accountWise(filters),
-    enabled: status.available && view === 'account',
+    enabled: enabled && view === 'account',
   });
   const providerQuery = useQuery({
     queryKey,
     queryFn: () => campaignApi.serviceProviderWise(filters),
-    enabled: status.available && view === 'provider',
+    enabled: enabled && view === 'provider',
   });
   const locationQuery = useQuery({
     queryKey,
     queryFn: () => campaignApi.locationWise(filters),
-    enabled: status.available && view === 'location',
+    enabled: enabled && view === 'location',
   });
+
+  const active =
+    view === 'account' ? accountQuery : view === 'provider' ? providerQuery : locationQuery;
+
+  // Search and sort both live here rather than inside the tables, so Export can
+  // hand back exactly what the table is showing — every page of it, in the
+  // order it is shown.
+  const term = search.trim().toLowerCase();
+
+  const accountRows = useMemo(() => {
+    const rows = accountQuery.data?.rows;
+    if (!rows || !term) return rows;
+    return rows.filter((r) => r.account.toLowerCase().includes(term));
+  }, [accountQuery.data, term]);
+
+  const simpleRows = useMemo((): SimpleRow[] | undefined => {
+    const rows =
+      view === 'provider'
+        ? providerQuery.data?.rows.map((r) => ({ ...r, label: r.service_provider }))
+        : view === 'location'
+          ? locationQuery.data?.rows.map((r) => ({ ...r, label: r.location }))
+          : undefined;
+    if (!rows || !term) return rows;
+    return rows.filter((r) => r.label.toLowerCase().includes(term));
+  }, [view, providerQuery.data, locationQuery.data, term]);
+
+  const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(accountRows, {
+    key: 'total_size',
+    direction: 'desc',
+  });
+  const simpleSort = useSortableRows<SimpleRow, SimpleSortKey>(simpleRows, {
+    key: 'total_size',
+    direction: 'desc',
+  });
+
+  const meta = VIEW_META[view];
+
+  const handleExport = () => {
+    const stamp = `${service}-${view}-${date}`;
+    if (view === 'account') {
+      downloadCsv(
+        `campaign-${stamp}.csv`,
+        ['Account', 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %', 'Total Minutes'],
+        (accountSort.rows ?? []).map((r) => [
+          r.account,
+          r.total_size,
+          r.connected_size,
+          r.not_connected_size,
+          r.connected_percentage,
+          r.total_minutes,
+        ]),
+      );
+      return;
+    }
+    downloadCsv(
+      `campaign-${stamp}.csv`,
+      [meta.column, 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %'],
+      (simpleSort.rows ?? []).map((r) => [
+        r.label,
+        r.total_size,
+        r.connected_size,
+        r.not_connected_size,
+        r.connected_percentage,
+      ]),
+    );
+  };
+
+  const visibleCount =
+    view === 'account' ? (accountSort.rows?.length ?? 0) : (simpleSort.rows?.length ?? 0);
 
   return (
     <div className="p-8 max-w-[1500px] mx-auto min-h-full">
-      <div className="space-y-6">
+      <div className="space-y-5">
         {!status.available && (
           <Banner>
             <p className="font-medium">No CDR exports are readable.</p>
@@ -106,37 +186,36 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           </Banner>
         )}
 
-        {status.available && !status.codr.available && (service === 'conference' || service === 'multicall') && (
-          <Banner>
-            <p className="font-medium">
-              CODR is unreadable — {service === 'conference' ? 'Conference' : 'Multicall'} is unavailable.
-            </p>
-            <p className="mt-0.5 break-words">
-              {service === 'conference' ? 'Conference' : 'Multicall'} is indistinguishable without CODR's
-              MODULE_TYPE.
-            </p>
-          </Banner>
-        )}
+        {status.available &&
+          !status.codr.available &&
+          (service === 'conference' || service === 'multicall') && (
+            <Banner>
+              <p className="font-medium">
+                CODR is unreadable — {service === 'conference' ? 'Conference' : 'Multicall'} is
+                unavailable.
+              </p>
+              <p className="mt-0.5 break-words">
+                {service === 'conference' ? 'Conference' : 'Multicall'} is indistinguishable without
+                CODR's MODULE_TYPE.
+              </p>
+            </Banner>
+          )}
 
-        <div className="flex flex-wrap gap-2">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setView(v.id)}
-              aria-pressed={view === v.id}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-                view === v.id
-                  ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
-                  : 'text-zinc-500 border-zinc-200 dark:text-zinc-400 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-              )}
-            >
-              <v.icon className="w-3.5 h-3.5" />
-              {v.label}
-            </button>
-          ))}
-        </div>
+        <MetricsToolbar
+          tabs={VIEWS}
+          active={view}
+          onTab={(next) => {
+            setView(next);
+            // The term belongs to the column it was typed against; carrying
+            // "109775" into Location wise would silently show an empty table.
+            setSearch('');
+          }}
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder={meta.placeholder}
+          onExport={handleExport}
+          canExport={visibleCount > 0}
+        />
 
         {!status.available ? (
           <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
@@ -145,24 +224,28 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
         ) : view === 'account' ? (
           <AccountWiseTable
             filters={filters}
-            rows={accountQuery.data?.rows}
+            rows={accountSort.rows}
             isLoading={accountQuery.isPending}
             error={accountQuery.error}
-          />
-        ) : view === 'provider' ? (
-          <SimpleMetricsTable
-            columnLabel="Service Provider"
-            rows={providerQuery.data?.rows.map((r) => ({ ...r, label: r.service_provider }))}
-            isLoading={providerQuery.isPending}
-            error={providerQuery.error}
+            sort={accountSort.sort}
+            onSort={accountSort.toggle}
           />
         ) : (
           <SimpleMetricsTable
-            columnLabel="Location"
-            rows={locationQuery.data?.rows.map((r) => ({ ...r, label: r.location }))}
-            isLoading={locationQuery.isPending}
-            error={locationQuery.error}
+            columnLabel={meta.column}
+            icon={meta.icon}
+            rows={simpleSort.rows}
+            isLoading={active.isPending}
+            error={active.error}
+            sort={simpleSort.sort}
+            onSort={simpleSort.toggle}
           />
+        )}
+
+        {term && visibleCount === 0 && !active.isPending && !active.error && (
+          <p className={clsx('text-center text-sm text-zinc-500 dark:text-zinc-400')}>
+            Nothing matches “{search.trim()}”.
+          </p>
         )}
       </div>
     </div>
