@@ -200,8 +200,11 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     view === 'account' ? (accountSort.rows?.length ?? 0) : (simpleSort.rows?.length ?? 0);
 
   return (
-    <div className="p-8 max-w-[1500px] mx-auto min-h-full">
-      <div className="space-y-5">
+    // A full-height flex column rather than a growing page: the table below
+    // takes the remaining space and scrolls inside itself, so the tabs, the
+    // table's own header and the pager all stay put while the rows move.
+    <div className="h-full p-8 max-w-[1500px] mx-auto">
+      <div className="h-full flex flex-col gap-5 min-h-0">
         {!status.available && (
           <Banner>
             <p className="font-medium">No CDR exports are readable.</p>
@@ -241,49 +244,57 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             headerSlot,
           )}
 
-        <MetricsToolbar
-          tabs={VIEWS}
-          active={view}
-          onTab={(next) => {
-            setView(next);
-            // The term belongs to the column it was typed against; carrying
-            // "109775" into Location wise would silently show an empty table.
-            setSearch('');
-          }}
-          onExport={handleExport}
-          canExport={visibleCount > 0}
-        />
-
-        {!status.available ? (
-          <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
-            Campaign Metrics needs a readable CDR export directory.
-          </div>
-        ) : view === 'account' ? (
-          <AccountWiseTable
-            filters={filters}
-            rows={accountSort.rows}
-            isLoading={accountQuery.isPending}
-            error={accountQuery.error}
-            sort={accountSort.sort}
-            onSort={accountSort.toggle}
+        <div className="shrink-0">
+          <MetricsToolbar
+            tabs={VIEWS}
+            active={view}
+            onTab={(next) => {
+              setView(next);
+              // The term belongs to the column it was typed against; carrying
+              // "109775" into Location wise would silently show an empty table.
+              setSearch('');
+            }}
+            onExport={handleExport}
+            canExport={visibleCount > 0}
           />
-        ) : (
-          <SimpleMetricsTable
-            columnLabel={meta.column}
-            icon={meta.icon}
-            rows={simpleSort.rows}
-            isLoading={active.isPending}
-            error={active.error}
-            sort={simpleSort.sort}
-            onSort={simpleSort.toggle}
-          />
-        )}
+        </div>
 
-        {term && visibleCount === 0 && !active.isPending && !active.error && (
-          <p className={clsx('text-center text-sm text-zinc-500 dark:text-zinc-400')}>
-            Nothing matches “{search.trim()}”.
-          </p>
-        )}
+        {/* min-h-0 is what allows this to be shorter than its content, which is
+            what hands the overflow to the table's own scroll region instead of
+            the page. */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {!status.available ? (
+            <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
+              Campaign Metrics needs a readable CDR export directory.
+            </div>
+          ) : view === 'account' ? (
+            <AccountWiseTable
+              filters={filters}
+              rows={accountSort.rows}
+              isLoading={accountQuery.isPending}
+              error={accountQuery.error}
+              sort={accountSort.sort}
+              onSort={accountSort.toggle}
+              showCpin={service !== 'voicedrop'}
+            />
+          ) : (
+            <SimpleMetricsTable
+              columnLabel={meta.column}
+              icon={meta.icon}
+              rows={simpleSort.rows}
+              isLoading={active.isPending}
+              error={active.error}
+              sort={simpleSort.sort}
+              onSort={simpleSort.toggle}
+            />
+          )}
+
+          {search.trim() && visibleCount === 0 && !active.isPending && !active.error && (
+            <p className={clsx('mt-4 text-center text-sm text-zinc-500 dark:text-zinc-400')}>
+              Nothing matches “{search.trim()}”.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

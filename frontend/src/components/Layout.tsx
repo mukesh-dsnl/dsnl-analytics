@@ -398,10 +398,16 @@ export function Layout() {
 
               `overflow-x-auto` with no visible scrollbar: on the six-field
               services this row can outrun a narrow window, and a scrollbar
-              inside a 72px band would eat the inputs' bottom edge. */}
+              inside a 72px band would eat the inputs' bottom edge.
+
+              The vertical padding is load-bearing. Setting overflow on one axis
+              makes the other one clip too (it cannot stay `visible`), so a
+              focus ring — which paints outside the input's border box — was
+              being sliced off top and bottom. The padding gives it somewhere to
+              land inside the scroll box. */}
           <div
             ref={setHeaderSlot}
-            className="flex-1 min-w-0 flex items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
           {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
           <button
