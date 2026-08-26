@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { filtersForDay } from '../api';
 import type { CdrFilters, CdrService, CdrStatus } from '../api';
 import { spanDays } from '../dateRange';
@@ -84,6 +86,10 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   // rather than from this page's own state — which is also what keeps it
   // steady while navigating between the service pages.
   const { from, to } = useDateRange(status);
+  // The filters render into the app header, beside the date control — see
+  // components/HeaderSlot. They stay owned by this page (the field set differs
+  // per service) and merely appear up there.
+  const headerSlot = useHeaderSlot();
 
   // Everything except the dates. Seeded with `from` only so the shape is
   // complete; the dates the query actually uses are spliced in below.
@@ -138,7 +144,16 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
           </Banner>
         )}
 
-        <ServiceFilterBar fields={fields} value={filters} onChange={setFilters} isPending={isSettling} />
+        {headerSlot &&
+          createPortal(
+            <ServiceFilterBar
+              fields={fields}
+              value={filters}
+              onChange={setFilters}
+              isPending={isSettling}
+            />,
+            headerSlot,
+          )}
 
         {isQueryable ? (
           <CDRDashboard filters={query} />

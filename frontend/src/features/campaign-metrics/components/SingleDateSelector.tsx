@@ -60,7 +60,9 @@ export function SingleDateSelector({ date, onChange, status, variant = 'outline'
           variant={variant}
           size="sm"
           id="campaign-date"
-          className="justify-start px-3 font-normal"
+          // h-10 overrides the size variant's h-9 (cn is twMerge, so the later
+          // utility wins) to match the controls sharing this header row.
+          className="h-10 justify-start px-3 font-normal"
         >
           <CalendarIcon className={variant === 'brand' ? 'text-white/70' : 'text-zinc-400'} />
           {toDisplay(toDate(date))}

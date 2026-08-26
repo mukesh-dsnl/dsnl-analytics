@@ -61,6 +61,47 @@ const CHART_META: { id: ChartId; label: string; icon: LucideIcon; voicedropOnly?
   { id: 'disconnect_reason', label: 'Disconnect Reason', icon: Unplug },
 ];
 
+/**
+ * One tab in the chart strip.
+ *
+ * The active underline is drawn as a bordered span rather than a border on the
+ * button itself, so it can sit flush on the strip's own rule and cover it
+ * exactly — a border on the button would land a pixel above and read as a
+ * double line.
+ */
+function ChartTab({
+  isActive,
+  onClick,
+  label,
+  icon: Icon,
+}: {
+  isActive: boolean;
+  onClick: () => void;
+  label: string;
+  icon?: LucideIcon;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      role="tab"
+      aria-selected={isActive}
+      className={clsx(
+        'relative flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium whitespace-nowrap transition-colors',
+        isActive
+          ? 'text-blue-600 dark:text-blue-400'
+          : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200',
+      )}
+    >
+      {Icon && <Icon className="w-4 h-4 shrink-0" />}
+      {label}
+      {isActive && (
+        <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+      )}
+    </button>
+  );
+}
+
 /** Row height for horizontal bar charts, so long category lists stay readable. */
 const barsHeight = (count: number) => Math.max(200, Math.min(count, 12) * 32 + 32);
 
@@ -203,41 +244,31 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
         />
       </div>
 
-      {/* Chart picker — pick one to focus the grid on it, or stay on All. */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mr-1">
-          Charts
-        </span>
-        <button
-          type="button"
-          onClick={() => setSelectedChart(null)}
-          aria-pressed={selectedChart === null}
-          className={clsx(
-            'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-            selectedChart === null
-              ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
-              : 'text-zinc-500 border-zinc-200 dark:text-zinc-400 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-          )}
-        >
-          All
-        </button>
-        {visibleCharts.map((chart) => (
-          <button
-            key={chart.id}
-            type="button"
-            onClick={() => setSelectedChart((prev) => (prev === chart.id ? null : chart.id))}
-            aria-pressed={selectedChart === chart.id}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
-              selectedChart === chart.id
-                ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-500 dark:border-blue-500/20'
-                : 'text-zinc-500 border-zinc-200 dark:text-zinc-400 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-            )}
-          >
-            <chart.icon className="w-3.5 h-3.5" />
-            {chart.label}
-          </button>
-        ))}
+      {/* Chart picker — pick one to focus the grid on it, or stay on All.
+          A tab strip rather than a row of chips: these are mutually exclusive
+          views of the same page, which is what a tab bar means and a set of
+          toggle chips does not. The underline sits on a full-width rule so the
+          strip reads as one control even when it scrolls. */}
+      {/* Scrollbar hidden, not scrolling disabled: the strip still drags and
+          wheel-scrolls when the tabs outrun the width, but a horizontal bar
+          under a tab row reads as a second, broken underline. */}
+      <div className="border-b border-zinc-200 dark:border-zinc-800/60 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex items-center gap-1 min-w-max">
+          <ChartTab
+            isActive={selectedChart === null}
+            onClick={() => setSelectedChart(null)}
+            label="All"
+          />
+          {visibleCharts.map((chart) => (
+            <ChartTab
+              key={chart.id}
+              isActive={selectedChart === chart.id}
+              onClick={() => setSelectedChart((prev) => (prev === chart.id ? null : chart.id))}
+              label={chart.label}
+              icon={chart.icon}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Charts */}
