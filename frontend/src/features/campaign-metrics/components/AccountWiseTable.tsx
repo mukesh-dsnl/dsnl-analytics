@@ -4,26 +4,22 @@ import { BarChart3, ChevronRight, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { campaignApi } from '../api';
 import type { CampaignFilter, AccountMetricsRow } from '../api';
-import { useSortableRows } from '../useSortableRows';
-import { PercentagePill } from './PercentagePill';
-import {
-  SortableHeader,
-  TableCard,
-  TableStatus,
-  TH_CLASS,
-  TD_CLASS,
-  TD_CLASS_RIGHT,
-} from './TableChrome';
+import type { SortState } from '../useSortableRows';
+import { usePagination } from '../usePagination';
+import { ConnectedBar } from './ConnectedBar';
+import { SortableHeader, TableCard, TablePager, TableStatus, TH_CLASS } from './TableChrome';
 import { AccountInsightDialog } from './AccountInsightDialog';
+
+type SortKey = keyof AccountMetricsRow;
 
 interface AccountWiseTableProps {
   filters: CampaignFilter;
   rows: AccountMetricsRow[] | undefined;
   isLoading: boolean;
   error: Error | null;
+  sort: SortState<SortKey>;
+  onSort: (key: SortKey) => void;
 }
-
-type SortKey = keyof AccountMetricsRow;
 
 const COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
   { key: 'account', label: 'Account', align: 'left' },
@@ -34,6 +30,11 @@ const COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
   { key: 'total_minutes', label: 'Total Minutes', align: 'right' },
 ];
 
+/** Numeric cells share one class so the two row levels align on the decimal. */
+const NUM = 'px-4 py-3 text-right text-sm tabular-nums';
+const NUM_PARENT = `${NUM} font-semibold text-zinc-900 dark:text-white`;
+const NUM_CHILD = `${NUM} text-zinc-500 dark:text-zinc-400`;
+
 /**
  * The Account Wise table.
  *
@@ -42,16 +43,22 @@ const COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
  * once a row is open. Those CRN rows are fetched only on first expand rather
  * than upfront for every account, since most rows are never opened.
  */
-export function AccountWiseTable({ filters, rows, isLoading, error }: AccountWiseTableProps) {
-  const { rows: sorted, sort, toggle } = useSortableRows<AccountMetricsRow, SortKey>(rows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
+export function AccountWiseTable({
+  filters,
+  rows,
+  isLoading,
+  error,
+  sort,
+  onSort,
+}: AccountWiseTableProps) {
+  // Paged from the already-sorted list, so sorting reorders the whole table
+  // rather than shuffling only the page in view.
+  const { pageRows, page, pageCount, total, setPage, isPaged } = usePagination(rows);
   // Which row's chart popup is open, if any. Null keeps the dialog unmounted,
   // which is also what keeps its request from firing.
   const [charting, setCharting] = useState<{ account: string; crn?: string } | null>(null);
 
-  const isEmpty = !isLoading && !error && (sorted?.length ?? 0) === 0;
+  const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
 
   return (
     <>
@@ -62,22 +69,22 @@ export function AccountWiseTable({ filters, rows, isLoading, error }: AccountWis
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-800/60">
-                  <th className={`${TH_CLASS} w-8`} />
+                  <th className={`${TH_CLASS} w-10`} />
                   {COLUMNS.map((column) => (
                     <SortableHeader
                       key={column.key}
                       label={column.label}
                       sortKey={column.key}
                       sort={sort}
-                      onSort={toggle}
+                      onSort={onSort}
                       align={column.align}
                     />
                   ))}
-                  <th className={`${TH_CLASS} w-10`} />
+                  <th className={`${TH_CLASS} w-14`} />
                 </tr>
               </thead>
               <tbody>
-                {sorted!.map((row) => (
+                {pageRows!.map((row) => (
                   <AccountRow
                     key={row.account}
                     filters={filters}
@@ -88,6 +95,9 @@ export function AccountWiseTable({ filters, rows, isLoading, error }: AccountWis
               </tbody>
             </table>
           </div>
+        )}
+        {!isLoading && !error && !isEmpty && isPaged && (
+          <TablePager page={page} pageCount={pageCount} total={total} onPage={setPage} />
         )}
       </TableCard>
 
@@ -120,6 +130,9 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
   });
 
   const children = data?.rows ?? [];
+  // An open account and its CRNs read as one tinted block, so the drill-down is
+  // visibly bounded rather than blending into the rows after it.
+  const openCell = isOpen ? 'bg-blue-50/60 dark:bg-blue-500/[0.07]' : '';
 
   return (
     <>
@@ -129,130 +142,180 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
         onClick={() => setIsOpen((v) => !v)}
         aria-expanded={isOpen}
         className={clsx(
-          'border-b border-zinc-100 dark:border-zinc-800/40 cursor-pointer transition-colors',
+          'cursor-pointer transition-colors',
           isOpen
-            ? 'bg-zinc-50 dark:bg-zinc-800/40'
-            : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/30',
+            ? 'border-t border-blue-200 dark:border-blue-500/30'
+            : 'border-b border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/30',
         )}
       >
-        <td className={TD_CLASS}>
+        <td className={clsx('pl-4 py-3', openCell)}>
           <ChevronRight
             className={clsx(
               'w-4 h-4 text-zinc-400 transition-transform',
-              isOpen && 'rotate-90',
+              isOpen && 'rotate-90 text-blue-500',
             )}
           />
         </td>
-        {/* Parent rows carry the weight; the CRN rows below are deliberately
-            lighter, so the two levels never read as one flat list. */}
-        <td className={`${TD_CLASS} font-bold text-zinc-900 dark:text-white`}>{row.account}</td>
-        <td className={`${TD_CLASS_RIGHT} font-bold text-zinc-900 dark:text-white`}>
-          {row.total_size.toLocaleString()}
+        <td className={clsx('px-4 py-3', openCell)}>
+          <span className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className={clsx(
+                'inline-flex items-center justify-center w-7 h-7 rounded-lg text-[10px] font-bold shrink-0',
+                isOpen
+                  ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400'
+                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              AC
+            </span>
+            <span className="text-sm font-semibold text-zinc-900 dark:text-white">
+              {row.account}
+            </span>
+          </span>
         </td>
-        <td className={`${TD_CLASS_RIGHT} font-bold text-zinc-900 dark:text-white`}>
-          {row.connected_size.toLocaleString()}
+        <td className={clsx(NUM_PARENT, openCell)}>{row.total_size.toLocaleString()}</td>
+        <td className={clsx(NUM_PARENT, openCell)}>{row.connected_size.toLocaleString()}</td>
+        <td className={clsx(NUM_PARENT, openCell)}>{row.not_connected_size.toLocaleString()}</td>
+        <td className={clsx('px-4 py-3', openCell)}>
+          <ConnectedBar value={row.connected_percentage} />
         </td>
-        <td className={`${TD_CLASS_RIGHT} font-bold text-zinc-900 dark:text-white`}>
-          {row.not_connected_size.toLocaleString()}
-        </td>
-        <td className={TD_CLASS_RIGHT}>
-          <PercentagePill value={row.connected_percentage} />
-        </td>
-        <td className={`${TD_CLASS_RIGHT} font-bold text-zinc-900 dark:text-white`}>
-          {row.total_minutes.toLocaleString()}
-        </td>
-        <td className={TD_CLASS_RIGHT}>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onChart(undefined);
-            }}
-            aria-label={`View charts for account ${row.account}`}
-            title="View charts"
-            className="p-1.5 rounded-md text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-500/10 transition-colors"
-          >
-            <BarChart3 className="w-4 h-4" />
-          </button>
+        <td className={clsx(NUM_PARENT, openCell)}>{row.total_minutes.toLocaleString()}</td>
+        <td className={clsx('px-4 py-3 text-right', openCell)}>
+          <ChartButton
+            label={`View charts for account ${row.account}`}
+            onClick={() => onChart(undefined)}
+          />
         </td>
       </tr>
 
-      {isOpen && isPending && (
-        <SubRowMessage>
-          <span className="inline-flex items-center gap-2">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading CRNs…
-          </span>
-        </SubRowMessage>
-      )}
-      {isOpen && error && (
-        <SubRowMessage tone="error">{(error as Error).message}</SubRowMessage>
-      )}
-      {isOpen && !isPending && !error && children.length === 0 && (
-        <SubRowMessage>No CRNs for this account.</SubRowMessage>
-      )}
-
-      {/* No repeated header here: the columns line up with the parent's, so a
-          second header row would only add noise between the two levels. */}
-      {isOpen &&
-        children.map((child) => (
-          <tr
-            key={child.crn}
-            className="border-b border-zinc-100 dark:border-zinc-800/40 bg-zinc-50/60 dark:bg-zinc-900/40 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/40 transition-colors"
-          >
-            <td className={TD_CLASS} />
-            <td className={`${TD_CLASS} pl-8 text-zinc-500 dark:text-zinc-500`}>{child.crn}</td>
-            <td className={`${TD_CLASS_RIGHT} text-zinc-500 dark:text-zinc-500`}>
-              {child.total_size.toLocaleString()}
+      {isOpen && (
+        <>
+          {/* The sub-header renames only the first column — the other five are
+              the same measures as above, so repeating their names is what makes
+              the drill-down read as a continuation rather than a new table. */}
+          <tr className="bg-blue-50/60 dark:bg-blue-500/[0.07]">
+            <td />
+            <td className="pl-12 pr-4 pt-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              CRN
             </td>
-            <td className={`${TD_CLASS_RIGHT} text-zinc-500 dark:text-zinc-500`}>
-              {child.connected_size.toLocaleString()}
-            </td>
-            <td className={`${TD_CLASS_RIGHT} text-zinc-500 dark:text-zinc-500`}>
-              {child.not_connected_size.toLocaleString()}
-            </td>
-            <td className={`${TD_CLASS_RIGHT} text-zinc-500 dark:text-zinc-500`}>
-              {child.connected_percentage.toFixed(1)}%
-            </td>
-            <td className={`${TD_CLASS_RIGHT} text-zinc-500 dark:text-zinc-500`}>
-              {child.total_minutes.toLocaleString()}
-            </td>
-            <td className={TD_CLASS_RIGHT}>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChart(child.crn);
-                }}
-                aria-label={`View charts for CRN ${child.crn}`}
-                title="View charts"
-                className="p-1.5 rounded-md text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-500/10 transition-colors"
+            {COLUMNS.slice(1).map((column) => (
+              <td
+                key={column.key}
+                className="px-4 pt-2 pb-1.5 text-right text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
               >
-                <BarChart3 className="w-3.5 h-3.5" />
-              </button>
-            </td>
+                {column.label}
+              </td>
+            ))}
+            <td />
           </tr>
-        ))}
+
+          {isPending && <SubRowMessage loading>Loading CRNs…</SubRowMessage>}
+          {error && <SubRowMessage tone="error">{(error as Error).message}</SubRowMessage>}
+          {!isPending && !error && children.length === 0 && (
+            <SubRowMessage>No CRNs for this account.</SubRowMessage>
+          )}
+
+          {children.map((child, index) => (
+            <tr
+              key={child.crn}
+              className="bg-blue-50/60 dark:bg-blue-500/[0.07] hover:bg-blue-100/50 dark:hover:bg-blue-500/[0.12] transition-colors"
+            >
+              <td />
+              <td className="pl-8 pr-4 py-2.5">
+                <span className="flex items-stretch">
+                  {/* Tree elbow: the trunk stops at the last child rather than
+                      running past it into the rows below. */}
+                  <span aria-hidden="true" className="relative w-4 shrink-0 self-stretch">
+                    <span
+                      className={clsx(
+                        'absolute left-0 w-px bg-zinc-300 dark:bg-zinc-700',
+                        index === children.length - 1 ? 'top-0 h-1/2' : 'inset-y-0',
+                      )}
+                    />
+                    <span className="absolute left-0 top-1/2 w-3 h-px bg-zinc-300 dark:bg-zinc-700" />
+                  </span>
+                  <span className="pl-2 text-sm text-zinc-600 dark:text-zinc-400">{child.crn}</span>
+                </span>
+              </td>
+              <td className={NUM_CHILD}>{child.total_size.toLocaleString()}</td>
+              <td className={NUM_CHILD}>{child.connected_size.toLocaleString()}</td>
+              <td className={NUM_CHILD}>{child.not_connected_size.toLocaleString()}</td>
+              <td className="px-4 py-2.5">
+                <ConnectedBar value={child.connected_percentage} dim />
+              </td>
+              <td className={NUM_CHILD}>{child.total_minutes.toLocaleString()}</td>
+              <td className="px-4 py-2.5 text-right">
+                <ChartButton
+                  label={`View charts for CRN ${child.crn}`}
+                  onClick={() => onChart(child.crn)}
+                />
+              </td>
+            </tr>
+          ))}
+
+          {/* Closes the tinted block so the next account starts cleanly. */}
+          <tr className="border-b border-blue-200 dark:border-blue-500/30">
+            <td colSpan={8} className="h-1.5 bg-blue-50/60 dark:bg-blue-500/[0.07]" />
+          </tr>
+        </>
+      )}
     </>
+  );
+}
+
+/**
+ * The row's "open the charts" control.
+ *
+ * A standing bordered button rather than an icon that only materialises on
+ * hover: the row is already clickable for expand/collapse, so the one control
+ * that does something *else* has to look like a control at rest, or it reads as
+ * part of the row and gets found by accident.
+ */
+function ChartButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title="View charts"
+      className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10 transition-colors"
+    >
+      <BarChart3 className="w-4 h-4" />
+    </button>
   );
 }
 
 function SubRowMessage({
   children,
   tone,
+  loading,
 }: {
   children: React.ReactNode;
   tone?: 'error';
+  loading?: boolean;
 }) {
   return (
-    <tr className="border-b border-zinc-100 dark:border-zinc-800/40 bg-zinc-50/60 dark:bg-zinc-900/40">
+    <tr className="bg-blue-50/60 dark:bg-blue-500/[0.07]">
+      <td />
       <td
-        colSpan={8}
+        colSpan={7}
         className={clsx(
-          'px-4 py-2.5 pl-12 text-xs',
+          'pl-12 pr-4 py-2.5 text-xs',
           tone === 'error' ? 'text-red-600 dark:text-red-400' : 'text-zinc-400',
         )}
       >
-        {children}
+        {loading ? (
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {children}
+          </span>
+        ) : (
+          children
+        )}
       </td>
     </tr>
   );

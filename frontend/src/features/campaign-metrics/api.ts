@@ -48,6 +48,13 @@ export interface InsightSummary {
   total_uploaded: number;
   dial_attempts: number;
   connected_users: number;
+  /**
+   * Counted independently of each other, so these need not sum to
+   * `connected_users` — a conferee with both a connected dial-in and a
+   * connected dial-out leg appears in both.
+   */
+  connected_dial_in: number;
+  connected_dial_out: number;
   connect_percentage: number;
 }
 

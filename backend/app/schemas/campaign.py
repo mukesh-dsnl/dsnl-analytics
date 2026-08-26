@@ -108,6 +108,10 @@ class InsightSummary(BaseModel):
     total_uploaded: int = 0
     dial_attempts: int = 0
     connected_users: int = 0
+    # Counted independently, so these need not sum to connected_users — see the
+    # note in campaign_service.py's summary panel.
+    connected_dial_in: int = 0
+    connected_dial_out: int = 0
     connect_percentage: float = 0.0
 
 

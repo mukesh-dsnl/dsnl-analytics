@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, ChevronDown, ChevronUp, ChevronsUpDown, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
+  Loader2,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { SortState } from '../useSortableRows';
+import { PAGE_SIZE } from '../usePagination';
 
 /** Shared shell every Campaign Metrics table renders inside — loading, error and empty states, once. */
 export function TableCard({ children }: { children: ReactNode }) {
@@ -43,6 +52,72 @@ export const TH_CLASS =
 export const TH_CLASS_RIGHT = `${TH_CLASS} text-right`;
 export const TD_CLASS = 'px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300 tabular-nums';
 export const TD_CLASS_RIGHT = `${TD_CLASS} text-right`;
+
+interface TablePagerProps {
+  page: number;
+  pageCount: number;
+  total: number;
+  onPage: (page: number) => void;
+}
+
+/**
+ * The footer pager.
+ *
+ * Prev/next plus a stated position rather than a numbered page strip: these
+ * tables run to a handful of pages at most, so a strip would be more chrome
+ * than the navigation is worth.
+ */
+export function TablePager({ page, pageCount, total, onPage }: TablePagerProps) {
+  const first = (page - 1) * PAGE_SIZE + 1;
+  const last = Math.min(page * PAGE_SIZE, total);
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-zinc-200 dark:border-zinc-800/60">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
+        {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
+      </p>
+      <div className="flex items-center gap-1.5">
+        <PagerButton label="Previous page" onClick={() => onPage(page - 1)} disabled={page <= 1}>
+          <ChevronLeft className="w-4 h-4" />
+        </PagerButton>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums px-1">
+          {page} / {pageCount}
+        </span>
+        <PagerButton
+          label="Next page"
+          onClick={() => onPage(page + 1)}
+          disabled={page >= pageCount}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </PagerButton>
+      </div>
+    </div>
+  );
+}
+
+function PagerButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+    >
+      {children}
+    </button>
+  );
+}
 
 interface SortableHeaderProps<K extends string> {
   label: string;
