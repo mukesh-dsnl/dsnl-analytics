@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, BarChart3, CalendarDays, Loader2, RadioTower, Table2, X } from 'lucide-react';
 import clsx from 'clsx';
 
+import { useContentPanel } from '../../../components/ContentPanelSlot';
 import { campaignApi } from '../api';
 import type { AccountInsight, CampaignFilter } from '../api';
 import { useChartTooltip } from '../useChartTooltip';
@@ -29,6 +31,7 @@ interface AccountInsightDialogProps {
  * same row is free while a different row is a fresh, narrowly-filtered read.
  */
 export function AccountInsightDialog({ filters, account, crn, onClose }: AccountInsightDialogProps) {
+  const panel = useContentPanel();
   const { data, isPending, error } = useQuery({
     queryKey: ['campaign-insight', filters.date, filters.service, account, crn ?? null],
     queryFn: () => campaignApi.accountInsight(filters, account, crn),
@@ -49,9 +52,17 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
     };
   }, [onClose]);
 
-  return (
+  const overlay = (
+    // Centred on the floating content panel, not on the window: the backdrop is
+    // absolute inside the panel (which is the containing block) so it stops at
+    // the card's edges and leaves the sidebar and the gutter untouched. Until
+    // the panel node exists — one render, or a page mounted outside Layout —
+    // this falls back to the viewport-fixed behaviour.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      className={clsx(
+        'inset-0 z-50 flex items-center justify-center p-4 bg-black/50',
+        panel ? 'absolute' : 'fixed',
+      )}
       onClick={onClose}
       role="presentation"
     >
@@ -60,7 +71,12 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
         aria-modal="true"
         aria-label={`Campaign insight for account ${account}`}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl max-h-[90vh] flex flex-col bg-zinc-50 dark:bg-[#0c0c0e] border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+        className={clsx(
+          'w-full max-w-5xl flex flex-col bg-zinc-50 dark:bg-[#0c0c0e] border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden',
+          // Inside the panel the padded box is already the bound, so the dialog
+          // just takes what is there; free-floating it still needs a viewport cap.
+          panel ? 'max-h-full' : 'max-h-[90vh]',
+        )}
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
           <div className="min-w-0">
@@ -106,6 +122,8 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
       </div>
     </div>
   );
+
+  return panel ? createPortal(overlay, panel) : overlay;
 }
 
 function InsightBody({ insight }: { insight: AccountInsight }) {
@@ -120,7 +138,7 @@ function InsightBody({ insight }: { insight: AccountInsight }) {
           <SplitBar
             segments={[
               {
-                label: 'Never rang (no ALERT)',
+                label: 'Never rang',
                 value: failed.never_rang,
                 percentage: failed.never_rang_percentage,
                 slot: 0,

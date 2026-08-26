@@ -201,7 +201,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
         )}
       >
         <KpiCard
-          label="Total Calls"
+          label="Total Attempts"
           value={formatCount(data?.summary.total_calls ?? 0)}
           icon={PhoneCall}
           isLoading={isPending}
@@ -226,7 +226,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           />
         )}
         <KpiCard
-          label="Minutes Usage"
+          label="Total Minutes"
           value={formatCount(data?.summary.minutes_usage ?? 0)}
           icon={Timer}
           isLoading={isPending}

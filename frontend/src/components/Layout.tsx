@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
+import { ContentPanelContext } from './ContentPanelSlot';
 
 interface NavNode {
   label: string;
@@ -185,6 +186,9 @@ export function Layout() {
   // *value* to portal into, so it has to survive a render, and a plain ref
   // would still be null on the render the children mount in.
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
+  // Same reasoning for the panel itself: page-owned overlays portal into it so
+  // they centre on the card rather than on the viewport (see ContentPanelSlot).
+  const [contentPanel, setContentPanel] = useState<HTMLDivElement | null>(null);
 
   // Ensure theme is applied to document
   useEffect(() => {
@@ -381,9 +385,15 @@ export function Layout() {
       <div className="flex-1 min-w-0 p-3">
       {/* No border: against the brand blue the panel edge is already a hard
           value change, and a light hairline there would read as a halo. */}
-      <div className="h-full flex flex-col rounded-2xl overflow-hidden
-                      shadow-lg shadow-black/10
-                      bg-zinc-50 dark:bg-[#111113]">
+      {/* `relative` is load-bearing: it is what makes this card the containing
+          block for the overlays pages portal in, so they cover the panel and
+          nothing outside it. */}
+      <div
+        ref={setContentPanel}
+        className="relative h-full flex flex-col rounded-2xl overflow-hidden
+                   shadow-lg shadow-black/10
+                   bg-zinc-50 dark:bg-[#111113]"
+      >
         {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
             Metrics gets its own single-date control instead of the analytics
@@ -422,7 +432,9 @@ export function Layout() {
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto relative">
           <HeaderSlotContext.Provider value={headerSlot}>
-            <Outlet />
+            <ContentPanelContext.Provider value={contentPanel}>
+              <Outlet />
+            </ContentPanelContext.Provider>
           </HeaderSlotContext.Provider>
         </main>
       </div>
