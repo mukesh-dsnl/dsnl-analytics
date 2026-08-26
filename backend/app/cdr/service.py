@@ -233,6 +233,16 @@ _SLICE_COLUMNS = """c.CALLTYPE,
            c.CRN,
            c.CONF_NUM,
            c.CONFEREE_SEQ_NO,
+           -- The number on the other end of the leg. Which column holds it
+           -- depends on the direction: TEL_DIGIT is "phone number for Dial Out
+           -- calls" (data dictionary #11) and CLI "phone number for Dial In
+           -- calls" (#9), and CALLTYPE = 1 is Dial Out here (see the note in
+           -- campaign_service.py for how that was settled against the columns).
+           -- Trailing 10 digits only, so the same subscriber counts once
+           -- however it was dialled — with or without a country or trunk prefix.
+           CASE WHEN c.CALLTYPE = 1
+                THEN RIGHT(CAST(c.TEL_DIGIT AS VARCHAR), 10)
+                ELSE RIGHT(CAST(c.CLI AS VARCHAR), 10) END AS PHONE_NUMBER,
            c.START_DATETIME,
            -- Call-funnel stage timestamps (data dictionary #12-15). PROCEEDING
            -- and ALERT are dial-out only, which is what makes this panel
@@ -341,12 +351,14 @@ _PANEL_SQL: dict[str, str] = {
     SELECT 'summary' AS panel, 'total_calls' AS label, CAST(COUNT(*) AS DOUBLE) AS value
     FROM slice
     UNION ALL
-    -- A conferee is CRN + CONF_NUM + CONFEREE_SEQ_NO: the sequence number is
-    -- only unique within a conference and CRN itself is reused across rooms,
-    -- so all three are needed to count people rather than rows.
-    SELECT 'summary', 'total_participants',
-           CAST(COUNT(DISTINCT (CRN, CONF_NUM, CONFEREE_SEQ_NO))
-                FILTER (WHERE IS_CONNECTED) AS DOUBLE)
+    -- How many distinct numbers the slice touched, connected or not — one
+    -- subscriber reached on four reblasts is one number, not four attempts.
+    -- Blanks are excluded rather than counted as a number of their own: a
+    -- missing TEL_DIGIT/CLI reads as '' after the cast, not as NULL.
+    SELECT 'summary', 'total_phone_numbers',
+           CAST(COUNT(DISTINCT PHONE_NUMBER)
+                FILTER (WHERE PHONE_NUMBER IS NOT NULL
+                          AND TRIM(PHONE_NUMBER) <> '') AS DOUBLE)
     FROM slice
     UNION ALL
     SELECT 'summary', 'minutes_usage',
@@ -669,7 +681,7 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     if panel == "summary":
         return {
             "total_calls": int(_scalar(rows, "total_calls")),
-            "total_participants": int(_scalar(rows, "total_participants")),
+            "total_phone_numbers": int(_scalar(rows, "total_phone_numbers")),
             "minutes_usage": int(_scalar(rows, "minutes_usage")),
             "total_conferences": int(_scalar(rows, "total_conferences")),
         }

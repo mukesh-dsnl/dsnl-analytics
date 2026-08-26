@@ -73,7 +73,8 @@ export const filtersForDay = (day: string, service: CdrService = 'all'): CdrFilt
 
 export interface CdrSummary {
   total_calls: number;
-  total_participants: number;
+  /** Distinct phone numbers (last 10 digits) — TEL_DIGIT dialling out, CLI dialling in. */
+  total_phone_numbers: number;
   minutes_usage: number;
   /** Distinct CRN + CONF_NUM pairs — meaningful for Conference and Multicall only. */
   total_conferences: number;
