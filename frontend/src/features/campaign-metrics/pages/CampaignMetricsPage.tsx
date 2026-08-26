@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin } from 'lucide-react';
 import clsx from 'clsx';
@@ -7,6 +8,9 @@ import clsx from 'clsx';
 import { campaignApi } from '../api';
 import type { AccountMetricsRow, CampaignFilter, CampaignService } from '../api';
 import { useCdrStatus, useCampaignDate } from '../hooks';
+import { useDebouncedValue } from '../../cdr-dashboard/hooks';
+import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { HeaderSearch } from '../components/HeaderSearch';
 import { useSortableRows } from '../useSortableRows';
 import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
@@ -28,11 +32,28 @@ const VIEWS: ToolbarTab<View>[] = [
   { id: 'location', label: 'Location wise', icon: MapPin },
 ];
 
-const VIEW_META: Record<View, { column: string; placeholder: string; icon: typeof Radio }> = {
-  account: { column: 'Account', placeholder: 'Search account…', icon: Users },
-  provider: { column: 'Service Provider', placeholder: 'Search provider…', icon: Radio },
-  location: { column: 'Location', placeholder: 'Search location…', icon: MapPin },
+const VIEW_META: Record<View, { column: string; icon: typeof Radio }> = {
+  account: { column: 'Account', icon: Users },
+  provider: { column: 'Service Provider', icon: Radio },
+  location: { column: 'Location', icon: MapPin },
 };
+
+/**
+ * What the search box says it will match.
+ *
+ * On the Account view that is whatever the backend actually matches — account
+ * id and CRN everywhere, plus the chairperson PIN where CODR is joined, which
+ * is Conference and Multicall only. The other two views search their own single
+ * column, in the client.
+ */
+function searchPlaceholder(view: View, service: CampaignService): string {
+  if (view === 'account') {
+    return service === 'voicedrop'
+      ? 'Search by account or CRN…'
+      : 'Search by account, CRN or CPIN…';
+  }
+  return view === 'provider' ? 'Search service provider…' : 'Search location…';
+}
 
 function Banner({ children }: { children: ReactNode }) {
   return (
@@ -83,23 +104,30 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const { date } = useCampaignDate(status);
   const [view, setView] = useState<View>('account');
   const [search, setSearch] = useState('');
+  const headerSlot = useHeaderSlot();
 
   const filters: CampaignFilter = { date, service };
-  const queryKey = ['campaign', view, filters.date, filters.service] as const;
   const enabled = status.available;
 
+  // The account search runs server-side (CRN and CPIN aren't in these rows), so
+  // it is part of the query key — and debounced, so typing doesn't fire a read
+  // of the day's parquet per character.
+  const debouncedSearch = useDebouncedValue(search.trim(), 400);
+  const isSearchPending = view === 'account' && search.trim() !== debouncedSearch;
+
   const accountQuery = useQuery({
-    queryKey,
-    queryFn: () => campaignApi.accountWise(filters),
+    queryKey: ['campaign', 'account', filters.date, filters.service, debouncedSearch],
+    queryFn: () => campaignApi.accountWise(filters, debouncedSearch),
     enabled: enabled && view === 'account',
+    placeholderData: (previous) => previous,
   });
   const providerQuery = useQuery({
-    queryKey,
+    queryKey: ['campaign', 'provider', filters.date, filters.service],
     queryFn: () => campaignApi.serviceProviderWise(filters),
     enabled: enabled && view === 'provider',
   });
   const locationQuery = useQuery({
-    queryKey,
+    queryKey: ['campaign', 'location', filters.date, filters.service],
     queryFn: () => campaignApi.locationWise(filters),
     enabled: enabled && view === 'location',
   });
@@ -112,11 +140,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   // order it is shown.
   const term = search.trim().toLowerCase();
 
-  const accountRows = useMemo(() => {
-    const rows = accountQuery.data?.rows;
-    if (!rows || !term) return rows;
-    return rows.filter((r) => r.account.toLowerCase().includes(term));
-  }, [accountQuery.data, term]);
+  // Account rows arrive already filtered by the backend; only the two
+  // single-column views filter here.
+  const accountRows = accountQuery.data?.rows;
 
   const simpleRows = useMemo((): SimpleRow[] | undefined => {
     const rows =
@@ -201,6 +227,20 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             </Banner>
           )}
 
+        {/* The search sits in the app header beside the date control — see
+            components/HeaderSlot. It stays owned here because what it matches
+            depends on the active view and service. */}
+        {headerSlot &&
+          createPortal(
+            <HeaderSearch
+              value={search}
+              onChange={setSearch}
+              placeholder={searchPlaceholder(view, service)}
+              isPending={isSearchPending}
+            />,
+            headerSlot,
+          )}
+
         <MetricsToolbar
           tabs={VIEWS}
           active={view}
@@ -210,9 +250,6 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             // "109775" into Location wise would silently show an empty table.
             setSearch('');
           }}
-          search={search}
-          onSearch={setSearch}
-          searchPlaceholder={meta.placeholder}
           onExport={handleExport}
           canExport={visibleCount > 0}
         />

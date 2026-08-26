@@ -150,7 +150,19 @@ def _with_derived(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def query_account_wise(f: CampaignFilter) -> list[dict[str, Any]]:
+def _cpin_expr(f: CampaignFilter) -> str:
+    """
+    CHAIR_PIN lives on CODR, so it only exists where the join does.
+
+    Aggregated distinct rather than plucked: grouping by CRN alone can span more
+    than one CONF_NUM, and each room carries its own chairperson PIN.
+    """
+    if not _SERVICE_JOIN[f.service]:
+        return "NULL"
+    return "string_agg(DISTINCT CAST(o.CHAIR_PIN AS VARCHAR), ', ')"
+
+
+def query_account_wise(f: CampaignFilter, search: str | None = None) -> list[dict[str, Any]]:
     """
     Per-account breakdown for the day — the Account Wise table's top-level rows.
 
@@ -159,15 +171,42 @@ def query_account_wise(f: CampaignFilter) -> list[dict[str, Any]]:
     the account up directly instead would make minutes CEIL(SUM(...)) where the
     children are SUM(CEIL(...)), and the expanded rows would visibly fail to add
     up to the row above them.
+
+    `search` matches an account id, one of its CRNs, or (Conference and
+    Multicall only) a chairperson PIN. An account is kept whole when any of its
+    rows match — the figures stay the account's real totals rather than the
+    matching slice of them, so a searched row still agrees with the rows it
+    expands into.
     """
     from_clause = _from_clause(f)
-    where_sql, params = _where(f)
+    where_sql, where_params = _where(f)
+
+    # Matched inside the per-CRN pass, then reduced with BOOL_OR, which is what
+    # keeps a matching account's other CRNs in its totals.
+    match_sql = "FALSE"
+    search_params: list[Any] = []
+    if search:
+        term = f"%{search.lower()}%"
+        pieces = [
+            "LOWER(CAST(c.ACCOUNTID AS VARCHAR)) LIKE ?",
+            "LOWER(CAST(c.CRN AS VARCHAR)) LIKE ?",
+        ]
+        search_params = [term, term]
+        if _SERVICE_JOIN[f.service]:
+            pieces.append("LOWER(CAST(o.CHAIR_PIN AS VARCHAR)) LIKE ?")
+            search_params.append(term)
+        match_sql = " OR ".join(pieces)
+
+    # Placeholders bind in statement order, and these sit in the SELECT list —
+    # ahead of the WHERE clause's date bounds, so they have to be bound first.
+    params = [*search_params, *where_params]
 
     rows = _run(
         f"""
         WITH per_crn AS (
             SELECT CAST(c.ACCOUNTID AS VARCHAR) AS account,
                    c.CRN                        AS crn,
+                   BOOL_OR({match_sql})         AS matched,
                    {_METRIC_COLUMNS}
             {from_clause}
             {where_sql}
@@ -179,6 +218,7 @@ def query_account_wise(f: CampaignFilter) -> list[dict[str, Any]]:
                SUM(total_minutes)  AS total_minutes
         FROM per_crn
         GROUP BY 1
+        HAVING {'BOOL_OR(matched)' if search else 'TRUE'}
         ORDER BY total_size DESC
         """,
         params,
@@ -194,6 +234,7 @@ def query_account_crn(f: CampaignFilter, account_id: str) -> list[dict[str, Any]
     rows = _run(
         f"""
         SELECT CAST(c.CRN AS VARCHAR) AS crn,
+               {_cpin_expr(f)} AS cpin,
                {_METRIC_COLUMNS}
         {from_clause}
         {where_sql} AND CAST(c.ACCOUNTID AS VARCHAR) = ?
@@ -406,6 +447,25 @@ def query_account_insight(
     {where_sql}
 )"""
 
+    # Room identity — CHAIR_PIN and CONF_NUM — for the popup's title. Its own
+    # small statement rather than another branch of the panel union: those all
+    # report (panel, label, value) with a numeric value, and these are text.
+    # One extra scan of a single day already narrowed to one account is cheap,
+    # and it only runs where CODR is joined.
+    identity: dict[str, Any] = {"cpin": None, "conf_num": None}
+    if _SERVICE_JOIN[f.service]:
+        found = _run(
+            f"""
+            SELECT string_agg(DISTINCT CAST(o.CHAIR_PIN AS VARCHAR), ', ') AS cpin,
+                   string_agg(DISTINCT CAST(c.CONF_NUM AS VARCHAR), ', ')  AS conf_num
+            {from_clause}
+            {where_sql}
+            """,
+            params,
+        )
+        if found:
+            identity = found[0]
+
     rows = _run(cte + _INSIGHT_SQL, params)
 
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -493,6 +553,8 @@ def query_account_insight(
     return {
         "account": account_id,
         "crn": crn,
+        "cpin": identity.get("cpin"),
+        "conf_num": identity.get("conf_num"),
         "summary": {
             "total_uploaded": uploaded,
             "dial_attempts": attempts,

@@ -24,6 +24,7 @@ from app.schemas.campaign import (
     AccountCrnRequest,
     AccountInsightRequest,
     AccountInsightResponse,
+    AccountWiseRequest,
     CampaignAccountCrnResponse,
     CampaignAccountResponse,
     CampaignFilter,
@@ -41,9 +42,16 @@ def _not_ready(exc: service.DatasetNotReady) -> HTTPException:
 
 
 @router.post("/campaign/account-wise", response_model=CampaignAccountResponse)
-def account_wise(body: CampaignFilter) -> CampaignAccountResponse:
+def account_wise(body: AccountWiseRequest) -> CampaignAccountResponse:
+    """
+    Per-account breakdown for the day.
+
+    `search` narrows to accounts matching on account id, CRN, or (Conference
+    and Multicall) chairperson PIN — see the service for why that is matched
+    here rather than in the client.
+    """
     try:
-        rows = service.query_account_wise(body)
+        rows = service.query_account_wise(body, body.search)
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
     return CampaignAccountResponse(rows=rows)

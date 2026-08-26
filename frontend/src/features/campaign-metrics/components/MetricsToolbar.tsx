@@ -1,4 +1,4 @@
-import { Download, Search, X } from 'lucide-react';
+import { Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -12,86 +12,74 @@ interface MetricsToolbarProps<T extends string> {
   tabs: ToolbarTab<T>[];
   active: T;
   onTab: (id: T) => void;
-  search: string;
-  onSearch: (value: string) => void;
-  searchPlaceholder: string;
   onExport: () => void;
   canExport: boolean;
 }
 
 /**
- * The bar above the table: view tabs on the left, search and export on the right.
+ * The bar above the table: the view tabs, centred, with Export at the right.
  *
- * Each tab is its own card rather than a segment of one control, which is what
- * lets the active tab read as raised against the page instead of merely tinted.
+ * Same underline tab strip the analytics charts use — these are mutually
+ * exclusive views of one page, which is what a tab bar means and what the card
+ * pills it replaces did not.
+ *
+ * Laid out as three columns rather than a flex row with `justify-between`, so
+ * the tabs are centred on the table beneath them rather than on whatever space
+ * Export happens to leave over.
  */
 export function MetricsToolbar<T extends string>({
   tabs,
   active,
   onTab,
-  search,
-  onSearch,
-  searchPlaceholder,
   onExport,
   canExport,
 }: MetricsToolbarProps<T>) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {tabs.map((tab) => {
-          const isActive = tab.id === active;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onTab(tab.id)}
-              aria-pressed={isActive}
-              className={clsx(
-                'inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-600/10 dark:text-blue-400 dark:border-blue-500/30'
-                  : 'bg-white dark:bg-[#09090B] text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-              )}
-            >
-              <tab.icon className="w-4 h-4 shrink-0" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+    <div className="border-b border-zinc-200 dark:border-zinc-800/60">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+        <span aria-hidden="true" />
 
-      <div className="flex items-center gap-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            className="w-56 lg:w-64 pl-9 pr-8 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => onSearch('')}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+        <div className="flex items-center gap-1 justify-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tabs.map((tab) => {
+            const isActive = tab.id === active;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTab(tab.id)}
+                role="tab"
+                aria-selected={isActive}
+                className={clsx(
+                  'relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors',
+                  isActive
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200',
+                )}
+              >
+                <tab.icon className="w-4 h-4 shrink-0" />
+                {tab.label}
+                {/* Drawn as a span rather than a border on the button so it can
+                    sit flush on the strip's own rule and cover it exactly — a
+                    border would land a pixel above and read as a double line. */}
+                {isActive && (
+                  <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={!canExport}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Export
-        </button>
+        <div className="flex justify-end pb-1.5">
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={!canExport}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        </div>
       </div>
     </div>
   );

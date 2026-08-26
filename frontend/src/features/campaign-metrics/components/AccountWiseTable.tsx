@@ -235,7 +235,18 @@ function AccountRow({ filters, row, onChart }: AccountRowProps) {
                     />
                     <span className="absolute left-0 top-1/2 w-3 h-px bg-zinc-300 dark:bg-zinc-700" />
                   </span>
-                  <span className="pl-2 text-sm text-zinc-600 dark:text-zinc-400">{child.crn}</span>
+                  {/* CPIN rides inside the CRN cell rather than taking a column
+                      of its own: a seventh column would exist only on the child
+                      rows and would pull every figure out of line with the
+                      account row above it. */}
+                  <span className="pl-2 text-sm text-zinc-600 dark:text-zinc-400">
+                    {child.crn}
+                    {child.cpin && (
+                      <span className="ml-2 text-xs text-zinc-400 dark:text-zinc-500">
+                        CPIN {child.cpin}
+                      </span>
+                    )}
+                  </span>
                 </span>
               </td>
               <td className={NUM_CHILD}>{child.total_size.toLocaleString()}</td>

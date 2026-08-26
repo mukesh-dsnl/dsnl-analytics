@@ -68,9 +68,15 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
               Account {account}
               {crn && <span className="text-zinc-400 dark:text-zinc-500"> · CRN {crn}</span>}
             </h2>
-            <p className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              <CalendarDays className="w-3.5 h-3.5" />
-              {filters.date}
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              <span className="flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5" />
+                {filters.date}
+              </span>
+              {/* Only Conference and Multicall have these — they come from the
+                  CODR join, which Voicedrop never makes. */}
+              {data?.cpin && <span>CPIN {data.cpin}</span>}
+              {data?.conf_num && <span>Conf Num {data.conf_num}</span>}
             </p>
           </div>
           <button
