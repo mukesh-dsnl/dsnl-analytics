@@ -22,7 +22,7 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm',
         outline:
-          'border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#09090B] text-zinc-900 dark:text-white ' +
+          'border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-surface-dark text-zinc-900 dark:text-white ' +
           'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
         ghost:
           'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200',

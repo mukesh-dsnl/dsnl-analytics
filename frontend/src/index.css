@@ -1,29 +1,69 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   The theme is built from two brand surfaces and one tint:
+
+     #00a3e0  cyan-blue   — the light-mode ground
+     #21257a  deep indigo — the dark-mode ground
+     #d4f0fb  pale ice    — the wash for selected rows and brand highlights
+
+   Everything else is derived from them. In particular the *neutral* ramp is
+   not neutral: it carries the indigo's hue at low saturation, which is what
+   stops the app reading as "one blue dropped on white, then on black". Panels,
+   borders, labels and the ground now belong to the same family, and the dark
+   mode is a deep navy rather than a true black.
+   ───────────────────────────────────────────────────────────────────────── */
 @theme {
   /* Brand blue. Generates bg-primary / text-primary / border-primary. */
-  --color-primary: #2ea3f2;
-  --color-primary-hover: #1b8fe0;
+  --color-primary: #00a3e0;
+  --color-primary-hover: #0089bf;
   /* Tint for selected rows and subtle brand washes. */
-  --color-primary-subtle: #eff8fe;
+  --color-primary-subtle: #d4f0fb;
+
+  /* The ground the app floats its panels on: the sidebar and the gutter are
+     one continuous field of this, textured by .app-ground below. */
+  --color-ground: #00a3e0;
+  --color-ground-dark: #21257a;
+  /* The indigo used as a surface in its own right — the sign-in hero. In dark
+     mode it goes a step deeper than the ground it sits on, since there the
+     ground is that same indigo and the panel's edge would otherwise vanish. */
+  --color-ground-deep: #21257a;
+  --color-ground-deep-dark: #171b57;
 
   /* The whole app already expresses its accent as blue-50..blue-950 across ~15
      components. Rather than rewrite every one of those classes, the built-in
      blue ramp is redefined around the brand, so existing markup renders in
-     brand colour and stays internally consistent. #2ea3f2 sits at 500, and the
-     rest is a matched ramp — Tailwind's stock blue is a darker, more violet
-     hue that would clash sitting next to the new header. */
-  --color-blue-50: #eff8fe;
-  --color-blue-100: #daeffd;
-  --color-blue-200: #bce2fb;
-  --color-blue-300: #8cd0f8;
-  --color-blue-400: #5ab8f5;
-  --color-blue-500: #2ea3f2;
-  --color-blue-600: #1b8fe0;
-  --color-blue-700: #1873b4;
-  --color-blue-800: #195f92;
-  --color-blue-900: #1a5079;
-  --color-blue-950: #11324f;
+     brand colour and stays internally consistent. #00a3e0 sits at 500 and
+     #d4f0fb at 100 — Tailwind's stock blue is a darker, more violet hue that
+     would clash sitting next to the ground. */
+  --color-blue-50: #e8f7fd;
+  --color-blue-100: #d4f0fb;
+  --color-blue-200: #ace2f8;
+  --color-blue-300: #74cef3;
+  --color-blue-400: #33b8ed;
+  --color-blue-500: #00a3e0;
+  --color-blue-600: #0089bf;
+  --color-blue-700: #056f9b;
+  --color-blue-800: #0d5b7d;
+  --color-blue-900: #114b68;
+  --color-blue-950: #072f45;
+
+  /* The neutral ramp, tinted toward the indigo ground.
+     ~12% saturation at hue 225-230: enough that a border or a label sits in
+     the same family as the brand, not so much that body text reads blue. The
+     luminance steps track Tailwind's own zinc, so every existing zinc-N class
+     keeps the contrast it was chosen for — only the hue moves. */
+  --color-zinc-50: #f6f8fc;
+  --color-zinc-100: #edf1f8;
+  --color-zinc-200: #dde3ef;
+  --color-zinc-300: #c2cadd;
+  --color-zinc-400: #8f9ab6;
+  --color-zinc-500: #6a7593;
+  --color-zinc-600: #515b76;
+  --color-zinc-700: #3c4560;
+  --color-zinc-800: #29314a;
+  --color-zinc-900: #1a2138;
+  --color-zinc-950: #10152a;
 
   /* Inter, loaded from Google Fonts in index.html. The stack after it is the
      fallback while the webfont is still in flight. */
@@ -32,13 +72,90 @@
 
   /* Neutral surfaces. Kept as tokens because several components reference the
      same two darks; the app background is one step lighter than the panels,
-     which is the contrast relationship the layout was built around. */
+     which is the contrast relationship the layout was built around.
+     Both darks are navy rather than black — they sit under the indigo ground
+     and above the charts, and a true black between the two read as a hole. */
   --color-surface: #ffffff;
-  --color-surface-dark: #09090b;
-  --color-canvas-dark: #111113;
+  --color-surface-dark: #0e1424;
+  --color-canvas-dark: #161d31;
 }
 
 @custom-variant dark (&:is(.dark *));
+
+/* ── The ground ────────────────────────────────────────────────────────────
+   The field the sidebar and the gutter share, taken from the two brand
+   surfaces: a broad diagonal sheen and a fine halftone dot grid over a flat
+   fill. Built from gradients rather than the source images so it stays crisp
+   at any window size, costs no request, and re-colours with the theme.
+
+   Flat fill underneath, deliberately: any gradient across the *whole* field
+   would drift away from itself between the sidebar and the far edge of the
+   gutter and put a seam where the two are meant to be continuous. The sheen
+   is a highlight on top of the flat colour, not a replacement for it.
+
+   The halftone is driven by custom properties rather than written into the
+   gradient, so a surface can retune the dots without restating the whole
+   three-layer stack — see .app-ground-hero. */
+.app-ground {
+  --ground-dot: rgba(0, 0, 0, 0.06);
+  --ground-dot-radius: 1px;
+  --ground-dot-edge: 1.8px;
+  --ground-dot-gap: 12px;
+
+  background-color: var(--color-ground);
+  background-image:
+    radial-gradient(circle at 16% 82%, rgba(255, 255, 255, 0.11), transparent 55%),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(var(--ground-dot) var(--ground-dot-radius), transparent var(--ground-dot-edge));
+  background-size: auto, auto, var(--ground-dot-gap) var(--ground-dot-gap);
+  background-attachment: fixed;
+}
+
+:is(.dark *).app-ground,
+.dark .app-ground {
+  --ground-dot: rgba(0, 0, 0, 0.22);
+
+  background-color: var(--color-ground-dark);
+  background-image:
+    radial-gradient(circle at 16% 82%, rgba(255, 255, 255, 0.07), transparent 55%),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(var(--ground-dot) var(--ground-dot-radius), transparent var(--ground-dot-edge));
+  background-size: auto, auto, var(--ground-dot-gap) var(--ground-dot-gap);
+}
+
+/* Sign-in only. The app shell's halftone is deliberately near-invisible — it
+   sits behind a dense dashboard and has to stay out of the way. The sign-in
+   page has one card and a lot of open field, where that grain disappears
+   entirely, so the dots go up to 2px on a wider 16px pitch: large enough to
+   read as a texture, spaced far enough apart to stay quiet. The opacity barely
+   moves; it is the size and the spacing doing the work, which is what keeps
+   this from turning into a pattern that competes with the form.
+
+   The dark override needs the same two-class specificity as the .dark rule
+   above, or that rule's --ground-dot would win. */
+.app-ground-hero {
+  --ground-dot: rgba(0, 0, 0, 0.07);
+  --ground-dot-radius: 1px;
+  --ground-dot-edge: 2.6px;
+  --ground-dot-gap: 20px;
+}
+
+:is(.dark *).app-ground-hero,
+.dark .app-ground-hero {
+  --ground-dot: rgba(0, 0, 0, 0.26);
+}
+
+/* The sidebar is the same field, not a separate surface — so instead of a
+   fill it takes a scrim that fades to nothing by its right edge. White on
+   #00a3e0 is only ~2.7:1; this buys the nav text roughly another half a stop
+   exactly where the text is, and leaves the gutter beside the panel untouched,
+   so the two still read as one continuous field with no seam between them. */
+.app-sidebar-scrim {
+  background-image: linear-gradient(90deg,
+      rgba(4, 22, 46, 0.26) 0%,
+      rgba(4, 22, 46, 0.13) 62%,
+      rgba(4, 22, 46, 0) 100%);
+}
 
 body {
   @apply font-sans bg-zinc-50 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 antialiased h-screen overflow-hidden transition-colors duration-300;
@@ -57,13 +174,16 @@ body {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   @apply bg-zinc-300 dark:bg-zinc-700;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-zinc-400 dark:bg-zinc-600;
 }

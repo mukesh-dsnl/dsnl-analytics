@@ -37,7 +37,7 @@ export function ChartCard({
   children,
 }: ChartCardProps) {
   return (
-    <div className="bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg flex flex-col transition-colors duration-300">
+    <div className="bg-white dark:bg-surface-dark border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg flex flex-col transition-colors duration-300">
       <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-zinc-200 dark:border-zinc-800/60">
         <div className="flex items-center gap-2.5 min-w-0">
           {Icon && <Icon className="w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500" />}

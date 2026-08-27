@@ -24,7 +24,7 @@ import { PAGE_SIZE } from '../usePagination';
  */
 export function TableCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col min-h-0 bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg overflow-hidden transition-colors duration-300">
+    <div className="flex flex-col min-h-0 bg-white dark:bg-surface-dark border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg overflow-hidden transition-colors duration-300">
       {children}
     </div>
   );
@@ -65,7 +65,7 @@ export function TableStatus({ isLoading, error, isEmpty }: { isLoading: boolean;
  * separation. A shadow belongs to the cell and travels with it.
  */
 export const TH_CLASS =
-  'sticky top-0 z-20 bg-white dark:bg-[#09090B] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 ' +
+  'sticky top-0 z-20 bg-white dark:bg-surface-dark px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 ' +
   'shadow-[inset_0_-1px_0_theme(colors.zinc.200)] dark:shadow-[inset_0_-1px_0_theme(colors.zinc.800)]';
 export const TH_CLASS_RIGHT = `${TH_CLASS} text-right`;
 export const TD_CLASS = 'px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300 tabular-nums';

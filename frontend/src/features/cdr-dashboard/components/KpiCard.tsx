@@ -39,7 +39,7 @@ export function KpiCard({
   return (
     <div
       className={clsx(
-        'relative bg-white dark:bg-[#09090B] border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg px-5 py-4 flex items-center gap-4 transition-colors duration-300',
+        'relative bg-white dark:bg-surface-dark border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg px-5 py-4 flex items-center gap-4 transition-colors duration-300',
         showTooltip && 'group cursor-default',
       )}
     >
