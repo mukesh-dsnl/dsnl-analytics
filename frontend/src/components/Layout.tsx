@@ -297,13 +297,18 @@ export function Layout() {
         // No fill of its own — it is the ground showing through, plus a scrim
         // that fades out by its right edge to buy the nav text contrast
         // without drawing a line between the sidebar and the gutter.
-        "app-sidebar-scrim flex flex-col shrink-0 z-20 transition-[width,opacity] duration-300",
+        "app-sidebar-scrim flex flex-col shrink-0 z-20",
         isSidebarCollapsed ? "w-20" : "w-64",
         // Scrim and all on the way out, exactly as the sign-in page fades its
         // own left region — what is left behind is the bare ground, which is
         // the same field on both routes.
-        isLoggingOut && "opacity-0 duration-500 pointer-events-none"
-      )}>
+        isLoggingOut && "opacity-0 pointer-events-none"
+      )}
+      // Two properties, two durations: the collapse toggle stays at 300ms while
+      // the logout fade runs at the 500ms the sign-in page uses for the same
+      // region. Written out rather than stacked as duration utilities, which
+      // would have left the winner to be decided by stylesheet order.
+      style={{ transitionProperty: 'width, opacity', transitionDuration: '300ms, 500ms' }}>
         {/* Logo. No divider under it — the panel is one unbroken field of
             brand blue, and spacing alone separates the regions. */}
         <div className={clsx(
