@@ -95,6 +95,22 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   // complete; the dates the query actually uses are spliced in below.
   const [filters, setFilters] = useState<CdrFilters>(() => filtersForDay(from, service));
 
+  // Switching service empties the fields. They are all per-service identifiers
+  // — a CRN or a CPIN read against Voicedrop matches nothing on Conference —
+  // and the field set itself changes, so anything typed into a field the next
+  // service doesn't offer would keep narrowing the query while invisible. The
+  // date range is deliberately untouched: it lives in the shared store above,
+  // which is what keeps the selected days steady across the whole module.
+  //
+  // Adjusted during render rather than in an effect: React re-runs this
+  // component with the new state before committing, so the filter bar never
+  // paints one frame holding the previous service's values.
+  const [filtersFor, setFiltersFor] = useState(service);
+  if (filtersFor !== service) {
+    setFiltersFor(service);
+    setFilters(filtersForDay(from, service));
+  }
+
   const fields = SERVICE_FIELDS[service];
 
   // Only the typed fields are debounced, and deliberately so. Holding the

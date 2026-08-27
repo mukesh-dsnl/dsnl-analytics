@@ -106,6 +106,17 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const [search, setSearch] = useState('');
   const headerSlot = useHeaderSlot();
 
+  // Same reasoning as switching view below: the term belongs to the service it
+  // was typed against — an account or CPIN from Conference matches nothing on
+  // Voicedrop — so changing service empties the box rather than showing an
+  // empty table with no visible cause. The view tab and the selected date
+  // stay: neither is service-specific.
+  const [searchFor, setSearchFor] = useState(service);
+  if (searchFor !== service) {
+    setSearchFor(service);
+    setSearch('');
+  }
+
   const filters: CampaignFilter = { date, service };
   const enabled = status.available;
 
