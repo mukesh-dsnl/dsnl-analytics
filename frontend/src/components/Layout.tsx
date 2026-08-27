@@ -18,7 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import EqualizerIcon from '@mui/icons-material/Equalizer';
 import clsx from 'clsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
@@ -67,6 +67,26 @@ const NAV: NavNode[] = [
   },
 ];
 
+/**
+ * How long the content panel takes to collapse back to the sign-in card, and
+ * therefore how long the route is held open after Logout is pressed. Matches
+ * Login's EXPAND_MS so the two halves of the journey run at the same speed —
+ * and, as there, the CSS duration and the timeout have to agree or the route
+ * changes mid-flight and the transition simply disappears.
+ */
+const COLLAPSE_MS = 550;
+
+/**
+ * Where the panel's left edge collapses to: 40% of the viewport, which is
+ * where the sign-in card's own left edge sits. The padding is what moves, so
+ * the figure is that mark less the sidebar the panel is already offset by —
+ * w-64 open, w-20 collapsed.
+ */
+const COLLAPSE_PADDING = {
+  open: 'lg:pl-[calc(40vw-256px)]',
+  collapsed: 'lg:pl-[calc(40vw-80px)]',
+};
+
 /** Every path a node's own link should read as "current" for, itself included. */
 function collectPaths(node: NavNode, into: string[] = []): string[] {
   into.push(node.path);
@@ -112,8 +132,10 @@ function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }
         : 'text-white/70 hover:text-white hover:bg-white/10 font-medium'
       : isActive
         ? 'bg-white/25 text-white border border-white/30 shadow-sm font-medium'
-        // Pure white, not a tint: white on the brand blue is already only
-        // 2.75:1, so there is no contrast to spend on softening it.
+        // Pure white, not a tint. White on the bare cyan ground is only 2.87:1;
+        // the sidebar's scrim (see .app-sidebar-scrim) lifts that to 4.54:1,
+        // which is the whole contrast budget — there is none spare to spend on
+        // softening the ink itself.
         : 'text-white hover:bg-white/15 border border-transparent font-medium',
   );
 
@@ -189,6 +211,11 @@ export function Layout() {
   // Same reasoning for the panel itself: page-owned overlays portal into it so
   // they centre on the card rather than on the viewport (see ContentPanelSlot).
   const [contentPanel, setContentPanel] = useState<HTMLDivElement | null>(null);
+  /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const collapseTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
 
   // Ensure theme is applied to document
   useEffect(() => {
@@ -230,21 +257,36 @@ export function Layout() {
       return next;
     });
 
+  /**
+   * Sign-in run backwards.
+   *
+   * The panel shrinks from its own footprint to the 40% mark the sign-in card
+   * occupies while the sidebar fades out, and only then does the route change
+   * — so the card that appears is the panel you were just looking at, at the
+   * same size and in the same place.
+   *
+   * The store write waits for the same reason it does on the way in: clearing
+   * auth now would send RequireAuth straight to /login and cut the animation.
+   */
   const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+    setIsLoggingOut(true);
+    collapseTimer.current = window.setTimeout(() => {
+      logout();
+      navigate('/login', { replace: true });
+    }, COLLAPSE_MS);
   };
 
   return (
-    // The ground is the same brand blue as the sidebar, so the gutter around
-    // the content panel reads as a continuation of it rather than as a separate
-    // surface — the sidebar and the margin are one field of colour with the
-    // panel inset into it.
+    // The ground runs under the sidebar *and* the gutter, so the margin around
+    // the content panel reads as a continuation of the sidebar rather than as a
+    // separate surface — one field of colour with the panel inset into it.
     //
-    // Flat rather than a gradient, and that matters: any gradient would drift
-    // away from the sidebar's flat fill somewhere along its length and put a
-    // visible seam exactly where the two are supposed to be continuous.
-    <div className="flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100 bg-primary">
+    // Its texture (see .app-ground) is a flat brand fill with a diagonal sheen
+    // and a halftone dot grid over it: cyan #00a3e0 in light, indigo #21257a in
+    // dark. The fill stays flat underneath because any gradient spanning the
+    // whole field would drift away from itself between the sidebar and the far
+    // edge of the gutter, putting a seam exactly where the two are continuous.
+    <div className="app-ground flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
 
       {/* Left Sidebar — flush to the edge, full height, solid brand blue */}
       <aside className={clsx(
@@ -252,8 +294,15 @@ export function Layout() {
         // flex-1 sibling with no width transition of its own, so it never
         // animates — it just occupies whatever space this leaves it, frame by
         // frame, as this alone resizes.
-        "flex flex-col shrink-0 z-20 bg-primary transition-[width] duration-300",
-        isSidebarCollapsed ? "w-20" : "w-64"
+        // No fill of its own — it is the ground showing through, plus a scrim
+        // that fades out by its right edge to buy the nav text contrast
+        // without drawing a line between the sidebar and the gutter.
+        "app-sidebar-scrim flex flex-col shrink-0 z-20 transition-[width,opacity] duration-300",
+        isSidebarCollapsed ? "w-20" : "w-64",
+        // Scrim and all on the way out, exactly as the sign-in page fades its
+        // own left region — what is left behind is the bare ground, which is
+        // the same field on both routes.
+        isLoggingOut && "opacity-0 duration-500 pointer-events-none"
       )}>
         {/* Logo. No divider under it — the panel is one unbroken field of
             brand blue, and spacing alone separates the regions. */}
@@ -358,6 +407,7 @@ export function Layout() {
           )}
           <button
             onClick={handleLogout}
+            disabled={isLoggingOut}
             title={isSidebarCollapsed ? "Logout" : undefined}
             className={clsx(
               // Red text on the brand blue. red-300 is the step that still
@@ -382,7 +432,20 @@ export function Layout() {
           always had: every card inside it is white, and those need a slightly
           darker ground to read as raised. `overflow-hidden` is what makes the
           corners actually clip the header and the scroll area. */}
-      <div className="flex-1 min-w-0 p-3">
+      <div
+        className={clsx(
+          'flex-1 min-w-0 p-3 transition-[padding] ease-in-out',
+          // On the way out the left padding — and only the left padding —
+          // grows until the panel's left edge is on the sign-in card's 40%
+          // mark. Padding rather than a transform, so the panel genuinely
+          // reflows to the smaller box and its contents settle where they will
+          // be on the other side, instead of the whole thing being squashed.
+          // lg-only, matching the card: below that the card is full width and
+          // there is no horizontal move to make.
+          isLoggingOut && (isSidebarCollapsed ? COLLAPSE_PADDING.collapsed : COLLAPSE_PADDING.open),
+        )}
+        style={{ transitionDuration: `${COLLAPSE_MS}ms` }}
+      >
       {/* No border: against the brand blue the panel edge is already a hard
           value change, and a light hairline there would read as a halo. */}
       {/* `relative` is load-bearing: it is what makes this card the containing
@@ -392,15 +455,25 @@ export function Layout() {
         ref={setContentPanel}
         className="relative h-full flex flex-col rounded-2xl overflow-hidden
                    shadow-lg shadow-black/10
-                   bg-zinc-50 dark:bg-[#111113]"
+                   bg-zinc-50 dark:bg-canvas-dark"
       >
         {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
             Metrics gets its own single-date control instead of the analytics
             date range, since the two modules read the lake differently (one day
             vs a range) and hold their selections in separate stores. */}
-        <header className="h-[72px] flex items-center gap-5 px-6 shrink-0 z-10
-                           bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60">
+        {/* The surface itself stays put while its contents fade, which is the
+            sign-in card's exit in reverse — there the card's shell held while
+            the form faded as it grew. A dashboard squeezed into a 60%-wide box
+            on the way out would read as a layout bug, not as a transition. */}
+        <header
+          className={clsx(
+            `h-[72px] flex items-center gap-5 px-6 shrink-0 z-10
+             bg-white dark:bg-surface-dark border-b border-zinc-200 dark:border-zinc-800/60
+             transition-opacity duration-300`,
+            isLoggingOut && 'opacity-0 pointer-events-none',
+          )}
+        >
           {/* Page-owned controls land here — the per-service filters. Layout
               only provides the space; what goes in it is decided by whichever
               page is mounted (see HeaderSlot). It takes the free width so the
@@ -430,7 +503,12 @@ export function Layout() {
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto relative">
+        <main
+          className={clsx(
+            'flex-1 overflow-y-auto relative transition-opacity duration-300',
+            isLoggingOut && 'opacity-0 pointer-events-none',
+          )}
+        >
           <HeaderSlotContext.Provider value={headerSlot}>
             <ContentPanelContext.Provider value={contentPanel}>
               <Outlet />

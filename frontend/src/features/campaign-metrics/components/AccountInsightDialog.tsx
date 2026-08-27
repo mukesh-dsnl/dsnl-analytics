@@ -72,13 +72,13 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
         aria-label={`Campaign insight for account ${account}`}
         onClick={(e) => e.stopPropagation()}
         className={clsx(
-          'w-full max-w-5xl flex flex-col bg-zinc-50 dark:bg-[#0c0c0e] border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden',
+          'w-full max-w-5xl flex flex-col bg-zinc-50 dark:bg-canvas-dark border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden',
           // Inside the panel the padded box is already the bound, so the dialog
           // just takes what is there; free-floating it still needs a viewport cap.
           panel ? 'max-h-full' : 'max-h-[90vh]',
         )}
       >
-        <div className="flex items-start justify-between gap-3 px-5 py-4 bg-white dark:bg-[#09090B] border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 bg-white dark:bg-surface-dark border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-zinc-900 dark:text-white truncate">
               Account {account}
@@ -174,7 +174,7 @@ function InsightBody({ insight }: { insight: AccountInsight }) {
           <Card title={`Connect % by carrier (used: ${carriers.map((c) => c.carrier).join(' + ')})`}>
             <CarrierBars carriers={carriers} />
           </Card>
-          <div className="flex items-center gap-3 px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B] lg:w-56">
+          <div className="flex items-center gap-3 px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark lg:w-56">
             <span className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-sky-50 text-sky-500 dark:bg-sky-500/15 dark:text-sky-400 shrink-0">
               <RadioTower className="w-5 h-5" />
             </span>
@@ -197,7 +197,7 @@ function InsightBody({ insight }: { insight: AccountInsight }) {
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B]">
+    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark">
       <h3 className="text-xs font-semibold text-zinc-900 dark:text-white mb-3">{title}</h3>
       {children}
     </section>
@@ -211,7 +211,7 @@ function BlastSection({ blasts }: { blasts: AccountInsight['blasts'] }) {
   const [view, setView] = useState<BlastView>('chart');
 
   return (
-    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B]">
+    <section className="px-5 py-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <h3 className="text-xs font-semibold text-zinc-900 dark:text-white mb-2">

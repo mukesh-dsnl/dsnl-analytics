@@ -7,10 +7,16 @@
  *
  * The two categorical hues are the app's brand blue and a warm orange, and both
  * modes were validated (not eyeballed) against the surfaces these charts
- * actually render on — white in light mode, #09090B in dark:
+ * actually render on — white in light mode, #0e1424 in dark:
  *
  *   light  #1b8fe0 / #eb6834  vs #ffffff — CVD dE 24.1, normal dE 32.4, >=3:1
- *   dark   #1b8fe0 / #d95926  vs #09090B — CVD dE 25.9, normal dE 31.9, >=3:1
+ *   dark   #1b8fe0 / #d95926  vs #0e1424 — CVD dE 25.9, normal dE 31.9, >=3:1
+ *
+ * The dark surface moved from near-black #09090B to the navy #0e1424 when the
+ * app's neutrals were re-hued; the *data* hues were re-checked against both
+ * dark surfaces rather than re-picked, and every one still clears 3:1 (the
+ * floor is green #008300 at 3.39:1 on the lighter of the two). So this palette
+ * is unchanged — only the chrome below moved.
  *
  * Most charts here are a single measure across one dimension, so they use
  * `series1` alone and let the axis carry identity — a hue per bar would be
@@ -31,7 +37,7 @@ export interface ChartTheme {
    * The full categorical ramp, in fixed slot order — a bar's hue comes from
    * its position here, never from a cycled or generated colour. Both modes
    * were validated (not eyeballed) against the surfaces these charts render
-   * on, #ffffff light and #09090B dark:
+   * on, #ffffff light and #0e1424 dark:
    *
    *   light  worst adjacent CVD ΔE 9.1, normal-vision ΔE 19.6, lightness + chroma pass
    *   dark   worst adjacent CVD ΔE 8.4, normal-vision ΔE 19.3, all ≥3:1 contrast
@@ -68,12 +74,15 @@ const LIGHT: ChartTheme = {
   good: '#0ca30c',
   critical: '#d03b3b',
   // Chrome tracks the app's zinc neutrals so the plot sits in the same family
-  // as the panel around it: zinc-200 gridlines, zinc-500 axis ink.
-  grid: '#e4e4e7',
-  axis: '#71717a',
+  // as the panel around it: zinc-200 gridlines, zinc-500 axis ink. Those
+  // neutrals now carry the brand's indigo hue (see index.css), so these move
+  // with them — a grey-green gridline on a blue-tinted panel is the tell that
+  // a chart was themed separately from the page.
+  grid: '#dde3ef',
+  axis: '#6a7593',
   tooltipBg: '#ffffff',
-  tooltipBorder: '#e4e4e7',
-  tooltipText: '#18181b',
+  tooltipBorder: '#dde3ef',
+  tooltipText: '#1a2138',
 };
 
 const DARK: ChartTheme = {
@@ -93,11 +102,11 @@ const DARK: ChartTheme = {
   ],
   good: '#0ca30c',
   critical: '#d03b3b',
-  grid: '#27272a',
-  axis: '#a1a1aa',
-  tooltipBg: '#09090B',
-  tooltipBorder: '#27272a',
-  tooltipText: '#f4f4f5',
+  grid: '#29314a',
+  axis: '#8f9ab6',
+  tooltipBg: '#0e1424',
+  tooltipBorder: '#29314a',
+  tooltipText: '#edf1f8',
 };
 
 export function useChartTheme(): ChartTheme {

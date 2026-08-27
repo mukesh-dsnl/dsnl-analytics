@@ -21,7 +21,7 @@ const FIELD_CATALOG: Record<
 };
 
 const INPUT_CLASS =
-  'h-10 px-3 rounded-lg border bg-white dark:bg-[#09090B] border-zinc-200 dark:border-zinc-800 ' +
+  'h-10 px-3 rounded-lg border bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800 ' +
   'text-zinc-900 dark:text-white text-sm placeholder:text-zinc-400 ' +
   'focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ' +
   '[&::-webkit-calendar-picker-indicator]:dark:invert [&::-webkit-calendar-picker-indicator]:opacity-50';

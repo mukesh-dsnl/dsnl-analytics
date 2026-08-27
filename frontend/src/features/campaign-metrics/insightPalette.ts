@@ -6,7 +6,10 @@ import { useUIStore } from '../../store';
  * Softer than the dashboard's categorical ramp because the popup packs several
  * large solid fills into one scrolling panel, where the full-strength steps read
  * as heavy. Every value below was validated (not eyeballed) against the surface
- * it renders on, white in light mode and #09090B in dark:
+ * it renders on, white in light mode and the dark panel in dark. That dark
+ * surface has since moved from near-black #09090B to the navy #0e1424; every
+ * step here is a light pastel well clear of both, so the measurements below
+ * still hold and nothing was re-picked:
  *
  *   light  #4a9fe0/#eb6a28/#12bd98/#dd4746 — worst adjacent CVD ΔE 11.9, normal 28.4
  *   dark   #3f93d8/#dd6a2c/#0fac7f/#cf4257 — worst adjacent CVD ΔE  7.4, normal 25.7

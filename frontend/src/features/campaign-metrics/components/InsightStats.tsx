@@ -13,7 +13,7 @@ interface StatCardProps {
 
 function StatCard({ label, value, note, icon: Icon, accent }: StatCardProps) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-[#09090B]">
+    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark">
       <span
         className={`inline-flex items-center justify-center w-11 h-11 rounded-xl shrink-0 ${accent}`}
       >
