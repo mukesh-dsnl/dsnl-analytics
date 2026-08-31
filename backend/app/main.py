@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, campaign, cdr
+from app.api import ai, auth, campaign, cdr
 from app.core.config import get_settings
 from app.core.database import Base, engine
 
@@ -57,6 +57,10 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api", tags=["Auth"])
 app.include_router(cdr.router, prefix="/api", tags=["CDR Analytics"])
 app.include_router(campaign.router, prefix="/api", tags=["Campaign Metrics"])
+# Registers unconditionally. With no AI key configured the route still exists
+# and answers 503 naming the variable to set — the dashboards above are
+# unaffected either way.
+app.include_router(ai.router, prefix="/api", tags=["AI Chat"])
 
 
 @app.get("/health", tags=["Health"])

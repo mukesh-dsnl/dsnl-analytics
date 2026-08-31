@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   PhoneCall,
   PhoneForwarded,
+  Sparkles,
   Sun,
   Users,
 } from 'lucide-react';
@@ -65,6 +66,10 @@ const NAV: NavNode[] = [
     icon: PhoneForwarded,
     children: serviceChildren('multicall'),
   },
+  // Not a service, so it sits on its own at the end rather than joining the
+  // three above: it answers across all of them, and questions the fixed panels
+  // have no shape for.
+  { label: 'AI Assistant', path: '/ai-chat', icon: Sparkles },
 ];
 
 /**
@@ -228,6 +233,9 @@ export function Layout() {
 
   const isActivePath = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`);
+
+  /** The chat route is the one page with no date control of its own. */
+  const isAiChat = location.pathname.startsWith('/ai-chat');
 
   // Auto-expand whichever sections the current route is inside — landing
   // straight on /analytics/voicedrop/blast-details (a refresh, a bookmark)
@@ -497,7 +505,14 @@ export function Layout() {
             ref={setHeaderSlot}
             className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
-          {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
+          {/* The AI chat carries no date control: the range is part of the
+              question, and the assistant names the one it used in its answer.
+              A picker here would imply it narrowed the query, which it did not. */}
+          {isAiChat ? null : location.pathname.startsWith('/campaign-metrics') ? (
+            <HeaderCampaignDate />
+          ) : (
+            <HeaderDateRange />
+          )}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
