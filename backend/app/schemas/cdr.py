@@ -3,7 +3,7 @@
 from datetime import date, time
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from app.core.config import get_settings
 
@@ -46,16 +46,30 @@ class CdrFilter(BaseModel):
         return v or None
 
     @model_validator(mode="after")
-    def _check_range(self) -> "CdrFilter":
+    def _check_range(self, info: ValidationInfo) -> "CdrFilter":
         if self.date_to < self.date_from:
             raise ValueError("date_to must not be earlier than date_from.")
 
-        max_days = get_settings().CDR_MAX_RANGE_DAYS
+        # CDR_MAX_RANGE_DAYS is the dashboard's ceiling, chosen for what a
+        # person is willing to wait for on a network share. A caller with a
+        # different budget can name its own via validation context:
+        #
+        #     CdrFilter.model_validate(data, context={"max_range_days": 31})
+        #
+        # The AI tools do exactly that — their questions ("day by day across a
+        # fortnight") are legitimately wider than a dashboard panel, and
+        # inheriting the dashboard's limit made whole classes of question
+        # unanswerable rather than merely slow. Absent a context this is
+        # unchanged, so every existing endpoint keeps the same ceiling.
+        context = info.context or {}
+        max_days = context.get("max_range_days") or get_settings().CDR_MAX_RANGE_DAYS
+        limit_name = "max_range_days" if context.get("max_range_days") else "CDR_MAX_RANGE_DAYS"
+
         span = (self.date_to - self.date_from).days + 1
         if span > max_days:
             raise ValueError(
                 f"Date range spans {span} days; the limit is {max_days} "
-                "(CDR_MAX_RANGE_DAYS). Narrow the range or raise the limit."
+                f"({limit_name}). Narrow the range or raise the limit."
             )
         return self
 

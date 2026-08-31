@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { Loader2, RotateCcw, Sparkles, TriangleAlert } from 'lucide-react';
+import { RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
+import { AnswerBody, hasTable } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
-import { QueryTrace } from '../components/QueryTrace';
+import { RoundSteps } from '../components/RoundSteps';
 
 /**
  * Natural-language questions over the CDR/CODR lake.
@@ -74,11 +75,18 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
+  // A breakdown needs the room; a sentence looks stranded at full width. The
+  // live turn takes it too, so the bubble doesn't jump width when the answer
+  // replaces the progress list.
+  const isWide =
+    message.isStreaming || (!message.isError && hasTable(message.text));
+
   return (
     <li className="flex justify-start">
       <div
         className={clsx(
-          'max-w-[85%] rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-sm shadow-sm border',
+          'rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-sm shadow-sm border',
+          isWide ? 'w-full' : 'max-w-[85%]',
           message.isError
             ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200'
             : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60 text-zinc-800 dark:text-zinc-200',
@@ -91,23 +99,42 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        <div className="whitespace-pre-wrap break-words leading-relaxed">{message.text}</div>
+        {/* The steps stay at the top through both phases: they are written
+            there while the answer is being worked out, and they stay there
+            once it arrives, with the answer appearing underneath. One render
+            site rather than two, so the lines never jump position — and the
+            component stays mounted across the transition, which is also what
+            stops the finished lines re-typing themselves at the end. */}
+        {!!message.steps?.length && (
+          <RoundSteps steps={message.steps} isLive={!!message.isStreaming} />
+        )}
 
-        {message.queries && <QueryTrace queries={message.queries} />}
+        {/* An error is plain text by definition — only a real answer can carry
+            a table, and running the parser over a server message would be
+            interpreting something the model never wrote. */}
+        {!message.isStreaming &&
+          (message.isError ? (
+            <div className="whitespace-pre-wrap break-words leading-relaxed">{message.text}</div>
+          ) : (
+            <AnswerBody text={message.text} />
+          ))}
       </div>
     </li>
   );
 }
 
 export function AiChatPage() {
-  const { messages, send, reset, isPending, hasConversation } = useChat();
+  const { messages, send, stop, reset, isPending, hasConversation } = useChat();
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Keep the newest turn in view as the conversation grows, including while a
-  // pending answer is still a spinner.
+  // Follow the newest turn as it grows. Counting the steps too, not just the
+  // messages: during a long answer the message count doesn't change, but the
+  // bubble gets taller with every round and would otherwise grow off-screen.
+  const stepCount = messages.reduce((total, m) => total + (m.steps?.length ?? 0), 0);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, isPending]);
+  }, [messages.length, stepCount, isPending]);
 
   return (
     <div className="h-full flex flex-col">
@@ -121,7 +148,21 @@ export function AiChatPage() {
           </p>
         </div>
 
-        {hasConversation && (
+        {isPending && (
+          <button
+            type="button"
+            onClick={stop}
+            className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                       text-zinc-600 dark:text-zinc-400
+                       hover:bg-zinc-100 dark:hover:bg-zinc-800/50
+                       hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
+          >
+            <Square className="w-3 h-3" />
+            Stop
+          </button>
+        )}
+
+        {hasConversation && !isPending && (
           <button
             type="button"
             onClick={reset}
@@ -141,28 +182,19 @@ export function AiChatPage() {
         {messages.length === 0 ? (
           <EmptyState onPick={send} />
         ) : (
-          <ul className="space-y-3 max-w-3xl mx-auto">
+          <ul className="space-y-3 max-w-4xl mx-auto">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
 
-            {isPending && (
-              <li className="flex justify-start">
-                <div className="rounded-2xl rounded-bl-sm bg-white dark:bg-surface-dark border border-zinc-200 dark:border-zinc-800/60 px-3.5 py-2.5 shadow-sm">
-                  <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Querying the lake…
-                  </span>
-                </div>
-              </li>
-            )}
-
+            {/* No separate spinner row: the in-flight assistant message is
+                already on screen, reporting each step as it happens. */}
             <div ref={endRef} />
           </ul>
         )}
       </div>
 
-      <div className="max-w-3xl w-full mx-auto">
+      <div className="max-w-4xl w-full mx-auto">
         <ChatComposer onSend={send} isPending={isPending} />
       </div>
     </div>
