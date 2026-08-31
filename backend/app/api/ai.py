@@ -18,14 +18,17 @@ The dashboards do not depend on any of this. With no key configured every other
 route behaves exactly as before and only this one returns 503.
 """
 
+import json
 import logging
+from typing import Iterator
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.ai import orchestrator
 from app.ai.providers.base import NeutralMessage, ToolCallRequest, ToolResult
-from app.ai.providers.factory import ProviderNotConfigured
+from app.ai.providers.factory import ProviderNotConfigured, get_llm_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -149,4 +152,73 @@ def chat(body: ChatRequest) -> ChatResponse:
                 NeutralMessage(role="assistant", text=result.get("answer", "")),
             ]
         ),
+    )
+
+
+@router.post("/ai/chat/stream")
+def chat_stream(body: ChatRequest) -> StreamingResponse:
+    """The same answer, reported as it is worked out.
+
+    Server-sent events, because a question can take several rounds and tens of
+    seconds against a network share, and a blocking POST leaves the client with
+    nothing to show for that time but a spinner. Each event says what the model
+    is doing and how long the last step took, so the wait is legible rather
+    than merely long.
+
+    POST rather than GET (so EventSource can't be used, and the client reads
+    the body itself): the question and the whole prior conversation go up with
+    the request, which does not belong in a URL.
+
+    The provider is resolved *before* the response begins. Once the first byte
+    is out the status code is fixed, so an unconfigured provider has to fail as
+    a normal 503 here rather than as an error event nobody checks for.
+    """
+    try:
+        client = get_llm_client()
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    history = _to_neutral(body.history)
+
+    def events() -> Iterator[str]:
+        answer_text = ""
+        try:
+            for event in orchestrator.answer_events(
+                history=history, question=body.question, llm=client
+            ):
+                if event["type"] == "done":
+                    answer_text = event.get("answer", "")
+                    # The client stores what it is given and sends it back, so
+                    # the history is assembled here exactly as the blocking
+                    # endpoint assembles it.
+                    event = {
+                        **event,
+                        "history": _to_json(
+                            [
+                                *history,
+                                NeutralMessage(role="user", text=body.question),
+                                NeutralMessage(role="assistant", text=answer_text),
+                            ]
+                        ),
+                    }
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+        except Exception as exc:  # noqa: BLE001 — the stream must end cleanly
+            logger.exception("AI chat stream failed")
+            # Too late for a status code; the client watches for this type.
+            failure = {
+                "type": "error",
+                "detail": f"The AI provider could not answer that request: {type(exc).__name__}.",
+            }
+            yield f"data: {json.dumps(failure)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # nginx buffers proxied responses by default, which would hold the
+            # whole stream back and defeat the point of sending it early.
+            "X-Accel-Buffering": "no",
+        },
     )

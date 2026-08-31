@@ -26,20 +26,25 @@ have fixed.
 
 import logging
 import traceback
-from typing import Any, Callable
+from time import perf_counter
+from typing import Any, Callable, Iterator
 
 from app.ai.providers.base import LLMClient, NeutralMessage, ToolResult
 from app.ai.providers.factory import get_llm_client
 from app.ai.schema_prompt import SYSTEM_PROMPT
 from app.ai.tools.ad_hoc_sql import RUN_QUERY_TOOL, run_cdr_query
+from app.ai.tools.metrics import QUERY_METRICS_TOOL, query_metrics
 from app.ai.tools.structured import GET_PANEL_TOOL, get_cdr_panel
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-TOOLS = [GET_PANEL_TOOL, RUN_QUERY_TOOL]
+# Order matters: the model reads these as a list, and the one that answers most
+# questions is offered first.
+TOOLS = [QUERY_METRICS_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
 
 DISPATCH: dict[str, Callable[..., tuple[str, bool]]] = {
+    "query_metrics": query_metrics,
     "get_cdr_panel": get_cdr_panel,
     "run_cdr_query": run_cdr_query,
 }
@@ -67,19 +72,29 @@ def _run_tool(name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         return (f"The {name} tool failed unexpectedly: {exc}", True)
 
 
-def answer(
+def answer_events(
     history: list[NeutralMessage] | None = None,
     question: str = "",
     llm: LLMClient | None = None,
-) -> dict[str, Any]:
-    """Answer one question, running tools as the model asks for them.
+) -> Iterator[dict[str, Any]]:
+    """The loop, as a stream of events. `answer()` below is this, drained.
 
-    `llm` is injectable so the loop can be tested without a network or a key;
-    in production it is left None and resolved from configuration.
+    A question can take several rounds and tens of seconds against a network
+    share, and a blocking call gives the caller nothing to show for it — so the
+    loop reports what it is doing as it does it. Every event carries the round
+    it belongs to, and the timings are measured here rather than inferred by
+    the client, because only this side knows when a tool actually started.
 
-    Returns {answer, provider, model, queries} — `queries` being every tool call
-    made, which the API surfaces so an answer can be traced back to the query
-    that produced it.
+    Event types:
+
+        round_start   {round}                          the model is deciding
+        round_thinking {round, seconds}                it decided
+        tool_start    {round, index, tool, input}      a tool is running
+        tool_end      {round, index, ok, seconds}      it finished
+        done          {answer, provider, model, queries}
+
+    `done` is always the last event, including when the budget runs out — a
+    consumer can rely on seeing exactly one.
     """
     settings = get_settings()
     client = llm or get_llm_client()
@@ -91,32 +106,64 @@ def answer(
     queries_run: list[dict[str, Any]] = []
 
     for round_number in range(settings.AI_MAX_TOOL_ROUNDS):
+        round_index = round_number + 1
+
+        yield {"type": "round_start", "round": round_index}
+
+        started = perf_counter()
         turn = client.send(SYSTEM_PROMPT, conversation, TOOLS)
+        yield {
+            "type": "round_thinking",
+            "round": round_index,
+            "seconds": round(perf_counter() - started, 2),
+        }
 
         if turn.stop_reason != "tool_use" or not turn.tool_calls:
-            return {
+            yield {
+                "type": "done",
                 "answer": turn.text,
                 "provider": client.provider,
                 "model": client.model,
                 "queries": queries_run,
             }
+            return
 
         conversation.append(
             NeutralMessage(role="assistant", text=turn.text, tool_calls=turn.tool_calls)
         )
 
         results: list[ToolResult] = []
-        for call in turn.tool_calls:
+        for index, call in enumerate(turn.tool_calls):
             logger.info(
-                f"AI round {round_number + 1}/{settings.AI_MAX_TOOL_ROUNDS}: {call.name}"
+                f"AI round {round_index}/{settings.AI_MAX_TOOL_ROUNDS}: {call.name}"
             )
+            yield {
+                "type": "tool_start",
+                "round": round_index,
+                "index": index,
+                "tool": call.name,
+                "input": call.input,
+            }
+
+            started = perf_counter()
             content, is_error = _run_tool(call.name, call.input)
+            elapsed = round(perf_counter() - started, 2)
+
             queries_run.append({"tool": call.name, "input": call.input, "error": is_error})
             results.append(
                 ToolResult(
                     call_id=call.id, name=call.name, content=content, is_error=is_error
                 )
             )
+
+            yield {
+                "type": "tool_end",
+                "round": round_index,
+                "index": index,
+                "tool": call.name,
+                "ok": not is_error,
+                "seconds": elapsed,
+            }
 
         # One message carrying every result from this turn — see the docstring.
         conversation.append(NeutralMessage(role="user", tool_results=results))
@@ -125,9 +172,35 @@ def answer(
         f"AI loop exhausted {settings.AI_MAX_TOOL_ROUNDS} rounds without an answer; "
         f"{len(queries_run)} tool calls made."
     )
-    return {
+    yield {
+        "type": "done",
         "answer": BUDGET_EXCEEDED,
         "provider": client.provider,
         "model": client.model,
         "queries": queries_run,
     }
+
+
+def answer(
+    history: list[NeutralMessage] | None = None,
+    question: str = "",
+    llm: LLMClient | None = None,
+) -> dict[str, Any]:
+    """Answer one question, running tools as the model asks for them.
+
+    The non-streaming form: drains `answer_events` and returns its `done`
+    payload. Both endpoints therefore run the identical loop, so the streaming
+    one cannot drift from the one the tests cover.
+
+    `llm` is injectable so the loop can be tested without a network or a key;
+    in production it is left None and resolved from configuration.
+
+    Returns {answer, provider, model, queries} — `queries` being every tool call
+    made, which the API surfaces so an answer can be traced back to the query
+    that produced it.
+    """
+    final: dict[str, Any] = {}
+    for event in answer_events(history=history, question=question, llm=llm):
+        if event["type"] == "done":
+            final = {k: v for k, v in event.items() if k != "type"}
+    return final

@@ -50,11 +50,19 @@ class Settings(BaseSettings):
     # order Anthropic, OpenAI, Gemini (see providers/factory.py).
     AI_PROVIDER: Optional[str] = None  # "anthropic" | "openai" | "gemini"
     AI_MODEL: Optional[str] = None  # provider-specific id; None = that provider's default
-    # Deliberately tighter than CDR_MAX_RANGE_DAYS. The dashboard's range is
-    # chosen by a person who sees the cost in the loading spinner; an ad-hoc
-    # range is chosen by a model that doesn't, and each round of the tool loop
-    # can pick a new one.
-    AI_MAX_RANGE_DAYS: int = 7
+    # The range ceiling for AI tool calls, on both tiers. Independent of
+    # CDR_MAX_RANGE_DAYS rather than derived from it: that one is tuned for
+    # what a person will wait for on a dashboard panel, while the questions
+    # asked here ("minutes day by day across a fortnight") are legitimately
+    # wider. Tying the two together made those questions unanswerable — the
+    # model could only satisfy them by calling once per day, which exhausted
+    # the round budget before it reached an answer.
+    #
+    # Raise or lower this on its own; it is what both get_cdr_panel and
+    # run_cdr_query are checked against, so it is the one number the model is
+    # told about, and the one that bounds how many daily files a single tool
+    # call can open.
+    AI_MAX_RANGE_DAYS: int = 31
     # How many result rows may go back to the model. This is a context budget,
     # not a safety limit — it is applied as a structural LIMIT wrapper the
     # model's own SQL cannot widen.

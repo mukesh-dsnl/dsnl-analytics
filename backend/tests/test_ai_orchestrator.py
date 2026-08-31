@@ -44,7 +44,11 @@ class FakeLLMClient(LLMClient):
 
 @pytest.fixture
 def spy_dispatch(monkeypatch):
-    """Replace both tools with recorders, so no query touches the lake."""
+    """Replace every tool with a recorder, so no query touches the lake.
+
+    All of them, not just the ones a given test names: a tool left unpatched
+    runs for real, and then the test is measuring the lake rather than the loop.
+    """
     seen: list[tuple[str, dict]] = []
 
     def make(name, content="{}", is_error=False):
@@ -54,8 +58,8 @@ def spy_dispatch(monkeypatch):
 
         return handler
 
-    monkeypatch.setitem(orchestrator.DISPATCH, "get_cdr_panel", make("get_cdr_panel"))
-    monkeypatch.setitem(orchestrator.DISPATCH, "run_cdr_query", make("run_cdr_query"))
+    for tool_name in list(orchestrator.DISPATCH):
+        monkeypatch.setitem(orchestrator.DISPATCH, tool_name, make(tool_name))
     return seen
 
 
@@ -129,6 +133,128 @@ def test_an_out_of_scope_question_never_reaches_a_tool(spy_dispatch):
     assert spy_dispatch == []
     assert result["queries"] == []
     assert "billing" in result["answer"]
+
+
+# ── The event stream ───────────────────────────────────────────────────────
+# `answer()` is `answer_events()` drained, so the two cannot drift; these cover
+# the part only the streaming endpoint sees.
+
+
+def test_events_report_each_step_in_order(spy_dispatch):
+    client = FakeLLMClient(
+        [
+            LLMTurn(
+                text="",
+                tool_calls=[
+                    ToolCallRequest(id="c1", name="query_metrics", input={"date_from": "2026-08-01"})
+                ],
+                stop_reason="tool_use",
+            ),
+            LLMTurn(text="Done.", stop_reason="end_turn"),
+        ]
+    )
+
+    events = list(orchestrator.answer_events(question="q", llm=client))
+
+    assert [e["type"] for e in events] == [
+        "round_start",
+        "round_thinking",
+        "tool_start",
+        "tool_end",
+        "round_start",
+        "round_thinking",
+        "done",
+    ]
+
+
+def test_done_is_always_the_last_event_and_appears_once(spy_dispatch):
+    """A consumer closes on `done`, so exactly one must arrive, at the end."""
+    client = FakeLLMClient([LLMTurn(text="ok", stop_reason="end_turn")])
+    events = list(orchestrator.answer_events(question="q", llm=client))
+
+    assert [e["type"] for e in events].count("done") == 1
+    assert events[-1]["type"] == "done"
+
+
+def test_done_arrives_even_when_the_budget_is_exhausted(spy_dispatch):
+    """The budget message must reach the client as a normal answer, not a hang."""
+    always_tool = LLMTurn(
+        text="",
+        tool_calls=[ToolCallRequest(id="c", name="query_metrics", input={})],
+        stop_reason="tool_use",
+    )
+    client = FakeLLMClient([always_tool], repeat_last=True)
+
+    events = list(orchestrator.answer_events(question="q", llm=client))
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["answer"] == orchestrator.BUDGET_EXCEEDED
+
+
+def test_tool_events_carry_what_the_ui_needs_to_label_them(spy_dispatch):
+    client = FakeLLMClient(
+        [
+            LLMTurn(
+                text="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="c1",
+                        name="query_metrics",
+                        input={"measures": ["minutes"], "group_by": ["date"]},
+                    )
+                ],
+                stop_reason="tool_use",
+            ),
+            LLMTurn(text="Done.", stop_reason="end_turn"),
+        ]
+    )
+
+    events = list(orchestrator.answer_events(question="q", llm=client))
+    start = next(e for e in events if e["type"] == "tool_start")
+    end = next(e for e in events if e["type"] == "tool_end")
+
+    assert start["tool"] == "query_metrics"
+    assert start["input"]["group_by"] == ["date"]
+    # The pair (round, index) is what the client matches an end to its start.
+    assert (start["round"], start["index"]) == (end["round"], end["index"])
+    assert end["ok"] is True
+    assert isinstance(end["seconds"], float)
+
+
+def test_a_failed_tool_is_reported_as_not_ok(monkeypatch):
+    monkeypatch.setitem(
+        orchestrator.DISPATCH, "query_metrics", lambda **kw: ("bad range", True)
+    )
+    client = FakeLLMClient(
+        [
+            LLMTurn(
+                text="",
+                tool_calls=[ToolCallRequest(id="c1", name="query_metrics", input={})],
+                stop_reason="tool_use",
+            ),
+            LLMTurn(text="Fixed.", stop_reason="end_turn"),
+        ]
+    )
+
+    events = list(orchestrator.answer_events(question="q", llm=client))
+    assert next(e for e in events if e["type"] == "tool_end")["ok"] is False
+
+
+def test_answer_returns_the_same_payload_the_stream_ends_with(spy_dispatch):
+    """The two endpoints must not be able to disagree about the answer."""
+    script = [
+        LLMTurn(
+            text="",
+            tool_calls=[ToolCallRequest(id="c1", name="query_metrics", input={})],
+            stop_reason="tool_use",
+        ),
+        LLMTurn(text="Forty-two.", stop_reason="end_turn"),
+    ]
+
+    streamed = list(orchestrator.answer_events(question="q", llm=FakeLLMClient(list(script))))[-1]
+    returned = orchestrator.answer(question="q", llm=FakeLLMClient(list(script)))
+
+    assert returned == {k: v for k, v in streamed.items() if k != "type"}
 
 
 # ── History construction ───────────────────────────────────────────────────

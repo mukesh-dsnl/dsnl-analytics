@@ -13,10 +13,11 @@ cover comes back as `is_error=True` with the message the model needs to try
 again. Turning those into a 500 would end the conversation over something the
 model could have fixed itself on the next round.
 
-Note the range limit: this tier inherits `CdrFilter`'s own validation, so it is
-bounded by CDR_MAX_RANGE_DAYS — the same ceiling the dashboard has. The tighter
-AI_MAX_RANGE_DAYS applies to Tier B, where the model writes the SQL and the
-cost of a wide range is much less predictable.
+Both tiers are bounded by AI_MAX_RANGE_DAYS, not by the dashboard's
+CDR_MAX_RANGE_DAYS: the filter model's ceiling is overridden through validation
+context below. One ceiling for both tools means one number to tell the model
+about, and it is set for the questions asked here rather than for what a person
+will wait out on a panel.
 """
 
 import json
@@ -27,6 +28,7 @@ from pydantic import ValidationError
 
 from app.ai.providers.base import ToolSpec
 from app.cdr import service
+from app.core.config import get_settings
 from app.schemas.cdr import CdrFilter
 
 logger = logging.getLogger(__name__)
@@ -119,14 +121,19 @@ def get_cdr_panel(
 
     try:
         # The filter model's own validators carry the date rules — parsing,
-        # ordering and the range ceiling — so they are enforced identically
-        # here and on the dashboard endpoints.
-        filters = CdrFilter(
-            date_from=date_from,
-            date_to=date_to,
-            service=chosen_service or None,
-            account_id=account_id,
-            crn=crn,
+        # ordering and the range ceiling. The ceiling is overridden to the AI's
+        # own budget: the dashboard's CDR_MAX_RANGE_DAYS is tuned for a panel a
+        # person is waiting on, and inheriting it here meant a question
+        # spanning more days than that could only be answered one day per call.
+        filters = CdrFilter.model_validate(
+            {
+                "date_from": date_from,
+                "date_to": date_to,
+                "service": chosen_service or None,
+                "account_id": account_id,
+                "crn": crn,
+            },
+            context={"max_range_days": get_settings().AI_MAX_RANGE_DAYS},
         )
     except ValidationError as exc:
         # The model reads this to correct itself, so it gets the readable form
