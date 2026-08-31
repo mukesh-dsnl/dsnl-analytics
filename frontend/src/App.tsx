@@ -18,6 +18,11 @@ const CampaignMetricsPage = lazy(() =>
     default: m.CampaignMetricsPage,
   })),
 );
+// Lazy for the same reason as the pages above, though for the opposite one: it
+// is light, but most sessions never open it, so it stays out of the entry chunk.
+const AiChatPage = lazy(() =>
+  import('./features/ai-chat/pages/AiChatPage').then((m) => ({ default: m.AiChatPage })),
+);
 
 function RouteFallback() {
   return (
@@ -107,6 +112,14 @@ function App() {
                   }
                 />
               </Route>
+              <Route
+                path="ai-chat"
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <AiChatPage />
+                  </Suspense>
+                }
+              />
             </Route>
           </Route>
         </Routes>
