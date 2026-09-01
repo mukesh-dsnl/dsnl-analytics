@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -31,22 +32,54 @@ function ConversationRow({
   const [isEditing, setIsEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState(conversation.title ?? '');
+  // Where to put the menu, in viewport coordinates. It is portalled to the
+  // body rather than nested in the row because the list scrolls: an absolutely
+  // positioned menu would be clipped by that scroll container for exactly the
+  // rows nearest the bottom, which are the ones most likely to be acted on.
+  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
   const rowRef = useRef<HTMLLIElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Close the menu on any click outside it. Without this a menu left open in
-  // one row stays open while you work in another.
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setConfirming(false);
+    setMenuAt(null);
+  };
+
+  const openMenu = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMenuAt({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setMenuOpen(true);
+  };
+
+  // Close on any click outside — otherwise a menu left open in one row stays
+  // open while you work in another. The menu is outside the row in the DOM
+  // now, so both have to be checked.
   useEffect(() => {
-    if (!menuOpen && !confirming) return;
+    if (!menuOpen) return;
+
     const onDocumentClick = (event: MouseEvent) => {
-      if (!rowRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-        setConfirming(false);
+      const target = event.target as Node;
+      if (!rowRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        closeMenu();
       }
     };
+    // A fixed-position menu does not travel with the list, so its anchor goes
+    // stale the moment anything scrolls. Closing is the honest response.
+    const onMove = () => closeMenu();
+
     document.addEventListener('mousedown', onDocumentClick);
-    return () => document.removeEventListener('mousedown', onDocumentClick);
-  }, [menuOpen, confirming]);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      document.removeEventListener('mousedown', onDocumentClick);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     if (isEditing) inputRef.current?.select();
@@ -121,8 +154,9 @@ function ConversationRow({
       {/* Revealed on hover or focus, and kept mounted while its menu is open
           so the menu doesn't vanish as the pointer travels to it. */}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setMenuOpen((open) => !open)}
+        onClick={() => (menuOpen ? closeMenu() : openMenu())}
         aria-label="Conversation options"
         aria-expanded={menuOpen}
         className={clsx(
@@ -134,11 +168,13 @@ function ConversationRow({
         <MoreHorizontal className="w-4 h-4" />
       </button>
 
-      {menuOpen && (
+      {menuOpen && menuAt && createPortal(
         // Light surface, not the brand blue: this is a menu over the sidebar,
         // and it reads as the same kind of object as the app's other popovers.
         <div
-          className="absolute right-1 top-full z-40 mt-1 w-40 rounded-lg py-1
+          ref={menuRef}
+          style={{ top: menuAt.top, right: menuAt.right }}
+          className="fixed z-50 w-40 rounded-lg py-1
                      bg-white dark:bg-surface-dark
                      border border-zinc-200 dark:border-zinc-700
                      shadow-lg shadow-black/25"
@@ -150,7 +186,7 @@ function ConversationRow({
                 onClick={() => {
                   setDraft(conversation.title ?? '');
                   setIsEditing(true);
-                  setMenuOpen(false);
+                  closeMenu();
                 }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs
                            text-zinc-700 dark:text-zinc-300
@@ -179,8 +215,7 @@ function ConversationRow({
                 <button
                   type="button"
                   onClick={() => {
-                    setMenuOpen(false);
-                    setConfirming(false);
+                    closeMenu();
                     onDelete();
                   }}
                   className="flex-1 rounded px-2 py-1 text-[11px] font-medium text-white bg-red-600 hover:bg-red-500"
@@ -199,7 +234,8 @@ function ConversationRow({
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </li>
   );
@@ -265,46 +301,55 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
   }
 
   return (
-    <div className="py-6 px-3 space-y-1">
-      <button
-        type="button"
-        onClick={startNew}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-                   text-white/90 hover:text-white hover:bg-white/15 transition-colors"
-      >
-        <MessageSquarePlus className="w-5 h-5 shrink-0" />
-        <span className="whitespace-nowrap">New chat</span>
-      </button>
+    // Fixed head, scrolling tail. "New chat" is the one thing here you always
+    // want reachable, so it must not travel with the list.
+    <div className="flex-1 min-h-0 flex flex-col pt-6">
+      <div className="shrink-0 px-3">
+        <button
+          type="button"
+          onClick={startNew}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+                     text-white/90 hover:text-white hover:bg-white/15 transition-colors"
+        >
+          <MessageSquarePlus className="w-5 h-5 shrink-0" />
+          <span className="whitespace-nowrap">New chat</span>
+        </button>
 
-      <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/50">
-        Recent
-      </p>
-
-      {isLoading && (
-        <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/60">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          Loading…
-        </div>
-      )}
-
-      {!isLoading && conversations.length === 0 && (
-        <p className="px-3 py-2 text-xs text-white/60">
-          No chats yet. Ask a question to start one.
+        <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/50">
+          Recent
         </p>
-      )}
+      </div>
 
-      <ul className="space-y-0.5">
-        {conversations.map((conversation) => (
-          <ConversationRow
-            key={conversation.id}
-            conversation={conversation}
-            isActive={conversation.id === conversationId}
-            onSelect={() => select(conversation.id)}
-            onRename={(title) => rename.mutate({ id: conversation.id, title })}
-            onDelete={() => remove.mutate(conversation.id)}
-          />
-        ))}
-      </ul>
+      {/* Only the threads move. `min-h-0` is load-bearing: without it a flex
+          child refuses to shrink below its content and the scroll never
+          engages — the column just grows past the bottom of the screen. */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle px-3 pb-3">
+        {isLoading && (
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/60">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Loading…
+          </div>
+        )}
+
+        {!isLoading && conversations.length === 0 && (
+          <p className="px-3 py-2 text-xs text-white/60">
+            No chats yet. Ask a question to start one.
+          </p>
+        )}
+
+        <ul className="space-y-0.5">
+          {conversations.map((conversation) => (
+            <ConversationRow
+              key={conversation.id}
+              conversation={conversation}
+              isActive={conversation.id === conversationId}
+              onSelect={() => select(conversation.id)}
+              onRename={(title) => rename.mutate({ id: conversation.id, title })}
+              onDelete={() => remove.mutate(conversation.id)}
+            />
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

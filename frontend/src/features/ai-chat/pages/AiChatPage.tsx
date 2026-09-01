@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import clsx from 'clsx';
 import { Loader2, Sparkles, Square, TriangleAlert } from 'lucide-react';
 import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
 import { AnswerBody } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
-import { CostCard } from '../components/CostCard';
 import { RoundSteps } from '../components/RoundSteps';
 
 /**
@@ -165,24 +165,12 @@ export function AiChatPage() {
       )
     : null;
 
-  const composer = (
-    <div className="max-w-4xl w-full mx-auto">
-      <CostCard usage={usage} />
-      <ChatComposer onSend={send} isPending={isPending} />
-    </div>
-  );
-
-  if (isBlank) {
-    return (
-      <div className="h-full flex flex-col justify-center px-6 pb-10">
-        {title}
-        <EmptyState onPick={send} />
-        <div className="mt-6 w-full">{composer}</div>
-      </div>
-    );
-  }
-
   return (
+    // One layout for both states, not two. The composer is the *same* element
+    // throughout, so it can travel from the middle of a blank page down to the
+    // foot of a conversation instead of disappearing from one place and
+    // reappearing in another — and whatever is half-typed in it survives the
+    // move.
     <div className="h-full flex flex-col">
       {title}
 
@@ -194,6 +182,10 @@ export function AiChatPage() {
           // about to reappear.
           <div className="h-full flex items-center justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400 dark:text-zinc-600" />
+          </div>
+        ) : isBlank ? (
+          <div className="h-full flex items-end justify-center pb-2">
+            <EmptyState onPick={send} />
           </div>
         ) : (
           <ul className="space-y-5 max-w-4xl mx-auto">
@@ -208,7 +200,26 @@ export function AiChatPage() {
         )}
       </div>
 
-      {composer}
+      <div className="max-w-4xl w-full mx-auto">
+        <ChatComposer
+          onSend={send}
+          isPending={isPending}
+          cost={{ amount: usage.cost, currency: usage.currency }}
+        />
+      </div>
+
+      {/* The spacer that does the moving. On a blank page it holds the composer
+          up near the middle; when the first question lands it collapses to
+          nothing and the composer slides to the foot of the page. Animating a
+          height is what makes that a movement rather than a jump — flex
+          alignment, the obvious alternative, does not transition. */}
+      <div
+        aria-hidden
+        className={clsx(
+          'shrink-0 transition-[height] duration-500 ease-in-out motion-reduce:transition-none',
+          isBlank ? 'h-[32vh]' : 'h-0',
+        )}
+      />
     </div>
   );
 }

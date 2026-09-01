@@ -187,3 +187,34 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-zinc-400 dark:bg-zinc-600;
 }
+
+/* A scrollbar for surfaces that are already coloured — the sidebar, where the
+   zinc thumb above would read as a grey stripe laid on the brand blue.
+
+   Barely there at rest and only slightly more on hover: the list it marks is
+   short, and the bar is a hint that there is more below, not a control anyone
+   needs to aim at. Narrower than the default for the same reason. Sized in
+   rgba white so it works against any of the ground's colours without knowing
+   which one it is over. */
+.scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32);
+}
