@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
-import clsx from 'clsx';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
-import { AnswerBody, hasTable } from '../components/AnswerBody';
+import { AnswerBody } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
 import { CostCard } from '../components/CostCard';
 import { RoundSteps } from '../components/RoundSteps';
@@ -76,30 +75,14 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  // A breakdown needs the room; a sentence looks stranded at full width. The
-  // live turn takes it too, so the bubble doesn't jump width when the answer
-  // replaces the progress list.
-  const isWide =
-    message.isStreaming || (!message.isError && hasTable(message.text));
-
+  // The assistant's turn is not a card. Only the question is boxed — the
+  // answer is the page's own text, which is what gives a long breakdown room
+  // to breathe and stops every reply looking like a notification.
+  // An error is the exception: it needs to read as a thing that went wrong,
+  // so it keeps a tinted panel.
   return (
     <li className="flex justify-start">
-      <div
-        className={clsx(
-          'rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-sm shadow-sm border',
-          isWide ? 'w-full' : 'max-w-[85%]',
-          message.isError
-            ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200'
-            : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60 text-zinc-800 dark:text-zinc-200',
-        )}
-      >
-        {message.isError && (
-          <div className="flex items-center gap-1.5 mb-1 text-xs font-semibold">
-            <TriangleAlert className="w-3.5 h-3.5" />
-            Couldn’t answer
-          </div>
-        )}
-
+      <div className="w-full min-w-0 text-sm text-zinc-800 dark:text-zinc-200">
         {/* The steps stay at the top through both phases: they are written
             there while the answer is being worked out, and they stay there
             once it arrives, with the answer appearing underneath. One render
@@ -110,29 +93,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           <RoundSteps steps={message.steps} isLive={!!message.isStreaming} />
         )}
 
-        {/* An error is plain text by definition — only a real answer can carry
-            a table, and running the parser over a server message would be
-            interpreting something the model never wrote. */}
         {!message.isStreaming &&
           (message.isError ? (
-            <div className="whitespace-pre-wrap break-words leading-relaxed">{message.text}</div>
+            <div
+              className="rounded-lg border border-amber-200 dark:border-amber-900/50
+                         bg-amber-50 dark:bg-amber-950/30 px-3 py-2
+                         text-amber-900 dark:text-amber-200"
+            >
+              <div className="flex items-center gap-1.5 mb-1 text-xs font-semibold">
+                <TriangleAlert className="w-3.5 h-3.5" />
+                Couldn’t answer
+              </div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">
+                {message.text}
+              </div>
+            </div>
           ) : (
-            <AnswerBody text={message.text} />
+            <AnswerBody text={message.text} animate={message.animate} />
           ))}
-
-        {/* What this one exchange cost. Input and output are shown separately
-            because they are priced separately — a long answer and a long
-            question are not the same expense. */}
-        {!message.isStreaming && !message.isError && message.interaction && (
-          <p className="mt-2 text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
-            {message.interaction.total_tokens.toLocaleString()} tokens
-            <span className="text-zinc-300 dark:text-zinc-600">
-              {' '}
-              ({message.interaction.input_tokens.toLocaleString()} in ·{' '}
-              {message.interaction.output_tokens.toLocaleString()} out)
-            </span>
-          </p>
-        )}
       </div>
     </li>
   );
