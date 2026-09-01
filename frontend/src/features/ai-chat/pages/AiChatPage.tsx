@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { Coins, Loader2, RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
+import { Loader2, RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
 import { AnswerBody, hasTable } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
+import { CostCard } from '../components/CostCard';
 import { RoundSteps } from '../components/RoundSteps';
 
 /**
@@ -118,6 +119,20 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           ) : (
             <AnswerBody text={message.text} />
           ))}
+
+        {/* What this one exchange cost. Input and output are shown separately
+            because they are priced separately — a long answer and a long
+            question are not the same expense. */}
+        {!message.isStreaming && !message.isError && message.interaction && (
+          <p className="mt-2 text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
+            {message.interaction.total_tokens.toLocaleString()} tokens
+            <span className="text-zinc-300 dark:text-zinc-600">
+              {' '}
+              ({message.interaction.input_tokens.toLocaleString()} in ·{' '}
+              {message.interaction.output_tokens.toLocaleString()} out)
+            </span>
+          </p>
+        )}
       </div>
     </li>
   );
@@ -149,20 +164,8 @@ export function AiChatPage() {
           </p>
         </div>
 
-        {/* The conversation's running cost. Server-reported, and cumulative
-            across every round of every question in the thread — a multi-round
-            answer resends the whole system prompt, so this climbs faster than
-            the visible text suggests. */}
-        {usage.total_tokens > 0 && (
-          <span
-            className="shrink-0 hidden sm:inline-flex items-center gap-1 text-[11px] tabular-nums
-                       text-zinc-400 dark:text-zinc-500"
-            title={`${usage.input_tokens.toLocaleString()} in · ${usage.output_tokens.toLocaleString()} out`}
-          >
-            <Coins className="w-3.5 h-3.5" />
-            {usage.total_tokens.toLocaleString()} tokens
-          </span>
-        )}
+        {/* The running totals live on the cost card above the composer now —
+            repeating them here would be the same figure twice on one screen. */}
 
         {isPending && (
           <button
@@ -218,6 +221,7 @@ export function AiChatPage() {
       </div>
 
       <div className="max-w-4xl w-full mx-auto">
+        <CostCard usage={usage} />
         <ChatComposer onSend={send} isPending={isPending} />
       </div>
     </div>

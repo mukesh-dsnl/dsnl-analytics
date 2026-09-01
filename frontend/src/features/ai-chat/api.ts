@@ -27,6 +27,16 @@ export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  /** At the server's configured rates — an estimate, not a bill. */
+  cost: number;
+  currency: string;
+}
+
+/** What one exchange cost, as opposed to the thread's running total. */
+export interface InteractionUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
 }
 
 export interface ChatResponse {
@@ -40,6 +50,9 @@ export interface ChatResponse {
    * declined to look, not that it failed.
    */
   queries: ChatQuery[];
+  /** This exchange alone — shown under the answer. */
+  interaction: InteractionUsage;
+  /** The whole thread, including this exchange — shown on the cost card. */
   usage: TokenUsage;
 }
 
@@ -51,12 +64,16 @@ export interface ChatRequest {
   username?: string | null;
 }
 
-/** One stored turn, as the conversation-detail endpoint returns it. */
-export interface StoredMessage {
+/** One stored exchange: the question, its answer, and what it cost. */
+export interface StoredInteraction {
   id: number;
-  role: 'user' | 'assistant';
-  text: string;
+  status: 'pass' | 'fail';
+  query: string;
+  response: string;
   queries: ChatQuery[];
+  input_token: number;
+  output_tokens: number;
+  total_tokens: number;
   created_at?: string;
 }
 
@@ -64,6 +81,7 @@ export interface ConversationSummary {
   id: string;
   title?: string;
   username?: string;
+  user_id?: string;
   created_at?: string;
   updated_at?: string;
   message_count: number;
@@ -71,7 +89,7 @@ export interface ConversationSummary {
 }
 
 export interface ConversationDetail extends ConversationSummary {
-  messages: StoredMessage[];
+  interactions: StoredInteraction[];
 }
 
 /**

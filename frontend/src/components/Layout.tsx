@@ -24,6 +24,7 @@ import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDate
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
 import { ContentPanelContext } from './ContentPanelSlot';
+import { ConversationList } from '../features/ai-chat/components/ConversationList';
 
 interface NavNode {
   label: string;
@@ -66,11 +67,10 @@ const NAV: NavNode[] = [
     icon: PhoneForwarded,
     children: serviceChildren('multicall'),
   },
-  // Not a service, so it sits on its own at the end rather than joining the
-  // three above: it answers across all of them, and questions the fixed panels
-  // have no shape for.
-  { label: 'AI Assistant', path: '/ai-chat', icon: Sparkles },
 ];
+// The assistant is deliberately not a nav entry: the floating button in the
+// corner is its way in, and two controls for one destination in the same
+// column is one too many.
 
 /**
  * How long the content panel takes to collapse back to the sign-in card, and
@@ -237,6 +237,12 @@ export function Layout() {
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/ai-chat');
 
+  // Where "Analytics" goes back to. Remembering the page the chat was opened
+  // from means the round trip returns you to the dashboard you were reading,
+  // not to a default one you then have to navigate away from.
+  const lastAnalyticsPath = useRef('/analytics/all');
+  if (!isAiChat) lastAnalyticsPath.current = location.pathname;
+
   // Auto-expand whichever sections the current route is inside — landing
   // straight on /analytics/voicedrop/blast-details (a refresh, a bookmark)
   // should open Analytics and Voicedrop without the user hunting for them.
@@ -379,19 +385,26 @@ export function Layout() {
             Tab and operable with Enter/Space; the hint only surfaces on
             hover/focus, which is what keeps the column clean. */}
         <div className="flex-1 flex flex-col overflow-y-auto">
-          <nav className="py-6 px-3 space-y-1">
-            {NAV.map((node) => (
-              <NavRow
-                key={node.path}
-                node={node}
-                depth={0}
-                isCollapsed={isSidebarCollapsed}
-                openSections={openSections}
-                toggle={toggleSection}
-                isActivePath={isActivePath}
-              />
-            ))}
-          </nav>
+          {/* Same column, same styling vocabulary — while the chat is open it
+              lists conversations instead of analytics destinations, which is
+              what that column is for on that screen. */}
+          {isAiChat ? (
+            <ConversationList isCollapsed={isSidebarCollapsed} />
+          ) : (
+            <nav className="py-6 px-3 space-y-1">
+              {NAV.map((node) => (
+                <NavRow
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  isCollapsed={isSidebarCollapsed}
+                  openSections={openSections}
+                  toggle={toggleSection}
+                  isActivePath={isActivePath}
+                />
+              ))}
+            </nav>
+          )}
 
           <button
             type="button"
@@ -415,6 +428,26 @@ export function Layout() {
 
         {/* Footer: identity + sign out */}
         <div className="p-3 space-y-1 shrink-0">
+          {/* The way back. Only while the chat is open — on the analytics
+              pages the floating button in the corner is the way in, and a
+              permanent pair of toggles would be one control too many. */}
+          {isAiChat && (
+            <Link
+              to={lastAnalyticsPath.current}
+              title={isSidebarCollapsed ? 'Back to analytics' : undefined}
+              className={clsx(
+                'w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-medium',
+                'text-white/90 hover:text-white hover:bg-white/15 transition-colors',
+                isSidebarCollapsed ? 'justify-center px-0' : 'px-3',
+              )}
+            >
+              <LayoutGrid className="w-5 h-5 shrink-0" />
+              {!isSidebarCollapsed && (
+                <span className="whitespace-nowrap">Analytics</span>
+              )}
+            </Link>
+          )}
+
           {!isSidebarCollapsed && username && (
             <div className="px-3 pb-2 text-xs text-white/75 truncate">Signed in as <span className="font-medium text-white">{username}</span></div>
           )}
@@ -537,6 +570,30 @@ export function Layout() {
         </main>
       </div>
       </div>
+
+      {/* Floating action button — the way into the chat from anywhere in the
+          analytics pages. Hidden on the chat itself, where the sidebar's
+          "Analytics" control is the way back out.
+
+          Inside the panel wrapper's sibling, positioned against the viewport,
+          and faded out during the logout collapse along with everything else. */}
+      {!isAiChat && (
+        <Link
+          to="/ai-chat"
+          title="Ask the AI assistant"
+          aria-label="Ask the AI assistant"
+          className={clsx(
+            'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
+            'flex items-center justify-center',
+            'bg-blue-600 hover:bg-blue-500 text-white',
+            'shadow-lg shadow-black/25 transition-all hover:scale-105',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+            isLoggingOut && 'opacity-0 pointer-events-none',
+          )}
+        >
+          <Sparkles className="w-6 h-6" />
+        </Link>
+      )}
     </div>
   );
 }

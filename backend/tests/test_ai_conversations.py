@@ -1,28 +1,34 @@
 """
 Tests for server-side chat memory.
 
-The chat moved from stateless (browser posts the whole transcript) to
-session-based (browser posts an id). What that shifted onto the server is
-covered here: rebuilding history, appending turns in order, and accumulating
-token spend.
+The chat is session-based: the browser posts a `conversation_id` and the server
+rebuilds the history. What that shifted onto the server is covered here —
+storing an exchange as one row, capping what is replayed, and accumulating
+token spend and cost.
 
-The sharpest test in this file is
-`test_stored_tool_calls_are_recorded_but_not_replayed`. Replaying a stored tool
-call is not merely wasteful — it breaks the request outright on two of the
-three providers (Anthropic rejects a `tool_use` with no matching result;
-Gemini rejects a function call whose per-turn `thought_signature` is missing).
-So the split between what is recorded and what is replayed is load-bearing, and
-a future change that starts feeding tool turns back should fail here first.
+Two tests carry more weight than the rest:
+
+`test_only_the_last_ten_interactions_are_replayed` — the context window is the
+only thing stopping the cost of a question from growing with the age of the
+thread.
+
+`test_stored_tool_calls_are_recorded_but_not_replayed` — replaying a stored
+tool call is not merely wasteful, it breaks the request outright on two of the
+three providers (Anthropic rejects a `tool_use` with no matching result; Gemini
+rejects a function call whose per-turn `thought_signature` is missing). A future
+change that starts feeding tool turns back should fail here first.
 """
 
 import pytest
 
 from app.ai import conversations as store
-from app.models.conversation import Conversation, Message
+from app.core.config import get_settings
+from app.models.conversation import STATUS_FAIL, STATUS_PASS, Conversation, Message
+from app.models.user import User
 
 
-def answer_payload(text: str = "42 calls.", **overrides) -> dict:
-    """What the orchestrator hands back, in the shape save_answer expects."""
+def result_payload(text: str = "42 calls.", **overrides) -> dict:
+    """What the orchestrator hands back, in the shape complete_interaction reads."""
     return {
         "answer": text,
         "provider": "gemini",
@@ -32,6 +38,15 @@ def answer_payload(text: str = "42 calls.", **overrides) -> dict:
         "output_tokens": 20,
         **overrides,
     }
+
+
+def exchange(db, conversation, question: str, answer: str = "an answer", **overrides):
+    """One complete interaction, the way the API performs it."""
+    message = store.start_interaction(db, conversation, question)
+    store.complete_interaction(
+        db, conversation, message, result_payload(answer, **overrides), ok=True
+    )
+    return message
 
 
 # ── Starting and resuming ──────────────────────────────────────────────────
@@ -65,8 +80,19 @@ def test_an_unknown_id_is_adopted_rather_than_rejected(db_session):
     different id would silently split the transcript in two."""
     conversation = store.get_or_create(db_session, "not-in-the-database", "q")
     db_session.commit()
-
     assert conversation.id == "not-in-the-database"
+
+
+def test_a_known_username_is_resolved_to_its_uuid(db_session):
+    user = User(username="mukesh", password_hash="x", user_id="uuid-for-mukesh")
+    db_session.add(user)
+    db_session.commit()
+
+    conversation = store.get_or_create(db_session, None, "q", "mukesh")
+    db_session.commit()
+
+    assert conversation.user_id == "uuid-for-mukesh"
+    assert conversation.username == "mukesh"
 
 
 def test_an_unknown_username_is_still_recorded(db_session):
@@ -84,15 +110,52 @@ def test_a_long_question_is_truncated_into_the_title(db_session):
     assert len(conversation.title) == store.TITLE_LENGTH
 
 
+# ── One row per interaction ────────────────────────────────────────────────
+
+
+def test_a_question_and_its_answer_share_one_row(db_session):
+    conversation = store.get_or_create(db_session, None, "q")
+    exchange(db_session, conversation, "how many calls?", "There were 42.")
+    db_session.commit()
+
+    rows = db_session.query(Message).all()
+    assert len(rows) == 1
+    assert rows[0].query == "how many calls?"
+    assert rows[0].response == "There were 42."
+    assert rows[0].status == STATUS_PASS
+
+
+def test_an_interaction_starts_as_fail_and_is_promoted(db_session):
+    """So a request that dies mid-flight leaves an honest record."""
+    conversation = store.get_or_create(db_session, None, "q")
+    message = store.start_interaction(db_session, conversation, "q")
+    db_session.commit()
+
+    assert message.status == STATUS_FAIL
+    assert message.response is None
+
+    store.complete_interaction(db_session, conversation, message, result_payload(), ok=True)
+    db_session.commit()
+    assert message.status == STATUS_PASS
+
+
+def test_a_failed_interaction_keeps_its_question(db_session):
+    conversation = store.get_or_create(db_session, None, "q")
+    message = store.start_interaction(db_session, conversation, "the question that failed")
+    db_session.commit()
+
+    stored = db_session.query(Message).one()
+    assert stored.status == STATUS_FAIL
+    assert stored.query == "the question that failed"
+
+
 # ── Rebuilding the history ─────────────────────────────────────────────────
 
 
-def test_history_comes_back_in_order(db_session):
+def test_history_alternates_question_and_answer_in_order(db_session):
     conversation = store.get_or_create(db_session, None, "first")
-    store.save_question(db_session, conversation, "first")
-    store.save_answer(db_session, conversation, answer_payload("one"))
-    store.save_question(db_session, conversation, "second")
-    store.save_answer(db_session, conversation, answer_payload("two"))
+    exchange(db_session, conversation, "first", "one")
+    exchange(db_session, conversation, "second", "two")
     db_session.commit()
 
     history = store.load_history(db_session, conversation.id)
@@ -105,6 +168,36 @@ def test_history_comes_back_in_order(db_session):
     ]
 
 
+def test_only_the_last_ten_interactions_are_replayed(db_session):
+    """The window that stops a question's cost growing with the thread."""
+    conversation = store.get_or_create(db_session, None, "q1")
+    for i in range(1, 16):
+        exchange(db_session, conversation, f"q{i}", f"a{i}")
+    db_session.commit()
+
+    history = store.load_history(db_session, conversation.id)
+
+    # Ten exchanges = twenty messages, and they are the *newest* ten.
+    assert len(history) == store.CONTEXT_INTERACTIONS * 2
+    assert history[0].text == "q6"
+    assert history[-1].text == "a15"
+
+    # The older ones are still stored — the record is complete even though the
+    # replay is not.
+    assert db_session.query(Message).count() == 15
+
+
+def test_a_failed_interaction_replays_its_question_but_no_answer(db_session):
+    """There is nothing to replay, and inventing one would put words in the
+    assistant's mouth."""
+    conversation = store.get_or_create(db_session, None, "q")
+    store.start_interaction(db_session, conversation, "the one that failed")
+    db_session.commit()
+
+    history = store.load_history(db_session, conversation.id)
+    assert [(m.role, m.text) for m in history] == [("user", "the one that failed")]
+
+
 def test_history_is_empty_for_a_fresh_conversation(db_session):
     conversation = store.get_or_create(db_session, None, "q")
     db_session.commit()
@@ -113,93 +206,110 @@ def test_history_is_empty_for_a_fresh_conversation(db_session):
 
 def test_history_does_not_leak_between_conversations(db_session):
     one = store.get_or_create(db_session, None, "in thread one")
-    store.save_question(db_session, one, "in thread one")
+    exchange(db_session, one, "in thread one", "answer one")
     two = store.get_or_create(db_session, None, "in thread two")
-    store.save_question(db_session, two, "in thread two")
+    exchange(db_session, two, "in thread two", "answer two")
     db_session.commit()
 
-    assert [m.text for m in store.load_history(db_session, one.id)] == ["in thread one"]
-    assert [m.text for m in store.load_history(db_session, two.id)] == ["in thread two"]
+    assert [m.text for m in store.load_history(db_session, one.id)] == [
+        "in thread one",
+        "answer one",
+    ]
+    assert [m.text for m in store.load_history(db_session, two.id)] == [
+        "in thread two",
+        "answer two",
+    ]
 
 
 def test_stored_tool_calls_are_recorded_but_not_replayed(db_session):
     """The split that keeps replay safe — see the module docstring."""
     conversation = store.get_or_create(db_session, None, "q")
-    store.save_question(db_session, conversation, "q")
-    store.save_answer(db_session, conversation, answer_payload())
+    exchange(db_session, conversation, "q", "a")
     db_session.commit()
 
-    # Recorded: the row keeps the calls, for the UI and the audit trail.
-    stored = (
-        db_session.query(Message)
-        .filter(Message.role == "assistant")
-        .one()
-    )
-    assert stored.content["queries"][0]["tool"] == "query_metrics"
+    # Recorded: the row keeps the calls, for the UI trace and the audit trail.
+    stored = db_session.query(Message).one()
+    assert stored.queries[0]["tool"] == "query_metrics"
 
     # Not replayed: what goes back to the model is text only.
     history = store.load_history(db_session, conversation.id)
     assert all(not m.tool_calls and not m.tool_results for m in history)
 
 
-def test_a_turn_with_no_text_is_skipped(db_session):
-    """A message carrying no prose has nothing the model can read."""
+# ── Token accounting and cost ──────────────────────────────────────────────
+
+
+def test_tokens_accumulate_across_interactions(db_session):
     conversation = store.get_or_create(db_session, None, "q")
-    db_session.add(
-        Message(conversation_id=conversation.id, role="assistant", content={"queries": []})
-    )
-    db_session.commit()
-
-    assert store.load_history(db_session, conversation.id) == []
-
-
-# ── Token accounting ───────────────────────────────────────────────────────
-
-
-def test_tokens_accumulate_across_turns(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
-    store.save_answer(db_session, conversation, answer_payload(input_tokens=100, output_tokens=20))
-    store.save_answer(db_session, conversation, answer_payload(input_tokens=250, output_tokens=35))
+    exchange(db_session, conversation, "q1", "a1", input_tokens=100, output_tokens=20)
+    exchange(db_session, conversation, "q2", "a2", input_tokens=250, output_tokens=35)
     db_session.commit()
 
     assert conversation.input_tokens == 350
     assert conversation.output_tokens == 55
     assert conversation.total_tokens == 405
-    assert store.usage(conversation) == {
-        "input_tokens": 350,
-        "output_tokens": 55,
-        "total_tokens": 405,
-    }
 
 
-def test_each_message_keeps_its_own_cost(db_session):
+def test_each_interaction_keeps_its_own_cost(db_session):
     """So one expensive question is visible, not averaged into the thread."""
     conversation = store.get_or_create(db_session, None, "q")
-    store.save_answer(db_session, conversation, answer_payload(input_tokens=100, output_tokens=20))
-    store.save_answer(db_session, conversation, answer_payload(input_tokens=9000, output_tokens=40))
+    exchange(db_session, conversation, "q1", "a1", input_tokens=100, output_tokens=20)
+    exchange(db_session, conversation, "q2", "a2", input_tokens=9000, output_tokens=40)
     db_session.commit()
 
     rows = db_session.query(Message).order_by(Message.id).all()
-    assert [r.input_tokens for r in rows] == [100, 9000]
+    assert [r.input_token for r in rows] == [100, 9000]
+    assert [r.total_tokens for r in rows] == [120, 9040]
 
 
 def test_missing_token_counts_are_treated_as_zero(db_session):
     """A provider that reports no usage must not poison the arithmetic."""
     conversation = store.get_or_create(db_session, None, "q")
-    store.save_answer(
-        db_session, conversation, {"answer": "hi", "queries": []}
-    )
+    message = store.start_interaction(db_session, conversation, "q")
+    store.complete_interaction(db_session, conversation, message, {"answer": "hi"}, ok=True)
     db_session.commit()
 
     assert conversation.input_tokens == 0
     assert conversation.total_tokens == 0
 
 
+def test_input_and_output_are_priced_separately(db_session):
+    """Averaging the two would understate exactly the long conversations."""
+    settings = get_settings()
+    expected = (
+        1_000_000 * settings.AI_PRICE_INPUT_PER_MTOK
+        + 1_000_000 * settings.AI_PRICE_OUTPUT_PER_MTOK
+    ) / 1_000_000
+
+    assert store.cost_of(1_000_000, 1_000_000) == pytest.approx(expected)
+    # Output is the dearer side on every provider this supports.
+    assert store.cost_of(0, 1000) > store.cost_of(1000, 0)
+
+
+def test_usage_reports_tokens_and_cost(db_session):
+    conversation = store.get_or_create(db_session, None, "q")
+    exchange(db_session, conversation, "q", "a", input_tokens=1000, output_tokens=500)
+    db_session.commit()
+
+    reported = store.usage(conversation)
+    assert reported["input_tokens"] == 1000
+    assert reported["output_tokens"] == 500
+    assert reported["total_tokens"] == 1500
+    assert reported["cost"] == pytest.approx(store.cost_of(1000, 500))
+    assert reported["currency"] == get_settings().AI_PRICE_CURRENCY
+
+
+def test_zero_tokens_cost_nothing(db_session):
+    conversation = store.get_or_create(db_session, None, "q")
+    db_session.commit()
+    assert store.usage(conversation)["cost"] == 0
+
+
 # ── The orchestrator's side of the contract ────────────────────────────────
 
 
 def test_the_orchestrator_reports_tokens_it_can_store(monkeypatch):
-    """`answer()` must return the keys save_answer reads, summed over rounds."""
+    """`answer()` must return the keys complete_interaction reads, summed."""
     from app.ai import orchestrator
     from app.ai.providers.base import LLMTurn, ToolCallRequest
     from tests.test_ai_orchestrator import FakeLLMClient

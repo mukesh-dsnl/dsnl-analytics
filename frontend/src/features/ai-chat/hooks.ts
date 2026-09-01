@@ -3,11 +3,13 @@
  *
  * The transcript lives on the server. What this hook keeps is:
  *
- *   `messages`       — what is on screen, including the pending question, the
- *                      live progress steps, and any error bubble. The server
- *                      knows about none of those three.
- *   `conversationId` — the only thing sent back with the next question.
- *   `usage`          — the running token totals, as reported by the server.
+ *   `messages` — what is on screen, including the pending question, the live
+ *                progress steps, and any error bubble. The server knows about
+ *                none of those three.
+ *   `usage`    — the running token totals and cost, as reported by the server.
+ *
+ * Which conversation is open lives in `store.ts`, not here: the sidebar list
+ * can change it too, and the two are siblings under the layout.
  *
  * Keeping `messages` separate from the server's record is what lets a failed
  * question stay on screen (so the user can read what they asked and retry)
@@ -19,8 +21,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { aiApi } from './api';
-import type { ChatEvent, ChatQuery, TokenUsage } from './api';
+import { CONVERSATIONS_KEY } from './components/ConversationList';
+import type { ChatEvent, ChatQuery, InteractionUsage, TokenUsage } from './api';
+import { useChatStore } from './store';
 import { useAuthStore } from '../../store';
 import { summarizeQuery } from './queryLabel';
 
@@ -43,6 +48,8 @@ export interface ChatMessage {
   queries?: ChatQuery[];
   /** Assistant turns only — what happened, in order, while answering. */
   steps?: ChatStep[];
+  /** What this one exchange cost — shown under the answer. */
+  interaction?: InteractionUsage;
   /** True for the bubble that reports a failed request. */
   isError?: boolean;
   provider?: string;
@@ -51,77 +58,90 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
-const EMPTY_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
-
-/** Survives a refresh, so the open thread is still the open thread. */
-const STORAGE_KEY = 'ai-chat-conversation-id';
+const EMPTY_USAGE: TokenUsage = {
+  input_tokens: 0,
+  output_tokens: 0,
+  total_tokens: 0,
+  cost: 0,
+  currency: 'USD',
+};
 
 let messageCounter = 0;
 const nextId = () => `m${++messageCounter}`;
 
 export function useChat() {
+  const queryClient = useQueryClient();
   const username = useAuthStore((state) => state.username);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const reloadToken = useChatStore((state) => state.reloadToken);
+  const select = useChatStore((state) => state.select);
+  const startNew = useChatStore((state) => state.startNew);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isPending, setIsPending] = useState(false);
   const [usage, setUsage] = useState<TokenUsage>(EMPTY_USAGE);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // A ref as well as state: the send callback needs the value at call time,
-  // not the one captured when it was created.
-  const conversationRef = useRef<string | null>(null);
+  // A ref as well as the store: the send callback needs the value at call
+  // time, not the one captured when it was created.
+  const conversationRef = useRef<string | null>(conversationId);
   const abortRef = useRef<AbortController | null>(null);
 
-  const adoptConversation = useCallback((id: string) => {
-    conversationRef.current = id;
-    setConversationId(id);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      // Private browsing, or storage disabled. The thread still works for as
-      // long as the tab is open; it just won't survive a refresh.
-    }
-  }, []);
-
-  // Restore the thread that was open last time. Runs once; a failure here is
-  // not worth surfacing, since starting a fresh conversation is a fine outcome.
+  /**
+   * Load whichever conversation the store points at.
+   *
+   * Keyed on `reloadToken` as well as the id so that picking the same thread
+   * again, or starting a new one, still runs. A conversation the server does
+   * not recognise is dropped rather than retried — starting fresh is a fine
+   * outcome and better than a wedged screen.
+   */
   useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = window.localStorage.getItem(STORAGE_KEY);
-    } catch {
-      stored = null;
+    const id = conversationId;
+    conversationRef.current = id;
+
+    if (!id) {
+      setMessages([]);
+      setUsage(EMPTY_USAGE);
+      return;
     }
-    if (!stored) return;
 
     let cancelled = false;
     setIsRestoring(true);
 
     aiApi
-      .getConversation(stored)
+      .getConversation(id)
       .then((detail) => {
         if (cancelled) return;
-        conversationRef.current = detail.id;
-        setConversationId(detail.id);
         setUsage(detail.usage);
+        // One stored row is one exchange, so it unfolds into two bubbles.
         setMessages(
-          detail.messages.map((m) => ({
-            id: nextId(),
-            role: m.role,
-            text: m.text,
-            queries: m.role === 'assistant' ? m.queries : undefined,
-          })),
+          detail.interactions.flatMap((item) => {
+            const turns: ChatMessage[] = [
+              { id: nextId(), role: 'user', text: item.query },
+            ];
+            // A failed exchange has a question but no answer to show.
+            if (item.status === 'pass' && item.response) {
+              turns.push({
+                id: nextId(),
+                role: 'assistant',
+                text: item.response,
+                queries: item.queries,
+                interaction: {
+                  input_tokens: item.input_token,
+                  output_tokens: item.output_tokens,
+                  total_tokens: item.total_tokens,
+                },
+              });
+            }
+            return turns;
+          }),
         );
       })
       .catch(() => {
-        // The thread is gone (or the server was reset) — forget it rather than
-        // sending an id the server will not recognise.
-        try {
-          window.localStorage.removeItem(STORAGE_KEY);
-        } catch {
-          /* nothing to clean up */
-        }
+        if (cancelled) return;
+        setMessages([]);
+        setUsage(EMPTY_USAGE);
+        startNew();
       })
       .finally(() => {
         if (!cancelled) setIsRestoring(false);
@@ -130,7 +150,7 @@ export function useChat() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [conversationId, reloadToken, startNew]);
 
   /** Rewrite the in-flight assistant message. */
   const patchLive = useCallback((liveId: string, patch: (m: ChatMessage) => ChatMessage) => {
@@ -164,12 +184,21 @@ export function useChat() {
           ),
         }));
 
+      const adopt = (id: string) => {
+        if (conversationRef.current === id) return;
+        conversationRef.current = id;
+        // Written straight into the store rather than through select(): the
+        // reload token is deliberately left alone, since this component
+        // already has the thread on screen and must not refetch over it.
+        useChatStore.setState({ conversationId: id });
+      };
+
       const onEvent = (event: ChatEvent) => {
         switch (event.type) {
           case 'conversation':
             // Arrives before any work, so a browser that navigates away
             // mid-answer still knows which thread it started.
-            adoptConversation(event.conversation_id);
+            adopt(event.conversation_id);
             break;
 
           case 'round_start':
@@ -201,12 +230,16 @@ export function useChat() {
             break;
 
           case 'done':
-            adoptConversation(event.conversation_id);
+            adopt(event.conversation_id);
             setUsage(event.usage ?? EMPTY_USAGE);
+            // The sidebar list now has a new thread, or a changed token total,
+            // on the row it is already showing.
+            queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
             patchLive(liveId, (m) => ({
               ...m,
               text: event.answer || 'The assistant returned an empty answer.',
               queries: event.queries,
+              interaction: event.interaction,
               provider: event.provider,
               model: event.model,
               isStreaming: false,
@@ -237,8 +270,8 @@ export function useChat() {
         if ((error as Error)?.name === 'AbortError') {
           // Cancelled by the user: drop the placeholder rather than leaving a
           // half-finished turn in the transcript. The question is still on the
-          // server — it is written before the model is called — so a reload
-          // will show it again, which is the honest state.
+          // server — the row is opened before the model is called — so a
+          // reload will show it again, which is the honest state.
           setMessages((prev) => prev.filter((m) => m.id !== liveId));
         } else {
           patchLive(liveId, (m) => ({
@@ -253,31 +286,22 @@ export function useChat() {
         setIsPending(false);
       }
     },
-    [adoptConversation, isPending, patchLive, username],
+    [isPending, patchLive, queryClient, username],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
-    // The thread is not deleted, only let go of: it stays on the server as a
-    // record, and the next question starts a new one.
-    conversationRef.current = null;
-    setConversationId(null);
-    setUsage(EMPTY_USAGE);
-    setMessages([]);
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* nothing to clean up */
-    }
-  }, []);
+    startNew();
+  }, [startNew]);
 
   return {
     messages,
     send,
     stop,
     reset,
+    select,
     isPending,
     isRestoring,
     usage,
