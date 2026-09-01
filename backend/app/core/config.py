@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
 
+    # ── AI cost display ──────────────────────────────────────────────────
+    # Price per MILLION tokens, input and output separately — every provider
+    # prices them separately, usually with output several times dearer.
+    #
+    # IMPORTANT: these defaults are Google's published list price for
+    # gemini-2.5-flash-lite and are here only so the figure is not zero out of
+    # the box. They are not verified against your contract, they do not track
+    # provider price changes, and they are wrong for any other model. Set them
+    # to your actual rates before treating the cost shown in the UI as
+    # anything but an estimate.
+    AI_PRICE_INPUT_PER_MTOK: float = 0.10
+    AI_PRICE_OUTPUT_PER_MTOK: float = 0.40
+    AI_PRICE_CURRENCY: str = "USD"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

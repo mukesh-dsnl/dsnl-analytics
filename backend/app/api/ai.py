@@ -61,6 +61,18 @@ class TokenUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    # At the configured rates — an estimate, not a bill. See AI_PRICE_* in
+    # app/core/config.py.
+    cost: float = 0.0
+    currency: str = "USD"
+
+
+class InteractionUsage(BaseModel):
+    """What this one exchange cost, as opposed to the thread's running total."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 class ChatResponse(BaseModel):
@@ -72,6 +84,9 @@ class ChatResponse(BaseModel):
     model: str = ""
     # Every tool call made, in order — what the answer was actually built from.
     queries: list[dict] = Field(default_factory=list)
+    # This exchange alone.
+    interaction: InteractionUsage = Field(default_factory=InteractionUsage)
+    # The whole thread, including this exchange.
     usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
@@ -79,22 +94,29 @@ class ConversationSummary(BaseModel):
     id: str
     title: Optional[str] = None
     username: Optional[str] = None
+    user_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     message_count: int = 0
     usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
-class StoredMessage(BaseModel):
+class StoredInteraction(BaseModel):
+    """One exchange as stored: the question, its answer, and what it cost."""
+
     id: int
-    role: str
-    text: str = ""
+    status: str = "pass"
+    query: str = ""
+    response: str = ""
     queries: list[dict] = Field(default_factory=list)
+    input_token: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
     created_at: Optional[str] = None
 
 
 class ConversationDetail(ConversationSummary):
-    messages: list[StoredMessage] = Field(default_factory=list)
+    interactions: list[StoredInteraction] = Field(default_factory=list)
 
 
 def _iso(value: Any) -> Optional[str]:
@@ -106,6 +128,7 @@ def _summary(conversation: Conversation, message_count: int) -> ConversationSumm
         id=conversation.id,
         title=conversation.title,
         username=conversation.username,
+        user_id=conversation.user_id,
         created_at=_iso(conversation.created_at),
         updated_at=_iso(conversation.updated_at),
         message_count=message_count,
@@ -117,25 +140,35 @@ def _summary(conversation: Conversation, message_count: int) -> ConversationSumm
 
 
 def _answer(db: Session, body: ChatRequest, llm) -> dict[str, Any]:
-    """Load, record, run, record — the flow both endpoints share.
+    """Load, open the row, run, close the row — the flow both endpoints share.
 
-    The question is written before the model is called so that a question which
-    crashes the provider is still on record; the answer and its token cost are
-    written after, in one commit.
+    The interaction row is opened before the model is called and starts marked
+    `fail`; it is promoted to `pass` once an answer exists. A request that dies
+    mid-flight therefore leaves an honest record rather than an optimistic one.
     """
     conversation = store.get_or_create(db, body.conversation_id, body.question, body.username)
     history = store.load_history(db, conversation.id)
-    store.save_question(db, conversation, body.question)
+    interaction = store.start_interaction(db, conversation, body.question)
     db.commit()
 
-    result = orchestrator.answer(history=history, question=body.question, llm=llm)
+    try:
+        result = orchestrator.answer(history=history, question=body.question, llm=llm)
+    except Exception:
+        # The row stays `fail` with its question intact; the caller gets a 502.
+        db.commit()
+        raise
 
-    store.save_answer(db, conversation, result)
+    store.complete_interaction(db, conversation, interaction, result, ok=True)
     db.commit()
 
     return {
         **result,
         "conversation_id": conversation.id,
+        "interaction": {
+            "input_tokens": interaction.input_token,
+            "output_tokens": interaction.output_tokens,
+            "total_tokens": interaction.total_tokens,
+        },
         "usage": store.usage(conversation),
     }
 
@@ -170,6 +203,7 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
         provider=result.get("provider", ""),
         model=result.get("model", ""),
         queries=result.get("queries", []),
+        interaction=InteractionUsage(**result["interaction"]),
         usage=TokenUsage(**result["usage"]),
     )
 
@@ -208,7 +242,7 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
                 db, body.conversation_id, body.question, body.username
             )
             history = store.load_history(db, conversation.id)
-            store.save_question(db, conversation, body.question)
+            interaction = store.start_interaction(db, conversation, body.question)
             db.commit()
 
             # Sent before any work, so the client can adopt the id immediately
@@ -220,11 +254,16 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
                 history=history, question=body.question, llm=client
             ):
                 if event["type"] == "done":
-                    store.save_answer(db, conversation, event)
+                    store.complete_interaction(db, conversation, interaction, event, ok=True)
                     db.commit()
                     event = {
                         **event,
                         "conversation_id": conversation.id,
+                        "interaction": {
+                            "input_tokens": interaction.input_token,
+                            "output_tokens": interaction.output_tokens,
+                            "total_tokens": interaction.total_tokens,
+                        },
                         "usage": store.usage(conversation),
                     }
                 yield f"data: {json.dumps(event, default=str)}\n\n"
@@ -295,18 +334,20 @@ def get_conversation(
         .all()
     )
 
-    messages = []
-    for row in rows:
-        content = row.content if isinstance(row.content, dict) else {}
-        messages.append(
-            StoredMessage(
-                id=row.id,
-                role=row.role,
-                text=content.get("text", ""),
-                queries=content.get("queries", []) or [],
-                created_at=_iso(row.created_at),
-            )
+    interactions = [
+        StoredInteraction(
+            id=row.id,
+            status=row.status,
+            query=row.query or "",
+            response=row.response or "",
+            queries=row.queries or [],
+            input_token=row.input_token or 0,
+            output_tokens=row.output_tokens or 0,
+            total_tokens=row.total_tokens,
+            created_at=_iso(row.created_at),
         )
+        for row in rows
+    ]
 
     base = _summary(conversation, len(rows))
-    return ConversationDetail(**base.model_dump(), messages=messages)
+    return ConversationDetail(**base.model_dump(), interactions=interactions)

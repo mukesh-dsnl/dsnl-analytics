@@ -1,15 +1,22 @@
 """
 Reading and writing chat memory.
 
-The API used to take the whole transcript from the client and hand it straight
-to the model. Now it takes a `conversation_id`, and this module rebuilds the
-history from the database — so the browser holds an identifier rather than the
-conversation itself.
+The API takes a `conversation_id` and this module rebuilds the history from the
+database, so the browser holds an identifier rather than the conversation
+itself.
+
+**Only the last `CONTEXT_INTERACTIONS` exchanges are replayed.** The whole
+transcript is kept — it is the record — but a long thread must not be resent in
+full on every question. Each round of the tool loop already carries a system
+prompt of several thousand tokens, and an unbounded history multiplies that by
+the length of the conversation. Ten exchanges is enough for the follow-ups
+people actually ask ("and how many were not connected?") without the cost of a
+question growing with the age of the thread.
 
 **What is replayed to the model, and what is only recorded.** These are not the
 same set, and the difference is deliberate:
 
-  * Replayed: the user's questions and the assistant's answers, as plain text.
+  * Replayed: the questions and answers, as plain text.
   * Recorded but not replayed: the tool calls behind each answer.
 
 Tool calls are not replayed because a stored tool call cannot be re-sent
@@ -21,9 +28,7 @@ opaque, per-turn state that this module has no business persisting (see
 therefore break the request outright on two of the three providers.
 
 The answers themselves already contain the figures those calls produced, so
-the model loses nothing it needs for a follow-up question. What the stored
-calls are for is the record: the UI shows them under each answer, and the audit
-trail needs them.
+the model loses nothing it needs for a follow-up question.
 """
 
 import logging
@@ -32,7 +37,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.ai.providers.base import NeutralMessage
-from app.models.conversation import Conversation, Message, new_conversation_id
+from app.core.config import get_settings
+from app.models.conversation import (
+    STATUS_FAIL,
+    STATUS_PASS,
+    Conversation,
+    Message,
+    new_conversation_id,
+)
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -40,9 +52,12 @@ logger = logging.getLogger(__name__)
 # Enough of the opening question to recognise the thread in a list.
 TITLE_LENGTH = 120
 
+# How many past exchanges go back to the model. See the module docstring.
+CONTEXT_INTERACTIONS = 10
 
-def _resolve_user(db: Session, username: str | None) -> tuple[int | None, str | None]:
-    """Map an asserted username to a user row, if it names one.
+
+def _resolve_user(db: Session, username: str | None) -> tuple[str | None, str | None]:
+    """Map an asserted username to its UUID, if it names a real account.
 
     An unknown username is kept as text rather than rejected: it is a label on
     a conversation, not a permission check, and this application has no session
@@ -51,7 +66,7 @@ def _resolve_user(db: Session, username: str | None) -> tuple[int | None, str | 
     if not username:
         return None, None
     user = db.query(User).filter(User.username == username).first()
-    return (user.id if user else None), username
+    return (user.user_id if user else None), username
 
 
 def get_or_create(
@@ -76,89 +91,115 @@ def get_or_create(
         title=question.strip()[:TITLE_LENGTH] or None,
     )
     db.add(conversation)
-    db.flush()  # so the id is usable for the messages written in this request
+    db.flush()  # so the id is usable for the rows written in this request
     return conversation
 
 
 def load_history(db: Session, conversation_id: str) -> list[NeutralMessage]:
-    """The conversation so far, in the shape the orchestrator speaks.
+    """The recent conversation, in the shape the orchestrator speaks.
 
-    Text turns only — see the module docstring for why the stored tool calls
-    stay out of what is replayed.
+    The last `CONTEXT_INTERACTIONS` exchanges, oldest first. Text only — see
+    the module docstring for why the stored tool calls stay out of what is
+    replayed.
     """
-    rows = (
+    # Newest first, capped, then reversed: the alternative — reading every row
+    # and slicing in Python — costs the whole thread on every question, which
+    # is the expense this window exists to avoid.
+    recent = (
         db.query(Message)
         .filter(Message.conversation_id == conversation_id)
-        .order_by(Message.id.asc())
+        .order_by(Message.id.desc())
+        .limit(CONTEXT_INTERACTIONS)
         .all()
     )
 
     history: list[NeutralMessage] = []
-    for row in rows:
-        content = row.content if isinstance(row.content, dict) else {}
-        text = content.get("text")
-        if not text:
-            # A turn with no prose carries nothing the model can read.
-            continue
-        history.append(
-            NeutralMessage(role="user" if row.role == "user" else "assistant", text=text)
-        )
+    for row in reversed(recent):
+        if row.query:
+            history.append(NeutralMessage(role="user", text=row.query))
+        # A failed interaction contributes its question but no answer: there is
+        # nothing to replay, and inventing one would put words in the
+        # assistant's mouth.
+        if row.response and row.status == STATUS_PASS:
+            history.append(NeutralMessage(role="assistant", text=row.response))
     return history
 
 
-def save_question(db: Session, conversation: Conversation, question: str) -> Message:
-    """Record the user's turn.
+def start_interaction(db: Session, conversation: Conversation, question: str) -> Message:
+    """Open the row for this exchange, before the model is called.
 
-    Written before the model is called, not after, so a question that crashes
-    the provider is still on record — those are the ones worth being able to
-    look up.
+    Written first, not last, so a question that crashes the provider is still
+    on record — those are the ones worth being able to look up. It starts as
+    `fail` and is promoted on success, which means a request that dies
+    mid-flight leaves an honest row rather than an optimistic one.
     """
     message = Message(
-        conversation_id=conversation.id, role="user", content={"text": question}
+        conversation_id=conversation.id,
+        status=STATUS_FAIL,
+        query=question,
+        response=None,
     )
     db.add(message)
+    db.flush()
     return message
 
 
-def save_answer(
+def complete_interaction(
     db: Session,
     conversation: Conversation,
+    message: Message,
     result: dict[str, Any],
+    ok: bool = True,
 ) -> Message:
-    """Record the assistant's turn and add its cost to the conversation."""
+    """Fill in the answer and add its cost to the conversation."""
     input_tokens = int(result.get("input_tokens") or 0)
     output_tokens = int(result.get("output_tokens") or 0)
 
-    message = Message(
-        conversation_id=conversation.id,
-        role="assistant",
-        content={
-            "text": result.get("answer", ""),
-            # Recorded, not replayed.
-            "queries": result.get("queries", []),
-            "provider": result.get("provider", ""),
-            "model": result.get("model", ""),
-        },
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    )
-    db.add(message)
+    message.status = STATUS_PASS if ok else STATUS_FAIL
+    message.response = result.get("answer", "")
+    message.input_token = input_tokens
+    message.output_tokens = output_tokens
+    # Recorded, not replayed.
+    message.queries = result.get("queries", [])
 
     # `or 0` guards a row written before these columns had a default.
     conversation.input_tokens = (conversation.input_tokens or 0) + input_tokens
     conversation.output_tokens = (conversation.output_tokens or 0) + output_tokens
 
     logger.info(
-        f"AI conversation {conversation.id}: +{input_tokens} in / +{output_tokens} out "
+        f"AI conversation {conversation.id}: {message.status} "
+        f"+{input_tokens} in / +{output_tokens} out "
         f"(total {conversation.input_tokens}/{conversation.output_tokens})"
     )
     return message
 
 
-def usage(conversation: Conversation) -> dict[str, int]:
-    """The conversation's running token totals, for the API response."""
+# ── Cost ───────────────────────────────────────────────────────────────────
+
+
+def cost_of(input_tokens: int, output_tokens: int) -> float:
+    """What those tokens cost, at the configured rates.
+
+    Input and output are priced separately because every provider prices them
+    separately, usually with output several times dearer — averaging the two
+    would understate exactly the conversations that ran long.
+    """
+    settings = get_settings()
+    return (
+        input_tokens * settings.AI_PRICE_INPUT_PER_MTOK
+        + output_tokens * settings.AI_PRICE_OUTPUT_PER_MTOK
+    ) / 1_000_000
+
+
+def usage(conversation: Conversation) -> dict[str, Any]:
+    """The conversation's running totals and cost, for the API response."""
+    settings = get_settings()
+    input_tokens = conversation.input_tokens or 0
+    output_tokens = conversation.output_tokens or 0
     return {
-        "input_tokens": conversation.input_tokens or 0,
-        "output_tokens": conversation.output_tokens or 0,
-        "total_tokens": conversation.total_tokens,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "cost": round(cost_of(input_tokens, output_tokens), 6),
+        "currency": settings.AI_PRICE_CURRENCY,
     }
