@@ -42,6 +42,7 @@ from app.models.conversation import (
     STATUS_FAIL,
     STATUS_PASS,
     Conversation,
+    DeletedConversation,
     Message,
     new_conversation_id,
 )
@@ -172,6 +173,70 @@ def complete_interaction(
         f"(total {conversation.input_tokens}/{conversation.output_tokens})"
     )
     return message
+
+
+# ── Renaming and deleting ──────────────────────────────────────────────────
+
+
+def rename(db: Session, conversation: Conversation, title: str) -> Conversation:
+    """Give a thread a name of its own instead of its opening question."""
+    conversation.title = title.strip()[:TITLE_LENGTH] or None
+    return conversation
+
+
+def archive(db: Session, conversation: Conversation) -> DeletedConversation:
+    """Move a conversation into the archive, transcript and all.
+
+    A move, not a destruction. The whole thread is snapshotted first because
+    `messages` cascades from `conversations`: removing the original row takes
+    its interactions with it, so anything not copied beforehand is gone. Doing
+    it in this order is what makes the delete lossless.
+
+    The caller commits; that keeps the copy and the removal in one transaction,
+    so a failure halfway cannot leave the thread in neither table.
+    """
+    rows = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.id.asc())
+        .all()
+    )
+
+    snapshot = [
+        {
+            "id": row.id,
+            "status": row.status,
+            "query": row.query,
+            "response": row.response,
+            "input_token": row.input_token or 0,
+            "output_tokens": row.output_tokens or 0,
+            "queries": row.queries or [],
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+    deleted = DeletedConversation(
+        id=conversation.id,
+        user_id=conversation.user_id,
+        username=conversation.username,
+        title=conversation.title,
+        input_tokens=conversation.input_tokens or 0,
+        output_tokens=conversation.output_tokens or 0,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        messages=snapshot,
+    )
+    db.add(deleted)
+    db.flush()
+
+    db.delete(conversation)
+
+    logger.info(
+        f"AI conversation {deleted.id} archived: {len(snapshot)} interaction(s), "
+        f"{deleted.total_tokens} tokens"
+    )
+    return deleted
 
 
 # ── Cost ───────────────────────────────────────────────────────────────────

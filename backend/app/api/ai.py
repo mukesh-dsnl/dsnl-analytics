@@ -351,3 +351,53 @@ def get_conversation(
 
     base = _summary(conversation, len(rows))
     return ConversationDetail(**base.model_dump(), interactions=interactions)
+
+
+class RenameRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+@router.patch("/ai/conversations/{conversation_id}", response_model=ConversationSummary)
+def rename_conversation(
+    conversation_id: str, body: RenameRequest, db: Session = Depends(get_db)
+) -> ConversationSummary:
+    """Give a thread a name of its own instead of its opening question."""
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="No such conversation.")
+
+    store.rename(db, conversation, body.title)
+    db.commit()
+
+    count = db.query(Message).filter(Message.conversation_id == conversation_id).count()
+    return _summary(conversation, count)
+
+
+@router.delete("/ai/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str, db: Session = Depends(get_db)) -> dict:
+    """Remove a thread from the list — by moving it, not destroying it.
+
+    The conversation and its whole transcript are copied into
+    `deleted_conversations` and then removed from the live tables, in one
+    transaction. Nothing is lost: the record stays available for audit, for
+    token spend that has already been billed, and for restoring a thread
+    dropped by mistake.
+    """
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        # Already gone, by this call or an earlier one. Reporting success is
+        # the honest answer to "make sure this is not in my list".
+        return {"deleted": conversation_id, "archived": False}
+
+    try:
+        store.archive(db, conversation)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(f"Archiving conversation {conversation_id} failed")
+        raise HTTPException(
+            status_code=500,
+            detail="The conversation could not be archived, so it was left in place.",
+        )
+
+    return {"deleted": conversation_id, "archived": True}

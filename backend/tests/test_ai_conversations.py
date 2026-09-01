@@ -23,7 +23,13 @@ import pytest
 
 from app.ai import conversations as store
 from app.core.config import get_settings
-from app.models.conversation import STATUS_FAIL, STATUS_PASS, Conversation, Message
+from app.models.conversation import (
+    STATUS_FAIL,
+    STATUS_PASS,
+    Conversation,
+    DeletedConversation,
+    Message,
+)
 from app.models.user import User
 
 
@@ -303,6 +309,90 @@ def test_zero_tokens_cost_nothing(db_session):
     conversation = store.get_or_create(db_session, None, "q")
     db_session.commit()
     assert store.usage(conversation)["cost"] == 0
+
+
+# ── Renaming and deleting ──────────────────────────────────────────────────
+
+
+def test_rename_replaces_the_title(db_session):
+    conversation = store.get_or_create(db_session, None, "how many calls?")
+    store.rename(db_session, conversation, "Monday capacity review")
+    db_session.commit()
+
+    assert conversation.title == "Monday capacity review"
+
+
+def test_rename_truncates_an_overlong_title(db_session):
+    conversation = store.get_or_create(db_session, None, "q")
+    store.rename(db_session, conversation, "y" * 400)
+    db_session.commit()
+
+    assert len(conversation.title) == store.TITLE_LENGTH
+
+
+def test_deleting_moves_the_thread_and_its_transcript(db_session):
+    """A move, not a destruction — the whole thing has to survive."""
+    conversation = store.get_or_create(db_session, None, "first", "mukesh")
+    exchange(db_session, conversation, "first", "one", input_tokens=100, output_tokens=20)
+    exchange(db_session, conversation, "second", "two", input_tokens=250, output_tokens=35)
+    db_session.commit()
+
+    original_id = conversation.id
+    store.archive(db_session, conversation)
+    db_session.commit()
+
+    # Gone from the live tables…
+    assert db_session.get(Conversation, original_id) is None
+    assert db_session.query(Message).filter(Message.conversation_id == original_id).count() == 0
+
+    # …and present, in full, in the archive.
+    archived = db_session.get(DeletedConversation, original_id)
+    assert archived is not None
+    assert archived.username == "mukesh"
+    assert archived.title == "first"
+    assert archived.input_tokens == 350
+    assert archived.output_tokens == 55
+    assert archived.deleted_at is not None
+
+    assert [m["query"] for m in archived.messages] == ["first", "second"]
+    assert [m["response"] for m in archived.messages] == ["one", "two"]
+    assert archived.messages[1]["input_token"] == 250
+
+
+def test_the_archived_thread_keeps_its_original_id(db_session):
+    """It is the same thread in a different place, not a note about one."""
+    conversation = store.get_or_create(db_session, None, "q")
+    original_id = conversation.id
+    store.archive(db_session, conversation)
+    db_session.commit()
+
+    assert db_session.get(DeletedConversation, original_id).id == original_id
+
+
+def test_deleting_an_empty_thread_still_archives_it(db_session):
+    conversation = store.get_or_create(db_session, None, "never asked anything")
+    db_session.commit()
+
+    store.archive(db_session, conversation)
+    db_session.commit()
+
+    archived = db_session.get(DeletedConversation, conversation.id)
+    assert archived is not None
+    assert archived.messages == []
+
+
+def test_deleting_one_thread_leaves_the_others_alone(db_session):
+    keep = store.get_or_create(db_session, None, "keep me")
+    exchange(db_session, keep, "keep me", "still here")
+    drop = store.get_or_create(db_session, None, "drop me")
+    exchange(db_session, drop, "drop me", "gone")
+    db_session.commit()
+
+    store.archive(db_session, drop)
+    db_session.commit()
+
+    assert db_session.get(Conversation, keep.id) is not None
+    assert db_session.query(Message).filter(Message.conversation_id == keep.id).count() == 1
 
 
 # ── The orchestrator's side of the contract ────────────────────────────────

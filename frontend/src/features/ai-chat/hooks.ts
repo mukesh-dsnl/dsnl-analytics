@@ -94,6 +94,23 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
 
   /**
+   * The thread whose transcript is already on screen.
+   *
+   * Load-bearing. The first question of a new thread gets its id from the
+   * server *mid-stream*, and storing that id changes `conversationId` — which
+   * would otherwise re-run the effect below, refetch a conversation whose
+   * answer has not been written yet, and replace the live message with the
+   * question alone. The answer would then arrive for a message id that no
+   * longer existed and be dropped, which is why the first reply of a
+   * conversation went missing until the thread was reopened.
+   */
+  const loadedRef = useRef<string | null>(conversationId);
+  // The reload token last acted on. A bump means someone asked for this
+  // thread explicitly — re-selecting the open one from the sidebar — and that
+  // must still refetch, so it overrides the guard above.
+  const tokenRef = useRef(reloadToken);
+
+  /**
    * Load whichever conversation the store points at.
    *
    * Keyed on `reloadToken` as well as the id so that picking the same thread
@@ -104,6 +121,15 @@ export function useChat() {
   useEffect(() => {
     const id = conversationId;
     conversationRef.current = id;
+
+    const wasAskedExplicitly = reloadToken !== tokenRef.current;
+    tokenRef.current = reloadToken;
+
+    // Already showing this thread — including the case above, where this
+    // component is the reason the id changed.
+    if (!wasAskedExplicitly && id && id === loadedRef.current) return;
+
+    loadedRef.current = id;
 
     if (!id) {
       setMessages([]);
@@ -193,9 +219,12 @@ export function useChat() {
       const adopt = (id: string) => {
         if (conversationRef.current === id) return;
         conversationRef.current = id;
+        // Claim it as already-loaded *before* the store write, so the effect
+        // above sees its own id and skips the refetch. Without this the live
+        // answer is replaced by a half-written transcript — see loadedRef.
+        loadedRef.current = id;
         // Written straight into the store rather than through select(): the
-        // reload token is deliberately left alone, since this component
-        // already has the thread on screen and must not refetch over it.
+        // reload token is deliberately left alone.
         useChatStore.setState({ conversationId: id });
       };
 
