@@ -384,7 +384,15 @@ export function Layout() {
             <button> rather than a click handler on a div, so it is reachable by
             Tab and operable with Enter/Space; the hint only surfaces on
             hover/focus, which is what keeps the column clean. */}
-        <div className="flex-1 flex flex-col overflow-y-auto">
+        <div
+          className={clsx(
+            'flex-1 flex flex-col min-h-0',
+            // In chat mode the list scrolls itself, so that "New chat" and the
+            // section heading stay put while the threads move under them.
+            // Scrolling here instead would carry the whole column away.
+            !isAiChat && 'overflow-y-auto',
+          )}
+        >
           {/* Same column, same styling vocabulary — while the chat is open it
               lists conversations instead of analytics destinations, which is
               what that column is for on that screen. */}
@@ -406,12 +414,20 @@ export function Layout() {
             </nav>
           )}
 
+          {/* Only in analytics mode: there the nav leaves empty space below it,
+              which this turns into a collapse target. The conversation list
+              fills its column and leaves none, so this would be squeezed to
+              nothing — the explicit control beside the title still covers it. */}
           <button
             type="button"
+            hidden={isAiChat}
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none"
+            className={clsx(
+              'flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none',
+              isAiChat && 'hidden',
+            )}
           >
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-white/15 transition-all duration-200">
               {isSidebarCollapsed ? (
@@ -577,23 +593,24 @@ export function Layout() {
 
           Inside the panel wrapper's sibling, positioned against the viewport,
           and faded out during the logout collapse along with everything else. */}
-      {!isAiChat && (
-        <Link
-          to="/ai-chat"
-          title="Ask the AI assistant"
-          aria-label="Ask the AI assistant"
-          className={clsx(
-            'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
-            'flex items-center justify-center',
-            'bg-blue-600 hover:bg-blue-500 text-white',
-            'shadow-lg shadow-black/25 transition-all hover:scale-105',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          <Sparkles className="w-6 h-6" />
-        </Link>
-      )}
+      <Link
+        to={isAiChat ? lastAnalyticsPath.current : '/ai-chat'}
+        title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+        aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+        className={clsx(
+          'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
+          'flex items-center justify-center',
+          'shadow-lg shadow-black/25 transition-all hover:scale-105',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+          // One button, one appearance, in both directions — the corner always
+          // means "switch to the other side of the app", and giving the two
+          // directions different weight made it read as two different controls.
+          'bg-blue-600 hover:bg-blue-500 text-white',
+          isLoggingOut && 'opacity-0 pointer-events-none',
+        )}
+      >
+        {isAiChat ? <LayoutGrid className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+      </Link>
     </div>
   );
 }

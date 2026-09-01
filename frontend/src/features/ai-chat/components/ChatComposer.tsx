@@ -1,16 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, SendHorizontal } from 'lucide-react';
+import { Coins, Loader2, SendHorizontal } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ChatComposerProps {
   onSend: (question: string) => void;
   isPending: boolean;
+  /** The conversation's running cost, shown above the send button. */
+  cost?: { amount: number; currency: string };
 }
 
 /** Grow with the text, then scroll — past this the box would eat the transcript. */
 const MAX_HEIGHT = 160;
 
-export function ChatComposer({ onSend, isPending }: ChatComposerProps) {
+/** Small amounts need more decimals than money usually does. */
+function formatCost(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      // A conversation costs fractions of a cent; two decimals would round
+      // every honest figure to $0.00 and make the badge look broken.
+      minimumFractionDigits: amount > 0 && amount < 0.01 ? 4 : 2,
+      maximumFractionDigits: 4,
+    }).format(amount);
+  } catch {
+    // An unrecognised currency code should not take the badge down with it.
+    return `${amount.toFixed(4)} ${currency}`;
+  }
+}
+
+export function ChatComposer({ onSend, isPending, cost }: ChatComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,9 +55,34 @@ export function ChatComposer({ onSend, isPending }: ChatComposerProps) {
         event.preventDefault();
         submit();
       }}
-      className="shrink-0 border-t border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark p-3"
+      className="relative shrink-0 border-t border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-surface-dark p-3"
     >
-      <div className="flex items-end gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-canvas-dark px-3 py-2 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow">
+      {/* The conversation's cost, peeking out from behind the input above the
+          send button. Behind it, not beside it: this is a running total, not
+          a control, and it should be findable without competing with the
+          thing you came here to press.
+
+          Only the amount — the token split is recorded server-side and was
+          just noise here. Marked an estimate because that is what it is: token
+          counts times configured rates, not a provider invoice. */}
+      {cost && cost.amount > 0 && (
+        <span
+          title="Estimated from token counts and the configured rates — not a provider invoice"
+          className="absolute right-4 -top-3 z-0 flex items-center gap-1
+                     rounded-t-md border border-b-0 border-zinc-200 dark:border-zinc-800
+                     bg-zinc-50 dark:bg-canvas-dark
+                     pl-2 pr-2 pt-1 pb-2
+                     text-[10px] tabular-nums text-zinc-500 dark:text-zinc-400"
+        >
+          <Coins className="w-3 h-3" />
+          <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+            {formatCost(cost.amount, cost.currency)}
+          </span>
+          <span className="text-zinc-400 dark:text-zinc-500">est.</span>
+        </span>
+      )}
+
+      <div className="relative z-10 flex items-end gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-canvas-dark px-3 py-2 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow">
         <textarea
           ref={textareaRef}
           rows={1}
@@ -74,10 +118,6 @@ export function ChatComposer({ onSend, isPending }: ChatComposerProps) {
           )}
         </button>
       </div>
-      <p className="mt-1.5 px-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-        Answers come from the CDR/CODR lake only. Every figure is traceable to the query
-        behind it — open “queries” under an answer to check it.
-      </p>
     </form>
   );
 }
