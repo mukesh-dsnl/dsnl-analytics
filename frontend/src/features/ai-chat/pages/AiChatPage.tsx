@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Loader2, RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Loader2, Sparkles, Square, TriangleAlert } from 'lucide-react';
+import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
 import { AnswerBody } from '../components/AnswerBody';
@@ -117,8 +119,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 export function AiChatPage() {
-  const { messages, send, stop, reset, isPending, isRestoring, usage, hasConversation } =
-    useChat();
+  const { messages, send, stop, isPending, isRestoring, usage } = useChat();
   const endRef = useRef<HTMLDivElement>(null);
 
   // Follow the newest turn as it grows. Counting the steps too, not just the
@@ -130,63 +131,72 @@ export function AiChatPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, stepCount, isPending]);
 
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 px-6 py-3 shrink-0">
-        <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+  const headerSlot = useHeaderSlot();
+  const isLoading = isRestoring && messages.length === 0;
+  // A thread with nothing in it yet. The composer belongs in the middle of the
+  // page here, and drops to the bottom once there is a transcript above it —
+  // the same move a new chat makes in every tool people already use.
+  const isBlank = !isLoading && messages.length === 0;
+
+  // The page's identity goes in the layout's header, beside the theme toggle,
+  // rather than being repeated inside the panel it already labels.
+  const title = headerSlot
+    ? createPortal(
+        <div className="min-w-0 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+          <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
             AI Assistant
           </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-            Ask questions about CDR and CODR call records
-          </p>
-        </div>
+          {isPending && (
+            <button
+              type="button"
+              onClick={stop}
+              className="ml-2 shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
+                         text-zinc-600 dark:text-zinc-400
+                         hover:bg-zinc-100 dark:hover:bg-zinc-800/50
+                         hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
+            >
+              <Square className="w-3 h-3" />
+              Stop
+            </button>
+          )}
+        </div>,
+        headerSlot,
+      )
+    : null;
 
-        {/* The running totals live on the cost card above the composer now —
-            repeating them here would be the same figure twice on one screen. */}
+  const composer = (
+    <div className="max-w-4xl w-full mx-auto">
+      <CostCard usage={usage} />
+      <ChatComposer onSend={send} isPending={isPending} />
+    </div>
+  );
 
-        {isPending && (
-          <button
-            type="button"
-            onClick={stop}
-            className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                       text-zinc-600 dark:text-zinc-400
-                       hover:bg-zinc-100 dark:hover:bg-zinc-800/50
-                       hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
-          >
-            <Square className="w-3 h-3" />
-            Stop
-          </button>
-        )}
-
-        {hasConversation && !isPending && (
-          <button
-            type="button"
-            onClick={reset}
-            className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
-                       text-zinc-600 dark:text-zinc-400
-                       hover:bg-zinc-100 dark:hover:bg-zinc-800/50
-                       hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            New conversation
-          </button>
-        )}
+  if (isBlank) {
+    return (
+      <div className="h-full flex flex-col justify-center px-6 pb-10">
+        {title}
+        <EmptyState onPick={send} />
+        <div className="mt-6 w-full">{composer}</div>
       </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {title}
 
       {/* The transcript scrolls; the composer below it does not. */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4">
-        {isRestoring && messages.length === 0 ? (
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 pb-4">
+        {isLoading ? (
           // The previous thread is being fetched. Showing the empty state here
           // would flash "Ask about the call data" over a conversation that is
           // about to reappear.
           <div className="h-full flex items-center justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400 dark:text-zinc-600" />
           </div>
-        ) : messages.length === 0 ? (
-          <EmptyState onPick={send} />
         ) : (
-          <ul className="space-y-3 max-w-4xl mx-auto">
+          <ul className="space-y-5 max-w-4xl mx-auto">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
@@ -198,10 +208,7 @@ export function AiChatPage() {
         )}
       </div>
 
-      <div className="max-w-4xl w-full mx-auto">
-        <CostCard usage={usage} />
-        <ChatComposer onSend={send} isPending={isPending} />
-      </div>
+      {composer}
     </div>
   );
 }

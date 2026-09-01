@@ -154,3 +154,49 @@ class Message(Base):
             f"<Message id={self.id!r} conv={self.conversation_id!r} "
             f"status={self.status!r}>"
         )
+
+
+class DeletedConversation(Base):
+    """A conversation the user removed from their list, kept in full.
+
+    Deleting a chat is a move, not a destruction: the row lands here with its
+    whole transcript, so the record survives for audit, for token accounting
+    that has already been billed, and for restoring a thread someone dropped by
+    mistake.
+
+    The transcript rides along as JSON rather than staying in `messages`,
+    because `messages` cascades from `conversations` — removing the original
+    row takes its messages with it. Snapshotting first is what makes the move
+    lossless. Everything worth *querying* across deleted chats (who, when,
+    what it cost, what it was called) stays a real column.
+    """
+
+    __tablename__ = "deleted_conversations"
+
+    # The original conversation's id, preserved — this is the same thread, in
+    # a different place, not a new record about it.
+    id = Column(String(36), primary_key=True)
+
+    user_id = Column(String(36), nullable=True, index=True)
+    username = Column(String(100), nullable=True)
+    title = Column(String(200), nullable=True)
+
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+
+    # The conversation's own timestamps, carried over so the archive still
+    # says when the chat happened rather than only when it was deleted.
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # [{id, status, query, response, input_token, output_tokens, queries,
+    #   created_at}, ...] — every interaction, in order.
+    messages = Column(JSON, nullable=True)
+
+    @property
+    def total_tokens(self) -> int:
+        return (self.input_tokens or 0) + (self.output_tokens or 0)
+
+    def __repr__(self) -> str:
+        return f"<DeletedConversation id={self.id!r} title={self.title!r}>"

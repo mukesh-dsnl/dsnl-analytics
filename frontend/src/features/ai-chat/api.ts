@@ -194,6 +194,31 @@ export const aiApi = {
     return res.json();
   },
 
+  /** Give a thread a name of its own instead of its opening question. */
+  renameConversation: async (id: string, title: string): Promise<ConversationSummary> => {
+    const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) throw new Error('Could not rename that conversation.');
+    return res.json();
+  },
+
+  /**
+   * Remove a thread from the list.
+   *
+   * The server moves it, transcript and all, into an archive table rather than
+   * destroying it — so this is reversible in the database even though the UI
+   * offers no undo.
+   */
+  deleteConversation: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Could not delete that conversation.');
+  },
+
   chat: async (body: ChatRequest): Promise<ChatResponse> => {
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
