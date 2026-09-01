@@ -99,12 +99,6 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
                 <span className="block truncate">
                   {conversation.title ?? 'Untitled chat'}
                 </span>
-                <span className="block text-[10px] text-white/50 tabular-nums">
-                  {conversation.message_count}{' '}
-                  {conversation.message_count === 1 ? 'exchange' : 'exchanges'}
-                  {conversation.usage.total_tokens > 0 &&
-                    ` · ${conversation.usage.total_tokens.toLocaleString()} tokens`}
-                </span>
               </button>
             </li>
           );

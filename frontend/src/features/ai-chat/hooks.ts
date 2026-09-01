@@ -48,8 +48,14 @@ export interface ChatMessage {
   queries?: ChatQuery[];
   /** Assistant turns only — what happened, in order, while answering. */
   steps?: ChatStep[];
-  /** What this one exchange cost — shown under the answer. */
+  /** What this one exchange cost. Stored and returned; not shown in the UI. */
   interaction?: InteractionUsage;
+  /**
+   * Type this answer in rather than showing it at once. Set only on an answer
+   * that just arrived — restored history should already be there, not replay
+   * itself every time the thread is opened.
+   */
+  animate?: boolean;
   /** True for the bubble that reports a failed request. */
   isError?: boolean;
   provider?: string;
@@ -242,6 +248,7 @@ export function useChat() {
               interaction: event.interaction,
               provider: event.provider,
               model: event.model,
+              animate: true,
               isStreaming: false,
               // Any step still open never reported an end — mark them closed
               // so nothing spins forever after the answer has arrived.
