@@ -1,12 +1,16 @@
 /**
  * AI chat API layer.
  *
- * One endpoint, and it is stateless: the server keeps no session, so the
- * conversation lives here and is sent back with every question. That is why
- * `history` is round-tripped opaquely — its shape is the backend's neutral
- * message format, and nothing in this module reads into it beyond passing it
- * along. Treating it as an opaque token is what lets the backend change
- * provider without this file changing at all.
+ * The chat is session-based: this module sends a `conversation_id` and the
+ * server rebuilds the transcript from its own database. The browser therefore
+ * holds an identifier, not the conversation — which is what lets a thread
+ * survive a refresh, and what makes the token totals below authoritative
+ * rather than a guess assembled on the client.
+ *
+ * A request with no `conversation_id` starts a new thread; the id to use from
+ * then on comes back in the response (and, when streaming, in the very first
+ * event, so a browser that navigates away mid-answer still knows which thread
+ * it started).
  */
 
 const API_BASE = '/api/ai';
@@ -18,19 +22,16 @@ export interface ChatQuery {
   error: boolean;
 }
 
-/**
- * A conversation turn as the server stores it. Opaque by design: it goes back
- * out exactly as it came in.
- */
-export interface ChatHistoryEntry {
-  role: 'user' | 'assistant';
-  text: string | null;
-  tool_calls?: unknown[];
-  tool_results?: unknown[];
+/** Running token totals for the whole conversation, not just one answer. */
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
 }
 
 export interface ChatResponse {
   answer: string;
+  conversation_id: string;
   provider: string;
   model: string;
   /**
@@ -39,18 +40,56 @@ export interface ChatResponse {
    * declined to look, not that it failed.
    */
   queries: ChatQuery[];
-  history: ChatHistoryEntry[];
+  usage: TokenUsage;
 }
 
 export interface ChatRequest {
   question: string;
-  history: ChatHistoryEntry[];
+  /** Omit to start a new thread. */
+  conversation_id?: string | null;
+  /** Recorded for attribution; the server does not treat it as authentication. */
+  username?: string | null;
 }
 
-/** Progress events from POST /api/ai/chat/stream. `done` always arrives last. */
+/** One stored turn, as the conversation-detail endpoint returns it. */
+export interface StoredMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  text: string;
+  queries: ChatQuery[];
+  created_at?: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title?: string;
+  username?: string;
+  created_at?: string;
+  updated_at?: string;
+  message_count: number;
+  usage: TokenUsage;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: StoredMessage[];
+}
+
+/**
+ * Progress events from POST /api/ai/chat/stream.
+ *
+ * `conversation` arrives first (before any work, so the id can be adopted
+ * immediately) and `done` always arrives last.
+ */
 export type ChatEvent =
+  | { type: 'conversation'; conversation_id: string }
   | { type: 'round_start'; round: number }
-  | { type: 'round_thinking'; round: number; seconds: number }
+  | {
+      type: 'round_thinking';
+      round: number;
+      seconds: number;
+      input_tokens: number;
+      output_tokens: number;
+    }
   | { type: 'tool_start'; round: number; index: number; tool: string; input: Record<string, unknown> }
   | { type: 'tool_end'; round: number; index: number; tool: string; ok: boolean; seconds: number }
   | ({ type: 'done' } & ChatResponse)
@@ -120,6 +159,21 @@ export const aiApi = {
       drain(decoder.decode(value, { stream: true }), false);
     }
     drain(decoder.decode(), true);
+  },
+
+  /** Recent threads, newest first. */
+  listConversations: async (username?: string | null): Promise<ConversationSummary[]> => {
+    const query = username ? `?username=${encodeURIComponent(username)}` : '';
+    const res = await fetch(`${API_BASE}/conversations${query}`);
+    if (!res.ok) throw new Error('Could not load past conversations.');
+    return res.json();
+  },
+
+  /** One thread and its messages — what the UI restores a conversation from. */
+  getConversation: async (id: string): Promise<ConversationDetail> => {
+    const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Could not load that conversation.');
+    return res.json();
   },
 
   chat: async (body: ChatRequest): Promise<ChatResponse> => {

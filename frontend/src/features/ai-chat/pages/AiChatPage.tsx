@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
+import { Coins, Loader2, RotateCcw, Sparkles, Square, TriangleAlert } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
@@ -124,7 +124,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 export function AiChatPage() {
-  const { messages, send, stop, reset, isPending, hasConversation } = useChat();
+  const { messages, send, stop, reset, isPending, isRestoring, usage, hasConversation } =
+    useChat();
   const endRef = useRef<HTMLDivElement>(null);
 
   // Follow the newest turn as it grows. Counting the steps too, not just the
@@ -147,6 +148,21 @@ export function AiChatPage() {
             Ask questions about CDR and CODR call records
           </p>
         </div>
+
+        {/* The conversation's running cost. Server-reported, and cumulative
+            across every round of every question in the thread — a multi-round
+            answer resends the whole system prompt, so this climbs faster than
+            the visible text suggests. */}
+        {usage.total_tokens > 0 && (
+          <span
+            className="shrink-0 hidden sm:inline-flex items-center gap-1 text-[11px] tabular-nums
+                       text-zinc-400 dark:text-zinc-500"
+            title={`${usage.input_tokens.toLocaleString()} in · ${usage.output_tokens.toLocaleString()} out`}
+          >
+            <Coins className="w-3.5 h-3.5" />
+            {usage.total_tokens.toLocaleString()} tokens
+          </span>
+        )}
 
         {isPending && (
           <button
@@ -179,7 +195,14 @@ export function AiChatPage() {
 
       {/* The transcript scrolls; the composer below it does not. */}
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4">
-        {messages.length === 0 ? (
+        {isRestoring && messages.length === 0 ? (
+          // The previous thread is being fetched. Showing the empty state here
+          // would flash "Ask about the call data" over a conversation that is
+          // about to reappear.
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400 dark:text-zinc-600" />
+          </div>
+        ) : messages.length === 0 ? (
           <EmptyState onPick={send} />
         ) : (
           <ul className="space-y-3 max-w-4xl mx-auto">

@@ -167,10 +167,19 @@ class GeminiClient(LLMClient):
                     )
                 )
 
+        usage = getattr(response, "usage_metadata", None)
         return LLMTurn(
             text="\n".join(texts).strip(),
             tool_calls=tool_calls,
             stop_reason="tool_use" if tool_calls else "end_turn",
+            input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
+            # Thinking tokens are generated and billed like any other output,
+            # and Gemini reports them separately from the candidate text — so
+            # counting only candidates_token_count would understate the turn.
+            output_tokens=(
+                (getattr(usage, "candidates_token_count", 0) or 0)
+                + (getattr(usage, "thoughts_token_count", 0) or 0)
+            ),
         )
 
     # ── The one method ─────────────────────────────────────────────────────

@@ -128,10 +128,13 @@ class OpenAIClient(LLMClient):
             if getattr(call, "function", None) is not None
         ]
 
+        usage = getattr(response, "usage", None)
         return LLMTurn(
             text=(message.content or "").strip(),
             tool_calls=tool_calls,
             stop_reason="tool_use" if tool_calls else "end_turn",
+            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
         )
 
     # ── The one method ─────────────────────────────────────────────────────
