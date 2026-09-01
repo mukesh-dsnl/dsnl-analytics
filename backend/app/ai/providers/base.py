@@ -86,11 +86,19 @@ class LLMTurn:
     the model wants tools run, or it is finished. Every other vendor-specific
     stop reason (length, safety, content filter) collapses to "end_turn" — the
     loop's job is to stop asking, and the text it has is what the user gets.
+
+    The token counts are per-turn, and a multi-round answer therefore sums
+    several of them. Each provider reports these under its own name; the
+    adapters normalise to input/output here. They default to 0 rather than None
+    so that a provider which reports nothing simply contributes nothing to the
+    total, instead of poisoning the arithmetic.
     """
 
     text: str
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
     stop_reason: Literal["tool_use", "end_turn"] = "end_turn"
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMClient(ABC):

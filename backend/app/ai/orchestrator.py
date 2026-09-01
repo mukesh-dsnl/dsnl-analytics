@@ -104,6 +104,12 @@ def answer_events(
         NeutralMessage(role="user", text=question),
     ]
     queries_run: list[dict[str, Any]] = []
+    # Summed across rounds, not per round: one question can cost several calls
+    # to the provider, and the caller is billed for all of them. The system
+    # prompt alone is a few thousand input tokens each time, so a five-round
+    # answer is not five times *nothing*.
+    input_tokens = 0
+    output_tokens = 0
 
     for round_number in range(settings.AI_MAX_TOOL_ROUNDS):
         round_index = round_number + 1
@@ -112,10 +118,15 @@ def answer_events(
 
         started = perf_counter()
         turn = client.send(SYSTEM_PROMPT, conversation, TOOLS)
+        input_tokens += turn.input_tokens
+        output_tokens += turn.output_tokens
+
         yield {
             "type": "round_thinking",
             "round": round_index,
             "seconds": round(perf_counter() - started, 2),
+            "input_tokens": turn.input_tokens,
+            "output_tokens": turn.output_tokens,
         }
 
         if turn.stop_reason != "tool_use" or not turn.tool_calls:
@@ -125,6 +136,8 @@ def answer_events(
                 "provider": client.provider,
                 "model": client.model,
                 "queries": queries_run,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
             return
 
@@ -178,6 +191,8 @@ def answer_events(
         "provider": client.provider,
         "model": client.model,
         "queries": queries_run,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
     }
 
 

@@ -1,29 +1,27 @@
 /**
  * Conversation state for the AI chat.
  *
- * Three representations, deliberately separate:
+ * The transcript lives on the server. What this hook keeps is:
  *
- *   `messages` — what the user sees. Includes the pending question, the live
- *                progress steps, and any error bubble; the server knows about
- *                none of those.
- *   `history`  — what the server sees. Only turns it produced, passed back
- *                verbatim.
- *   `steps`    — what the assistant did to reach the answer, one line per
- *                round or tool call, with its own duration.
+ *   `messages`       — what is on screen, including the pending question, the
+ *                      live progress steps, and any error bubble. The server
+ *                      knows about none of those three.
+ *   `conversationId` — the only thing sent back with the next question.
+ *   `usage`          — the running token totals, as reported by the server.
  *
- * Keeping the first two apart is what lets a failed question stay on screen
- * (so the user can read what they asked and retry) without that failure
- * entering the conversation the model is given. Replaying a question the
- * server never answered would have it answer it twice.
+ * Keeping `messages` separate from the server's record is what lets a failed
+ * question stay on screen (so the user can read what they asked and retry)
+ * without that failure entering the conversation the model is given.
  *
  * The steps are kept on the message rather than in page state so they survive
  * as part of the transcript: after the answer lands they stop being progress
  * and become the record of how it was reached.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { aiApi } from './api';
-import type { ChatEvent, ChatHistoryEntry, ChatQuery } from './api';
+import type { ChatEvent, ChatQuery, TokenUsage } from './api';
+import { useAuthStore } from '../../store';
 import { summarizeQuery } from './queryLabel';
 
 export interface ChatStep {
@@ -53,17 +51,86 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
+const EMPTY_USAGE: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+
+/** Survives a refresh, so the open thread is still the open thread. */
+const STORAGE_KEY = 'ai-chat-conversation-id';
+
 let messageCounter = 0;
 const nextId = () => `m${++messageCounter}`;
 
 export function useChat() {
+  const username = useAuthStore((state) => state.username);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isPending, setIsPending] = useState(false);
-  // A ref, not state: it is never rendered, and reading it at send time must
-  // give the current value rather than the one captured when the callback was
-  // created.
-  const historyRef = useRef<ChatHistoryEntry[]>([]);
+  const [usage, setUsage] = useState<TokenUsage>(EMPTY_USAGE);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // A ref as well as state: the send callback needs the value at call time,
+  // not the one captured when it was created.
+  const conversationRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const adoptConversation = useCallback((id: string) => {
+    conversationRef.current = id;
+    setConversationId(id);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, id);
+    } catch {
+      // Private browsing, or storage disabled. The thread still works for as
+      // long as the tab is open; it just won't survive a refresh.
+    }
+  }, []);
+
+  // Restore the thread that was open last time. Runs once; a failure here is
+  // not worth surfacing, since starting a fresh conversation is a fine outcome.
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      stored = null;
+    }
+    if (!stored) return;
+
+    let cancelled = false;
+    setIsRestoring(true);
+
+    aiApi
+      .getConversation(stored)
+      .then((detail) => {
+        if (cancelled) return;
+        conversationRef.current = detail.id;
+        setConversationId(detail.id);
+        setUsage(detail.usage);
+        setMessages(
+          detail.messages.map((m) => ({
+            id: nextId(),
+            role: m.role,
+            text: m.text,
+            queries: m.role === 'assistant' ? m.queries : undefined,
+          })),
+        );
+      })
+      .catch(() => {
+        // The thread is gone (or the server was reset) — forget it rather than
+        // sending an id the server will not recognise.
+        try {
+          window.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* nothing to clean up */
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Rewrite the in-flight assistant message. */
   const patchLive = useCallback((liveId: string, patch: (m: ChatMessage) => ChatMessage) => {
@@ -99,6 +166,12 @@ export function useChat() {
 
       const onEvent = (event: ChatEvent) => {
         switch (event.type) {
+          case 'conversation':
+            // Arrives before any work, so a browser that navigates away
+            // mid-answer still knows which thread it started.
+            adoptConversation(event.conversation_id);
+            break;
+
           case 'round_start':
             addStep({
               id: `r${event.round}`,
@@ -128,7 +201,8 @@ export function useChat() {
             break;
 
           case 'done':
-            historyRef.current = event.history;
+            adoptConversation(event.conversation_id);
+            setUsage(event.usage ?? EMPTY_USAGE);
             patchLive(liveId, (m) => ({
               ...m,
               text: event.answer || 'The assistant returned an empty answer.',
@@ -154,11 +228,17 @@ export function useChat() {
       };
 
       try {
-        await aiApi.chatStream({ question: trimmed, history: historyRef.current }, onEvent, controller.signal);
+        await aiApi.chatStream(
+          { question: trimmed, conversation_id: conversationRef.current, username },
+          onEvent,
+          controller.signal,
+        );
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
           // Cancelled by the user: drop the placeholder rather than leaving a
-          // half-finished turn in the transcript.
+          // half-finished turn in the transcript. The question is still on the
+          // server — it is written before the model is called — so a reload
+          // will show it again, which is the honest state.
           setMessages((prev) => prev.filter((m) => m.id !== liveId));
         } else {
           patchLive(liveId, (m) => ({
@@ -173,15 +253,24 @@ export function useChat() {
         setIsPending(false);
       }
     },
-    [isPending, patchLive],
+    [adoptConversation, isPending, patchLive, username],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
-    historyRef.current = [];
+    // The thread is not deleted, only let go of: it stays on the server as a
+    // record, and the next question starts a new one.
+    conversationRef.current = null;
+    setConversationId(null);
+    setUsage(EMPTY_USAGE);
     setMessages([]);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* nothing to clean up */
+    }
   }, []);
 
   return {
@@ -190,6 +279,9 @@ export function useChat() {
     stop,
     reset,
     isPending,
+    isRestoring,
+    usage,
+    conversationId,
     hasConversation: messages.length > 0,
   };
 }

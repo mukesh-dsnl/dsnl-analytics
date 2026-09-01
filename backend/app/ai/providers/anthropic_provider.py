@@ -107,12 +107,17 @@ class AnthropicClient(LLMClient):
             # thinking blocks are deliberately dropped: they are the model's
             # own reasoning, not part of the answer or of the tool protocol.
 
+        usage = getattr(response, "usage", None)
         return LLMTurn(
             text="\n".join(texts).strip(),
             tool_calls=tool_calls,
             # Anything that isn't a tool request ends the loop — "max_tokens"
             # and "stop_sequence" both mean stop asking and use what we have.
             stop_reason="tool_use" if tool_calls else "end_turn",
+            # Cache reads and writes are reported separately and deliberately
+            # left out: they are not what this turn spent on new input.
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
         )
 
     # ── The one method ─────────────────────────────────────────────────────

@@ -19,9 +19,33 @@ from datetime import date, timedelta
 
 import duckdb
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.cdr import lake
 from app.core.config import get_settings
+from app.core.database import Base
+
+
+@pytest.fixture
+def db_session():
+    """A throwaway SQLite database with the real schema.
+
+    SQLite rather than the configured MySQL: these tests are about this
+    application's own logic, and pointing them at a live server would make them
+    depend on its state and let a failing test leave rows behind. The models
+    are declared portably enough to build on either.
+    """
+    import app.models  # noqa: F401 — registers every table on Base
+
+    engine = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
 
 # (CRN, CONF_NUM, ACCOUNTID, CONFEREE_TYPE, CALLTYPE, connected, minute, number)
 _LEGS = [
