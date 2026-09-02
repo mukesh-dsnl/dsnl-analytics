@@ -25,7 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { aiApi } from './api';
 import { CONVERSATIONS_KEY } from './components/ConversationList';
 import type { ChatEvent, ChatQuery, InteractionUsage, TokenUsage } from './api';
-import { useChatStore } from './store';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store';
 import { summarizeQuery } from './queryLabel';
 
@@ -75,13 +75,16 @@ const EMPTY_USAGE: TokenUsage = {
 let messageCounter = 0;
 const nextId = () => `m${++messageCounter}`;
 
-export function useChat() {
+export function useChat(conversationId: string | null) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const username = useAuthStore((state) => state.username);
-  const conversationId = useChatStore((state) => state.conversationId);
-  const reloadToken = useChatStore((state) => state.reloadToken);
-  const select = useChatStore((state) => state.select);
-  const startNew = useChatStore((state) => state.startNew);
+
+  // Forces a reload of the thread already on screen — after a poll lands, or
+  // after a load failed. Deliberately local: it is this hook's own business,
+  // not something another component should be able to trigger.
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = useCallback(() => setReloadToken((n) => n + 1), []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isPending, setIsPending] = useState(false);
@@ -200,10 +203,12 @@ export function useChat() {
         }
       })
       .catch(() => {
+        // The thread is gone, or the server is unreachable. Clear the panel
+        // and leave the URL alone: rewriting it here is what previously put
+        // this in a fight with the address bar.
         if (cancelled) return;
         setMessages([]);
         setUsage(EMPTY_USAGE);
-        startNew();
       })
       .finally(() => {
         if (!cancelled) setIsRestoring(false);
@@ -212,7 +217,7 @@ export function useChat() {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, reloadToken, startNew]);
+  }, [conversationId, reloadToken]);
 
   /**
    * Wait for an answer that is being worked out without us.
@@ -238,7 +243,7 @@ export function useChat() {
         // answer renders exactly as any other stored one.
         setPollFor(null);
         loadedRef.current = null;
-        select(pollFor);
+        reload();
       } catch {
         // The thread was deleted, or the server is unreachable. Either way
         // there is nothing left to wait for.
@@ -250,7 +255,7 @@ export function useChat() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pollFor, select]);
+  }, [pollFor, reload]);
 
   /** Rewrite the in-flight assistant message. */
   const patchLive = useCallback((liveId: string, patch: (m: ChatMessage) => ChatMessage) => {
@@ -287,13 +292,14 @@ export function useChat() {
       const adopt = (id: string) => {
         if (conversationRef.current === id) return;
         conversationRef.current = id;
-        // Claim it as already-loaded *before* the store write, so the effect
-        // above sees its own id and skips the refetch. Without this the live
-        // answer is replaced by a half-written transcript — see loadedRef.
+        // Claim it as already-loaded *before* changing the URL, so when the
+        // new id arrives back as a prop the effect above sees its own value
+        // and skips the refetch. Without this the live answer is replaced by
+        // a half-written transcript — see loadedRef.
         loadedRef.current = id;
-        // Written straight into the store rather than through select(): the
-        // reload token is deliberately left alone.
-        useChatStore.setState({ conversationId: id });
+        // `replace`, so a brand-new thread learning its id does not add a
+        // history entry — Back should leave the chat, not step through it.
+        navigate(`/assistant/${id}`, { replace: true });
       };
 
       const onEvent = (event: ChatEvent) => {
@@ -390,22 +396,21 @@ export function useChat() {
         setIsPending(false);
       }
     },
-    [isPending, patchLive, queryClient, username],
+    [isPending, navigate, patchLive, queryClient, username],
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
-    startNew();
-  }, [startNew]);
+    navigate('/assistant');
+  }, [navigate]);
 
   return {
     messages,
     send,
     stop,
     reset,
-    select,
     isPending,
     isRestoring,
     usage,

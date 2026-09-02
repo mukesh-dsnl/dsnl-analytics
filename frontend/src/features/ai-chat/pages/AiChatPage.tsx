@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { Loader2, Sparkles, Square, TriangleAlert } from 'lucide-react';
 import { useHeaderSlot } from '../../../components/HeaderSlot';
@@ -119,7 +120,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 export function AiChatPage() {
-  const { messages, send, stop, isPending, isRestoring, usage } = useChat();
+  // ── The address bar is the only thing that decides which thread is open ──
+  // One direction, no mirror. An earlier version kept the id in a store and
+  // synced it both ways; those two rules contradicted each other whenever the
+  // URL had no id but the store did — each effect undid the other's
+  // precondition and the URL oscillated. There is nothing to keep in step now.
+  const { conversationId } = useParams();
+
+  const { messages, send, stop, isPending, isRestoring, usage } = useChat(
+    conversationId ?? null,
+  );
   const endRef = useRef<HTMLDivElement>(null);
 
   // Follow the newest turn as it grows. Counting the steps too, not just the

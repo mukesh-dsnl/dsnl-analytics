@@ -43,12 +43,12 @@ interface NavNode {
  * service name lands on that view rather than on nothing.
  */
 const serviceChildren = (service: 'voicedrop' | 'conference' | 'multicall'): NavNode[] => [
-  { label: 'Attempt Metrics', path: `/analytics/${service}`, icon: Activity },
-  { label: 'Campaign Metrics', path: `/campaign-metrics/${service}`, icon: Megaphone },
+  { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
+  { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
 ];
 
 const NAV: NavNode[] = [
-  { label: 'All', path: '/analytics/all', icon: LayoutGrid },
+  { label: 'All', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
   {
     label: 'Voicedrop',
     path: '/analytics/voicedrop',
@@ -222,25 +222,23 @@ export function Layout() {
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
 
-  // Ensure theme is applied to document
+  // The only thing that applies the theme once the app is mounted — the store
+  // sets the value, this puts it on the document. Runs on mount too, so the
+  // value restored from localStorage lands here without a toggle.
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
   const isActivePath = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   /** The chat route is the one page with no date control of its own. */
-  const isAiChat = location.pathname.startsWith('/ai-chat');
+  const isAiChat = location.pathname.startsWith('/assistant');
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
   // not to a default one you then have to navigate away from.
-  const lastAnalyticsPath = useRef('/analytics/all');
+  const lastAnalyticsPath = useRef('/analytics/all/attempt-metrics');
   if (!isAiChat) lastAnalyticsPath.current = location.pathname;
 
   // Auto-expand whichever sections the current route is inside — landing
@@ -557,7 +555,7 @@ export function Layout() {
           {/* The AI chat carries no date control: the range is part of the
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
-          {isAiChat ? null : location.pathname.startsWith('/campaign-metrics') ? (
+          {isAiChat ? null : location.pathname.endsWith('/campaign-metrics') ? (
             <HeaderCampaignDate />
           ) : (
             <HeaderDateRange />
@@ -594,7 +592,7 @@ export function Layout() {
           Inside the panel wrapper's sibling, positioned against the viewport,
           and faded out during the logout collapse along with everything else. */}
       <Link
-        to={isAiChat ? lastAnalyticsPath.current : '/ai-chat'}
+        to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
         title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
         aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
         className={clsx(
