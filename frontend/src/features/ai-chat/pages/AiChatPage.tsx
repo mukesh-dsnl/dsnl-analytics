@@ -36,12 +36,13 @@ function EmptyState({ onPick }: { onPick: (question: string) => void }) {
         <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-400" />
       </div>
       <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-        Ask about the call data
+        Ask about the DSNL call data
       </h2>
       <p className="mt-1.5 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-        Questions are answered from the CDR and CODR exports — call legs, connection
+        {/* Questions are answered from the CDR and CODR exports — call legs, connection
         outcomes, durations, reblasts and disconnect reasons. There is no billing or
-        network-health data, and the assistant will say so rather than guess.
+        network-health data, and the assistant will say so rather than guess. */}
+
       </p>
 
       <ul className="mt-6 grid gap-2 w-full max-w-xl sm:grid-cols-2">
@@ -152,27 +153,27 @@ export function AiChatPage() {
   // rather than being repeated inside the panel it already labels.
   const title = headerSlot
     ? createPortal(
-        <div className="min-w-0 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
-          <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-            AI Assistant
-          </h1>
-          {isPending && (
-            <button
-              type="button"
-              onClick={stop}
-              className="ml-2 shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
+      <div className="min-w-0 flex items-center gap-2">
+        <Sparkles className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+        <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+          Analytics AI
+        </h1>
+        {isPending && (
+          <button
+            type="button"
+            onClick={stop}
+            className="ml-2 shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
                          text-zinc-600 dark:text-zinc-400
                          hover:bg-zinc-100 dark:hover:bg-zinc-800/50
                          hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
-            >
-              <Square className="w-3 h-3" />
-              Stop
-            </button>
-          )}
-        </div>,
-        headerSlot,
-      )
+          >
+            <Square className="w-3 h-3" />
+            Stop
+          </button>
+        )}
+      </div>,
+      headerSlot,
+    )
     : null;
 
   return (
