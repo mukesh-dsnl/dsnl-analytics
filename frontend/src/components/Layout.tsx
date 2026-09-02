@@ -442,26 +442,9 @@ export function Layout() {
 
         {/* Footer: identity + sign out */}
         <div className="p-3 space-y-1 shrink-0">
-          {/* The way back. Only while the chat is open — on the analytics
-              pages the floating button in the corner is the way in, and a
-              permanent pair of toggles would be one control too many. */}
-          {isAiChat && (
-            <Link
-              to={lastAnalyticsPath.current}
-              title={isSidebarCollapsed ? 'Back to analytics' : undefined}
-              className={clsx(
-                'w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-medium',
-                'text-white/90 hover:text-white hover:bg-white/15 transition-colors',
-                isSidebarCollapsed ? 'justify-center px-0' : 'px-3',
-              )}
-            >
-              <LayoutGrid className="w-5 h-5 shrink-0" />
-              {!isSidebarCollapsed && (
-                <span className="whitespace-nowrap">Analytics</span>
-              )}
-            </Link>
-          )}
-
+          {/* The way back out of the chat is the floating button in the corner
+              — one control, in the same place in both modes. A second one here
+              was the same trip by another route. */}
           {!isSidebarCollapsed && username && (
             <div className="px-3 pb-2 text-xs text-white/75 truncate">Signed in as <span className="font-medium text-white">{username}</span></div>
           )}
