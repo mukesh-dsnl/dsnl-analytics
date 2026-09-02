@@ -40,6 +40,11 @@ from sqlalchemy.sql import func
 from app.core.database import Base
 
 # Message.status
+#
+# `pending` is not decoration: without it an interaction still being worked on
+# and one that gave up look identical, so a client reloading mid-answer cannot
+# tell whether to wait or to give up too.
+STATUS_PENDING = "pending"
 STATUS_PASS = "pass"
 STATUS_FAIL = "fail"
 
@@ -117,11 +122,11 @@ class Message(Base):
         String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
     )
 
-    # "pass" once an answer was produced, "fail" when the provider or the loop
-    # gave out. A failed interaction is still a row: it is the one you want to
-    # find later, and dropping it would make the transcript disagree with what
-    # the user saw.
-    status = Column(String(8), nullable=False, default=STATUS_PASS)
+    # "pending" while the answer is being worked out, "pass" once one exists,
+    # "fail" when the provider or the loop gave out. A failed interaction is
+    # still a row: it is the one you want to find later, and dropping it would
+    # make the transcript disagree with what the user saw.
+    status = Column(String(8), nullable=False, default=STATUS_PENDING)
 
     query = Column(Text, nullable=False)
     response = Column(Text, nullable=True)

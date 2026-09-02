@@ -87,6 +87,9 @@ export function useChat() {
   const [isPending, setIsPending] = useState(false);
   const [usage, setUsage] = useState<TokenUsage>(EMPTY_USAGE);
   const [isRestoring, setIsRestoring] = useState(false);
+  // Set to a conversation id when it has an interaction the server is still
+  // working on — see the poll effect below.
+  const [pollFor, setPollFor] = useState<string | null>(null);
 
   // A ref as well as the store: the send callback needs the value at call
   // time, not the one captured when it was created.
@@ -151,8 +154,19 @@ export function useChat() {
             const turns: ChatMessage[] = [
               { id: nextId(), role: 'user', text: item.query },
             ];
-            // A failed exchange has a question but no answer to show.
-            if (item.status === 'pass' && item.response) {
+
+            if (item.status === 'pending') {
+              // The server is still answering this one — the work outlives the
+              // request that started it, so the answer is coming. Show it as
+              // in-flight and let the poll below pick it up.
+              turns.push({
+                id: nextId(),
+                role: 'assistant',
+                text: '',
+                steps: [{ id: 'resumed', label: 'Still working on this', done: false }],
+                isStreaming: true,
+              });
+            } else if (item.status === 'pass' && item.response) {
               turns.push({
                 id: nextId(),
                 role: 'assistant',
@@ -164,10 +178,26 @@ export function useChat() {
                   total_tokens: item.total_tokens,
                 },
               });
+            } else if (item.status === 'fail') {
+              turns.push({
+                id: nextId(),
+                role: 'assistant',
+                text: item.response || 'This question was not answered.',
+                isError: true,
+              });
             }
             return turns;
           }),
         );
+
+        // Something is still being worked on server-side. Watch for it to
+        // land — the alternative is a question sitting on screen with nothing
+        // after it and no indication that an answer is on its way.
+        if (detail.interactions.some((item) => item.status === 'pending')) {
+          setPollFor(detail.id);
+        } else {
+          setPollFor(null);
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -183,6 +213,44 @@ export function useChat() {
       cancelled = true;
     };
   }, [conversationId, reloadToken, startNew]);
+
+  /**
+   * Wait for an answer that is being worked out without us.
+   *
+   * The server runs the answer on its own thread, so a refresh mid-question
+   * loses the live event stream but not the work. Re-attaching to that stream
+   * would need buffering, replay and — with more than one worker — a shared
+   * broker; polling for the finished row gets the answer on screen for a
+   * fraction of that, and the only thing lost is watching the progress lines
+   * tick over a second time.
+   */
+  useEffect(() => {
+    if (!pollFor) return;
+
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const detail = await aiApi.getConversation(pollFor);
+        if (cancelled) return;
+        if (detail.interactions.some((item) => item.status === 'pending')) return;
+
+        // Landed. Reload the thread through the normal path so the finished
+        // answer renders exactly as any other stored one.
+        setPollFor(null);
+        loadedRef.current = null;
+        select(pollFor);
+      } catch {
+        // The thread was deleted, or the server is unreachable. Either way
+        // there is nothing left to wait for.
+        if (!cancelled) setPollFor(null);
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pollFor, select]);
 
   /** Rewrite the in-flight assistant message. */
   const patchLive = useCallback((liveId: string, patch: (m: ChatMessage) => ChatMessage) => {

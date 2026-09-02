@@ -67,7 +67,12 @@ export interface ChatRequest {
 /** One stored exchange: the question, its answer, and what it cost. */
 export interface StoredInteraction {
   id: number;
-  status: 'pass' | 'fail';
+  /**
+   * `pending` means the server is still working on it — the answer will land
+   * whether or not this browser is watching, so the client polls rather than
+   * assuming the question was lost.
+   */
+  status: 'pending' | 'pass' | 'fail';
   query: string;
   response: string;
   queries: ChatQuery[];
