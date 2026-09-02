@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import { aiApi } from '../api';
 import type { ConversationSummary } from '../api';
-import { useChatStore } from '../store';
 import { useAuthStore } from '../../../store';
 
 interface ConversationListProps {
@@ -250,10 +250,15 @@ function ConversationRow({
  */
 export function ConversationList({ isCollapsed }: ConversationListProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const username = useAuthStore((state) => state.username);
-  const conversationId = useChatStore((state) => state.conversationId);
-  const select = useChatStore((state) => state.select);
-  const startNew = useChatStore((state) => state.startNew);
+  // Derived from the address bar, the same place the chat page reads it.
+  // Deriving rather than mirroring is what keeps this from becoming a second
+  // author of the open thread.
+  const { pathname } = useLocation();
+  const conversationId = pathname.startsWith('/assistant/')
+    ? decodeURIComponent(pathname.slice('/assistant/'.length))
+    : null;
 
   const { data, isLoading } = useQuery({
     queryKey: [...CONVERSATIONS_KEY, username],
@@ -276,7 +281,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
     onSuccess: (_data, id) => {
       // Deleting the thread you are reading has to clear the panel too,
       // otherwise the transcript stays on screen with nothing behind it.
-      if (id === conversationId) startNew();
+      if (id === conversationId) navigate('/assistant', { replace: true });
       refresh();
     },
   });
@@ -289,7 +294,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
       <div className="px-3 py-6">
         <button
           type="button"
-          onClick={startNew}
+          onClick={() => navigate('/assistant')}
           title="New chat"
           aria-label="New chat"
           className="w-full flex items-center justify-center py-2.5 rounded-xl text-white/80 hover:text-white hover:bg-white/15 transition-colors"
@@ -307,7 +312,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
       <div className="shrink-0 px-3">
         <button
           type="button"
-          onClick={startNew}
+          onClick={() => navigate('/assistant')}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
                      text-white/90 hover:text-white hover:bg-white/15 transition-colors"
         >
@@ -343,7 +348,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
               key={conversation.id}
               conversation={conversation}
               isActive={conversation.id === conversationId}
-              onSelect={() => select(conversation.id)}
+              onSelect={() => navigate(`/assistant/${conversation.id}`)}
               onRename={(title) => rename.mutate({ id: conversation.id, title })}
               onDelete={() => remove.mutate(conversation.id)}
             />

@@ -58,20 +58,41 @@ export const useCampaignDateStore = create<CampaignDateState>((set) => ({
   setDate: (date) => set({ date }),
 }));
 
+/**
+ * How the app looks, as opposed to what it shows.
+ *
+ * Persisted, because a theme that resets on every reload is a preference the
+ * app keeps forgetting — the one setting here a user picks deliberately.
+ *
+ * The setter is pure: it moves the value and nothing else. Applying the class
+ * to <html> belongs to whoever is mounted — Layout for the app, Login for the
+ * one route outside it — and both already do it in an effect keyed on `theme`,
+ * which covers the rehydrated value on load as well as every later toggle.
+ * Writing the DOM from in here too meant three copies of one rule, and the
+ * copy in the setter was the one that could not see a restored value.
+ *
+ * First paint is handled earlier still, by the inline script in index.html:
+ * React mounts after the page has drawn, so without it a reload flashes the
+ * default theme on its way to the saved one.
+ */
 interface UIState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  theme: 'dark',
-  toggleTheme: () => set((state) => {
-    const newTheme = state.theme === 'light' ? 'dark' : 'light';
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    return { theme: newTheme };
-  }),
-}));
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      theme: 'dark',
+      toggleTheme: () =>
+        set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
+    }),
+    {
+      name: 'ui-storage',
+      // Only the value is stored. Persisting the whole object would put the
+      // action in localStorage too — dropped by JSON today, but a trap for the
+      // first non-serializable field anyone adds here later.
+      partialize: (state) => ({ theme: state.theme }),
+    },
+  ),
+);

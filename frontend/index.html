@@ -5,6 +5,24 @@
     <link rel="icon" type="image/png" href="/DSNL.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DSNL Analytics</title>
+    <script>
+      // Runs before the first paint, which is the whole point: React mounts
+      // only after the page has drawn, so leaving this to the app means a
+      // reload shows the default theme for a frame before switching to the
+      // saved one. Reads the key zustand's persist middleware writes for
+      // useUIStore — keep the name and shape in step with src/store/index.ts.
+      (function () {
+        var theme = 'dark'; // Same default as the store, for a first visit.
+        try {
+          var saved = JSON.parse(localStorage.getItem('ui-storage') || '{}');
+          if (saved && saved.state && saved.state.theme) theme = saved.state.theme;
+        } catch (e) {
+          // Unreadable or malformed — fall through on the default rather than
+          // breaking the page over a preference.
+        }
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
