@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.models.conversation import (
     STATUS_FAIL,
     STATUS_PASS,
+    STATUS_PENDING,
     Conversation,
     DeletedConversation,
     Message,
@@ -131,13 +132,14 @@ def test_a_question_and_its_answer_share_one_row(db_session):
     assert rows[0].status == STATUS_PASS
 
 
-def test_an_interaction_starts_as_fail_and_is_promoted(db_session):
-    """So a request that dies mid-flight leaves an honest record."""
+def test_an_interaction_starts_pending_and_is_resolved(db_session):
+    """`pending` is what lets a client reloading mid-answer tell "still
+    working" from "gave up" — without it the two look identical."""
     conversation = store.get_or_create(db_session, None, "q")
     message = store.start_interaction(db_session, conversation, "q")
     db_session.commit()
 
-    assert message.status == STATUS_FAIL
+    assert message.status == STATUS_PENDING
     assert message.response is None
 
     store.complete_interaction(db_session, conversation, message, result_payload(), ok=True)
@@ -145,14 +147,30 @@ def test_an_interaction_starts_as_fail_and_is_promoted(db_session):
     assert message.status == STATUS_PASS
 
 
-def test_a_failed_interaction_keeps_its_question(db_session):
+def test_an_interaction_can_be_resolved_as_failed(db_session):
     conversation = store.get_or_create(db_session, None, "q")
     message = store.start_interaction(db_session, conversation, "the question that failed")
+    store.fail_interaction(db_session, message, "The provider timed out.")
     db_session.commit()
 
     stored = db_session.query(Message).one()
     assert stored.status == STATUS_FAIL
     assert stored.query == "the question that failed"
+    # The reason is stored as the response, so the transcript says what
+    # happened rather than showing a question with silence after it.
+    assert stored.response == "The provider timed out."
+
+
+def test_a_pending_interaction_keeps_its_question(db_session):
+    """What a reload finds when it lands mid-answer."""
+    conversation = store.get_or_create(db_session, None, "q")
+    store.start_interaction(db_session, conversation, "still being answered")
+    db_session.commit()
+
+    stored = db_session.query(Message).one()
+    assert stored.status == STATUS_PENDING
+    assert stored.query == "still being answered"
+    assert stored.response is None
 
 
 # ── Rebuilding the history ─────────────────────────────────────────────────
@@ -197,7 +215,8 @@ def test_a_failed_interaction_replays_its_question_but_no_answer(db_session):
     """There is nothing to replay, and inventing one would put words in the
     assistant's mouth."""
     conversation = store.get_or_create(db_session, None, "q")
-    store.start_interaction(db_session, conversation, "the one that failed")
+    message = store.start_interaction(db_session, conversation, "the one that failed")
+    store.fail_interaction(db_session, message, "The provider gave out.")
     db_session.commit()
 
     history = store.load_history(db_session, conversation.id)

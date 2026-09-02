@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.ai import conversations as store
-from app.ai import orchestrator
+from app.ai import jobs, orchestrator
 from app.ai.providers.factory import ProviderNotConfigured, get_llm_client
 from app.core.database import SessionLocal, get_db
 from app.models.conversation import Conversation, Message
@@ -226,59 +226,51 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
     is out the status code is fixed, so an unconfigured provider has to fail as
     a normal 503 here rather than as an error event nobody checks for.
 
-    The session is opened by hand rather than through `Depends(get_db)`: this
-    body outlives the request handler, and a dependency-scoped session would be
-    closed before the generator had finished writing the answer to it.
+    The answer itself runs on its own thread (see app/ai/jobs.py) and this
+    generator only watches it. That is what makes a refresh survivable: closing
+    the browser ends the watching, not the work, and the answer is committed
+    whether or not anyone is still listening. A client that comes back finds
+    the interaction `pending` and polls for it.
     """
     try:
         client = get_llm_client()
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
+    # Opened and closed here, before any streaming: the row has to exist (and
+    # be committed) before the worker starts, and this session must not still
+    # be open while the worker holds its own.
+    db = SessionLocal()
+    try:
+        conversation = store.get_or_create(
+            db, body.conversation_id, body.question, body.username
+        )
+        history = store.load_history(db, conversation.id)
+        interaction = store.start_interaction(db, conversation, body.question)
+        db.commit()
+        conversation_id = conversation.id
+        interaction_id = interaction.id
+    except Exception:
+        db.rollback()
+        logger.exception("Could not open the interaction")
+        raise HTTPException(status_code=502, detail="The conversation could not be started.")
+    finally:
+        db.close()
+
     def events() -> Iterator[str]:
-        db = SessionLocal()
-        try:
-            conversation = store.get_or_create(
-                db, body.conversation_id, body.question, body.username
-            )
-            history = store.load_history(db, conversation.id)
-            interaction = store.start_interaction(db, conversation, body.question)
-            db.commit()
+        # Sent before any work, so the client can adopt the id immediately — a
+        # browser that navigates away mid-answer still knows which thread to
+        # come back to.
+        yield f"data: {json.dumps({'type': 'conversation', 'conversation_id': conversation_id})}\n\n"
 
-            # Sent before any work, so the client can adopt the id immediately
-            # — a browser that navigates away mid-answer still knows which
-            # thread to resume.
-            yield f"data: {json.dumps({'type': 'conversation', 'conversation_id': conversation.id})}\n\n"
-
-            for event in orchestrator.answer_events(
-                history=history, question=body.question, llm=client
-            ):
-                if event["type"] == "done":
-                    store.complete_interaction(db, conversation, interaction, event, ok=True)
-                    db.commit()
-                    event = {
-                        **event,
-                        "conversation_id": conversation.id,
-                        "interaction": {
-                            "input_tokens": interaction.input_token,
-                            "output_tokens": interaction.output_tokens,
-                            "total_tokens": interaction.total_tokens,
-                        },
-                        "usage": store.usage(conversation),
-                    }
-                yield f"data: {json.dumps(event, default=str)}\n\n"
-
-        except Exception as exc:  # noqa: BLE001 — the stream must end cleanly
-            db.rollback()
-            logger.exception("AI chat stream failed")
-            # Too late for a status code; the client watches for this type.
-            failure = {
-                "type": "error",
-                "detail": f"The AI provider could not answer that request: {type(exc).__name__}.",
-            }
-            yield f"data: {json.dumps(failure)}\n\n"
-        finally:
-            db.close()
+        for event in jobs.run(
+            conversation_id=conversation_id,
+            interaction_id=interaction_id,
+            history=history,
+            question=body.question,
+            llm=client,
+        ):
+            yield f"data: {json.dumps(event, default=str)}\n\n"
 
     return StreamingResponse(
         events(),

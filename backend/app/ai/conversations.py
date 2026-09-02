@@ -41,6 +41,7 @@ from app.core.config import get_settings
 from app.models.conversation import (
     STATUS_FAIL,
     STATUS_PASS,
+    STATUS_PENDING,
     Conversation,
     DeletedConversation,
     Message,
@@ -130,18 +131,29 @@ def start_interaction(db: Session, conversation: Conversation, question: str) ->
     """Open the row for this exchange, before the model is called.
 
     Written first, not last, so a question that crashes the provider is still
-    on record — those are the ones worth being able to look up. It starts as
-    `fail` and is promoted on success, which means a request that dies
-    mid-flight leaves an honest row rather than an optimistic one.
+    on record — those are the ones worth being able to look up. It starts
+    `pending` and is resolved either way when the answer lands, which is what
+    lets a client that reloads mid-answer tell "still working" from "gave up".
     """
     message = Message(
         conversation_id=conversation.id,
-        status=STATUS_FAIL,
+        status=STATUS_PENDING,
         query=question,
         response=None,
     )
     db.add(message)
     db.flush()
+    return message
+
+
+def fail_interaction(db: Session, message: Message, reason: str) -> Message:
+    """Close an interaction that never produced an answer.
+
+    The reason is stored as the response so the transcript says what happened
+    rather than showing a question with silence after it.
+    """
+    message.status = STATUS_FAIL
+    message.response = reason
     return message
 
 
