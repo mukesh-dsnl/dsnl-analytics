@@ -16,7 +16,10 @@ export const useAuthStore = create<AuthState>()(
       login: (username) => set({ username, isAuthenticated: true }),
       logout: () => set({ username: null, isAuthenticated: false }),
     }),
-    { name: 'auth-storage' }
+    // Namespaced. localStorage is scoped per origin, not per path, so a bare
+    // 'auth-storage' would be shared with any other app served from the same
+    // host — silently overwriting each other's sessions.
+    { name: 'dsnl-analytics:auth' }
   )
 );
 
@@ -88,7 +91,10 @@ export const useUIStore = create<UIState>()(
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
     }),
     {
-      name: 'ui-storage',
+      // Namespaced for the same reason as the auth key above. Changing this
+      // means changing the inline script in index.html, which reads it
+      // directly — the two are one setting in two places.
+      name: 'dsnl-analytics:ui',
       // Only the value is stored. Persisting the whole object would put the
       // action in localStorage too — dropped by JSON today, but a trap for the
       // first non-serializable field anyone adds here later.

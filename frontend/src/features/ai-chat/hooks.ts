@@ -109,8 +109,17 @@ export function useChat(conversationId: string | null) {
    * question alone. The answer would then arrive for a message id that no
    * longer existed and be dropped, which is why the first reply of a
    * conversation went missing until the thread was reopened.
+   *
+   * Starts as `null`, and that matters: nothing is on screen at mount, so any
+   * other initial value is a claim this hook cannot back. Seeding it from
+   * `conversationId` — which it used to do — made the guard below fire on the
+   * very first run whenever the id came from the URL, so a pasted link or a
+   * refresh skipped the fetch entirely and rendered a blank new chat. It went
+   * unnoticed because that is also what a deleted thread looks like. Nothing
+   * is lost by starting empty: `adopt()` sets this explicitly before it
+   * navigates, which is the case the guard actually exists for.
    */
-  const loadedRef = useRef<string | null>(conversationId);
+  const loadedRef = useRef<string | null>(null);
   // The reload token last acted on. A bump means someone asked for this
   // thread explicitly — re-selecting the open one from the sidebar — and that
   // must still refetch, so it overrides the guard above.
@@ -135,9 +144,8 @@ export function useChat(conversationId: string | null) {
     // component is the reason the id changed.
     if (!wasAskedExplicitly && id && id === loadedRef.current) return;
 
-    loadedRef.current = id;
-
     if (!id) {
+      loadedRef.current = null;
       setMessages([]);
       setUsage(EMPTY_USAGE);
       return;
@@ -150,6 +158,13 @@ export function useChat(conversationId: string | null) {
       .getConversation(id)
       .then((detail) => {
         if (cancelled) return;
+        // Claimed here rather than before the request, because the claim has
+        // to describe what is on screen. Setting it up front meant a run that
+        // got cancelled still left "this thread is loaded" behind it — and
+        // StrictMode double-invokes effects on mount, so the second run would
+        // read that claim and skip the very fetch it was there to reissue.
+        // Only a response that is actually about to be rendered counts.
+        loadedRef.current = id;
         setUsage(detail.usage);
         // One stored row is one exchange, so it unfolds into two bubbles.
         setMessages(

@@ -14,7 +14,7 @@
       (function () {
         var theme = 'dark'; // Same default as the store, for a first visit.
         try {
-          var saved = JSON.parse(localStorage.getItem('ui-storage') || '{}');
+          var saved = JSON.parse(localStorage.getItem('dsnl-analytics:ui') || '{}');
           if (saved && saved.state && saved.state.theme) theme = saved.state.theme;
         } catch (e) {
           // Unreadable or malformed — fall through on the default rather than
