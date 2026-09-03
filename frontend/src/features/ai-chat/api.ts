@@ -80,7 +80,7 @@ export interface StoredInteraction {
    * whether or not this browser is watching, so the client polls rather than
    * assuming the question was lost.
    */
-  status: 'pending' | 'pass' | 'fail';
+  status: 'pending' | 'pass' | 'fail' | 'stopped';
   query: string;
   response: string;
   queries: ChatQuery[];
@@ -124,6 +124,8 @@ export type ChatEvent =
   | { type: 'tool_start'; round: number; index: number; tool: string; input: Record<string, unknown> }
   | { type: 'tool_end'; round: number; index: number; tool: string; ok: boolean; seconds: number }
   | ({ type: 'done' } & ChatResponse)
+  /** The server gave up because it was asked to. Terminal, like `done`. */
+  | { type: 'stopped' }
   | { type: 'error'; detail: string };
 
 export const aiApi = {
@@ -219,6 +221,21 @@ export const aiApi = {
   listConversations: async (): Promise<ConversationSummary[]> => {
     const res = await fetch(`${API_BASE}/conversations`);
     return handle<ConversationSummary[]>(res);
+  },
+
+  /**
+   * Abandon the answer running in a thread.
+   *
+   * Aborting the stream is not enough on its own — the server runs the answer
+   * on its own thread so that a refresh does not lose it, which means letting
+   * go of the connection is indistinguishable from closing the browser and is
+   * treated the same way: the work carries on. This is what actually ends it.
+   */
+  stopAnswer: async (id: string): Promise<{ stopped: number }> => {
+    const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}/stop`, {
+      method: 'POST',
+    });
+    return handle<{ stopped: number }>(res);
   },
 
   /** One thread and its messages — what the UI restores a conversation from. */

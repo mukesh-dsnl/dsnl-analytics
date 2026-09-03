@@ -59,6 +59,12 @@ export interface ChatMessage {
   animate?: boolean;
   /** True for the bubble that reports a failed request. */
   isError?: boolean;
+  /**
+   * Abandoned on purpose. Kept apart from `isError` because a stop is not a
+   * failure — reporting "Couldn't answer" for something the user deliberately
+   * ended would blame the assistant for obeying.
+   */
+  isStopped?: boolean;
   provider?: string;
   model?: string;
   /** True while this turn is still being worked on. */
@@ -203,6 +209,13 @@ export function useChat(conversationId: string | null) {
                   output_tokens: item.output_tokens,
                   total_tokens: item.total_tokens,
                 },
+              });
+            } else if (item.status === 'stopped') {
+              turns.push({
+                id: nextId(),
+                role: 'assistant',
+                text: item.response || 'Stopped.',
+                isStopped: true,
               });
             } else if (item.status === 'fail') {
               turns.push({
@@ -412,6 +425,20 @@ export function useChat(conversationId: string | null) {
             }));
             break;
 
+          case 'stopped':
+            // The server confirming it gave up — reached when the stop came
+            // from somewhere other than this tab, or before the local abort
+            // landed. Same end state either way.
+            patchLive(liveId, (m) => ({
+              ...m,
+              text: 'Stopped.',
+              isStopped: true,
+              isStreaming: false,
+              steps: (m.steps ?? []).map((s) => (s.done ? s : { ...s, done: true })),
+            }));
+            queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
+            break;
+
           case 'error':
             patchLive(liveId, (m) => ({
               ...m,
@@ -431,11 +458,19 @@ export function useChat(conversationId: string | null) {
         );
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
-          // Cancelled by the user: drop the placeholder rather than leaving a
-          // half-finished turn in the transcript. The question is still on the
-          // server — the row is opened before the model is called — so a
-          // reload will show it again, which is the honest state.
-          setMessages((prev) => prev.filter((m) => m.id !== liveId));
+          // Stopped by the user. The turn is marked rather than deleted: the
+          // server records the stop too, so a reload shows exactly this. An
+          // earlier version removed the placeholder, which meant the screen
+          // disagreed with the transcript the moment you refreshed — the
+          // question sat there with nothing after it, then grew a note.
+          patchLive(liveId, (m) => ({
+            ...m,
+            text: 'Stopped.',
+            isStopped: true,
+            isStreaming: false,
+            steps: (m.steps ?? []).map((s) => (s.done ? s : { ...s, done: true })),
+          }));
+          queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY });
         } else {
           patchLive(liveId, (m) => ({
             ...m,
@@ -459,7 +494,30 @@ export function useChat(conversationId: string | null) {
     [isPending, navigate, patchLive, queryClient, username],
   );
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  /**
+   * Give up on the answer being worked out.
+   *
+   * Two halves, and both are needed. Telling the server is what actually ends
+   * the work — it runs the answer on its own thread precisely so a refresh
+   * cannot kill it, so dropping the connection is read as "the browser went
+   * away", not as "stop". Aborting locally is what makes the button feel
+   * immediate rather than waiting on a round trip.
+   *
+   * The request is fired first but not awaited: the two are independent, and
+   * making the UI wait for the network would reintroduce the lag the local
+   * abort exists to avoid.
+   */
+  const stop = useCallback(() => {
+    const id = conversationRef.current;
+    if (id) {
+      void aiApi.stopAnswer(id).catch(() => {
+        // The answer may already have finished, or the thread may be gone.
+        // Either way the local abort below is what the user sees, and a
+        // failure here is not something they can act on.
+      });
+    }
+    abortRef.current?.abort();
+  }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();

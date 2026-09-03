@@ -47,6 +47,14 @@ from app.core.database import Base
 STATUS_PENDING = "pending"
 STATUS_PASS = "pass"
 STATUS_FAIL = "fail"
+# Abandoned on purpose, by the person who asked. Distinct from `fail`, which
+# means the assistant tried and could not — a stop is not an error and should
+# not be reported as one.
+#
+# Spelled "stopped" and not "cancelled" for an unglamorous reason: the column
+# below is String(8), and the longer word does not fit. It would be silently
+# truncated on a permissive MySQL and rejected outright on a strict one.
+STATUS_STOPPED = "stopped"
 
 
 def new_conversation_id() -> str:

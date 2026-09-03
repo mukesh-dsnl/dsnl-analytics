@@ -323,6 +323,63 @@ body {
   background-color: rgba(255, 255, 255, 0.32);
 }
 
+/* ── Text shimmer ──────────────────────────────────────────────────────────
+   The moving highlight behind <TextShimmer>. See that component for why this
+   is CSS rather than a motion library.
+
+   Two stacked backgrounds, both clipped to the glyphs: a narrow bright band
+   that slides, over a flat base colour that does not. The band is positioned
+   from the centre outwards by `--shimmer-spread`, which the component sizes
+   from the text's length.
+
+   `background-size: 250%` on the first layer is what gives the band somewhere
+   to travel from and to; the second layer keeps its own size so the base
+   colour fills the text at every moment of the pass.
+
+   At rest the text sits a step *below* its usual weight and the band brings it
+   up — brighter than the surrounding lines only while the highlight is over
+   it. A band that merely lightened already-bright text would read as a flicker
+   rather than as movement. */
+@keyframes text-shimmer {
+  from { background-position: 100% center; }
+  to   { background-position: 0% center; }
+}
+
+.text-shimmer {
+  --shimmer-base: #6a7593;
+  --shimmer-highlight: #1a2138;
+
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  background-repeat: no-repeat, padding-box;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - var(--shimmer-spread, 40px)),
+      var(--shimmer-highlight),
+      transparent calc(50% + var(--shimmer-spread, 40px))
+    ),
+    linear-gradient(var(--shimmer-base), var(--shimmer-base));
+  background-size: 250% 100%, auto;
+  animation: text-shimmer var(--shimmer-duration, 2s) linear infinite;
+}
+
+:root.dark .text-shimmer {
+  --shimmer-base: #8590ae;
+  --shimmer-highlight: #eef2f9;
+}
+
+/* The text still has to be readable, so the base colour stays and only the
+   travelling band stops. Left mid-grey rather than snapped to the highlight:
+   this marks a step that is still running, and the brighter tone is what the
+   finished lines around it do not have. */
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer {
+    animation: none;
+  }
+}
+
 /* ── Panel reveal ──────────────────────────────────────────────────────────
    The assistant opens out of the floating button in the corner and collapses
    back into it, so the button reads as the thing the page came from rather

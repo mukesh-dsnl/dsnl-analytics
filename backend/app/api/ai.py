@@ -39,7 +39,7 @@ from app.ai import jobs, orchestrator
 from app.ai.providers.factory import ProviderNotConfigured, get_llm_client
 from app.api.deps import current_user
 from app.core.database import SessionLocal, get_db
-from app.models.conversation import Conversation, Message
+from app.models.conversation import STATUS_PENDING, Conversation, Message
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -328,6 +328,50 @@ def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/ai/conversations/{conversation_id}/stop")
+def stop_answer(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> dict:
+    """Abandon the answer being worked out in one of your own threads.
+
+    A real stop, not a cosmetic one. Closing the browser deliberately does
+    *not* cancel an answer — that is what makes a refresh survivable — so
+    giving up has to be asked for, and this is the asking.
+
+    The status is written here rather than left to the worker so that the
+    decision holds even if the worker is in another process, or has already
+    moved on: whatever it produces afterwards is discarded rather than written
+    over this. The worker adds the token spend, which only it knows.
+
+    Idempotent. Stopping a thread with nothing running reports zero stopped
+    rather than erroring — the caller's intent ("do not continue") is already
+    satisfied, and a client that pressed the button twice has not done wrong.
+    """
+    conversation = _owned_or_404(db, conversation_id, user)
+
+    pending = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .filter(Message.status == STATUS_PENDING)
+        .all()
+    )
+
+    for interaction in pending:
+        store.stop_interaction(db, conversation, interaction)
+    db.commit()
+
+    # After the commit, so a worker that reads the row on this signal sees the
+    # decision already recorded rather than racing it.
+    signalled = sum(1 for row in pending if jobs.request_stop(row.id))
+
+    logger.info(
+        f"Stop requested for {conversation_id}: {len(pending)} pending, {signalled} signalled"
+    )
+    return {"stopped": len(pending)}
 
 
 # ── Reading back ───────────────────────────────────────────────────────────
