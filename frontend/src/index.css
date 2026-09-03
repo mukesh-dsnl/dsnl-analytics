@@ -82,6 +82,86 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────
+   DARK MODE — warm neutral retheme.
+
+   Light mode is untouched. Everything below re-points the *tokens* the
+   utilities already compile against (`bg-zinc-800` emits
+   `background-color: var(--color-zinc-800)`), so the whole dark theme moves
+   from one place and not a single component class had to change. That is also
+   why elements with no explicit `dark:` variant come along: they are reading
+   the same variables.
+
+   `:root.dark` rather than `.dark` deliberately — specificity (0,2,0) beats
+   the (0,1,0) of the `:root` block Tailwind emits for `@theme`, so this wins
+   regardless of which order the two end up in.
+
+   The neutral ramp rotates from the indigo hue (~280°) to warm (~70-90°) at
+   the *same lightness*: every step is within 2.1 L* of the value it replaces,
+   so each existing zinc-N class keeps the contrast it was chosen for and only
+   the temperature moves. The accent ramp swaps brand cyan for the reference's
+   orange over the same 50..950 slots the app already spends its accent on.
+   ───────────────────────────────────────────────────────────────────────── */
+:root.dark {
+  /* Warm neutrals. Lightness-matched to the light-mode ramp above. */
+  --color-zinc-50: #faf9f7;
+  --color-zinc-100: #f2efeb;
+  --color-zinc-200: #e4dfd8;
+  --color-zinc-300: #cbc4bb;
+  /* 400 and 500 carry muted text, and they sit on cards that are now four
+     times lighter than the near-black they were tuned against. Both are lifted
+     until they clear their tier again on the *brightest* point of a card —
+     under the sheen, not beside it. 400 reaches 4.65:1, 500 (hints and
+     placeholders) 3.75:1. Lifting these is only safe because the ramp is
+     dark-mode-only: in dark mode these steps are ink on a dark ground, never
+     the reverse. */
+  --color-zinc-400: #a59c94;
+  --color-zinc-500: #948b82;
+  --color-zinc-600: #635b53;
+  --color-zinc-700: #4d463f;
+  /* Borders. Also lifted — at the old value a hairline was 1.08:1 against the
+     lifted card and simply disappeared. */
+  --color-zinc-800: #383330;
+  --color-zinc-900: #221f1c;
+  --color-zinc-950: #161311;
+
+  /* The accent, orange. 500 is the reference's own button colour and is what
+     carries icons, borders and washes. White text sits on 600 instead — 500
+     is only 3.38:1 under white, where 600 clears 4.64:1, better than the 3.94
+     the brand cyan manages in light mode. */
+  --color-blue-50: #fef4f0;
+  --color-blue-100: #fde4dc;
+  --color-blue-200: #fac8b8;
+  --color-blue-300: #f6a48a;
+  --color-blue-400: #f27f5b;
+  --color-blue-500: #ee5c33;
+  --color-blue-600: #cf4520;
+  --color-blue-700: #ab381b;
+  --color-blue-800: #872e18;
+  --color-blue-900: #6b2716;
+  --color-blue-950: #3a120a;
+
+  --color-primary: #ee5c33;
+  --color-primary-hover: #cf4520;
+  --color-primary-subtle: #3a120a;
+
+  /* Surfaces, and the one place this departs from a pure re-hue.
+
+     The order is inverted from light mode: cards are now the *lightest* thing
+     on screen, the panel behind them a step down, the outer field darkest.
+     That is what makes a card read as lit from in front rather than cut out of
+     the page, and it is the arrangement the reference uses — the gloss below
+     has nothing to catch unless the card is above its surroundings.
+
+     Cards land at L* 16.8, roughly double the L* 8.0 near-black they replace,
+     and L* 21.9 under the sheen. That ceiling is not taste: past it the
+     magenta and orange chart hues drop under 3:1 against their own card. */
+  --color-surface-dark: #2c2927;
+  --color-canvas-dark: #232120;
+  --color-ground-dark: #1c1a19;
+  --color-ground-deep-dark: #171514;
+}
+
 /* ── The ground ────────────────────────────────────────────────────────────
    The field the sidebar and the gutter share, taken from the two brand
    surfaces: a broad diagonal sheen and a fine halftone dot grid over a flat
@@ -145,6 +225,42 @@
   --ground-dot: rgba(0, 0, 0, 0.26);
 }
 
+/* ── Gloss ─────────────────────────────────────────────────────────────────
+   The sheen that makes a dark card read as a lit surface rather than a hole.
+
+   Two layers over the flat token colour: a 1px highlight along the top edge,
+   where a real bevel would catch the light, and a soft fall-off below it.
+   Applied to the utilities themselves — `[class~="…"]` matches the class as a
+   whole token, so it needs no escaping and cannot half-match — because the
+   surfaces are spent across twenty places in fifteen files and the alternative
+   is twenty chances to write it differently.
+
+   Sized in pixels, not percentages: the band is a fixed 180px from the top
+   whatever the card's height, so a tall chart panel gets the same edge as a
+   short KPI tile instead of a sheen stretched down its whole face.
+
+   `background-image` only — every one of these elements sets its own
+   `box-shadow`, and taking that over to fake the top edge would flatten the
+   elevation the layout already establishes. */
+.dark [class~="dark:bg-surface-dark"] {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0));
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 100% 180px;
+}
+
+/* The panel the cards sit on gets the same treatment at about half strength.
+   It is the larger surface and the one they have to stand off from, so it
+   reads as lit without competing with them. */
+.dark [class~="dark:bg-canvas-dark"] {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0));
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 100% 240px;
+}
+
 /* The sidebar is the same field, not a separate surface — so instead of a
    fill it takes a scrim that fades to nothing by its right edge. White on
    #00a3e0 is only ~2.7:1; this buys the nav text roughly another half a stop
@@ -155,6 +271,19 @@
       rgba(4, 22, 46, 0.26) 0%,
       rgba(4, 22, 46, 0.13) 62%,
       rgba(4, 22, 46, 0) 100%);
+}
+
+/* The scrim above is a navy, mixed for the cyan ground it darkens in light
+   mode. Over the warm ground it would pull the sidebar back toward blue —
+   the one place the retheme could leak a cold cast — so dark mode gets the
+   same gradient in a warm near-black. The two-class specificity matches the
+   .app-ground override above for the same reason. */
+:is(.dark *).app-sidebar-scrim,
+.dark .app-sidebar-scrim {
+  background-image: linear-gradient(90deg,
+      rgba(18, 12, 9, 0.30) 0%,
+      rgba(18, 12, 9, 0.15) 62%,
+      rgba(18, 12, 9, 0) 100%);
 }
 
 body {
@@ -217,4 +346,59 @@ body {
 
 .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.32);
+}
+
+/* ── Panel reveal ──────────────────────────────────────────────────────────
+   The assistant opens out of the floating button in the corner and collapses
+   back into it, so the button reads as the thing the page came from rather
+   than as a link that happened to change the screen.
+
+   A circular clip rather than a scale: the content is laid out at its final
+   size for the whole animation, so text is never caught mid-transform and
+   blurred, and nothing reflows as it grows. The circle's centre and radius are
+   measured from the button at click time and arrive as custom properties —
+   these keyframes only describe the shape, never where it is.
+
+   `both` fill-mode is load-bearing on the outward one: it has to hold the
+   panel closed after the animation ends, because the route change happens on
+   the far side of it. */
+@keyframes panel-reveal-in {
+  from { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
+  to   { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
+}
+
+@keyframes panel-reveal-out {
+  from { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
+  to   { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
+}
+
+/* What the analytics page arrives on after the chat has closed. Without it the
+   collapse ends on a hard cut to a full page, which reads as a glitch rather
+   than as the end of the movement. */
+@keyframes panel-settle {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.panel-reveal-in {
+  animation: panel-reveal-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.panel-reveal-out {
+  animation: panel-reveal-out 300ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+
+.panel-settle {
+  animation: panel-settle 240ms ease-out both;
+}
+
+/* The navigation still happens; only the movement is dropped. Layout.tsx makes
+   the same check before it schedules anything, so the route change is not left
+   waiting behind an animation that never runs. */
+@media (prefers-reduced-motion: reduce) {
+  .panel-reveal-in,
+  .panel-reveal-out,
+  .panel-settle {
+    animation: none;
+  }
 }
