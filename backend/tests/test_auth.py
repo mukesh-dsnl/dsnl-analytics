@@ -389,6 +389,29 @@ def test_deleting_another_users_thread_is_a_404_and_leaves_it(client, db):
     assert db.get(Conversation, "b1") is not None
 
 
+def test_stopping_another_users_answer_is_a_404(client, db):
+    """Stopping is a write. Being able to halt someone else's work would be a
+    denial of service with a friendly button on it."""
+    make_user(db, "alice")
+    bob = make_user(db, "bob")
+    own_conversation(db, bob, "b1")
+
+    sign_in(client, "alice")
+    assert client.post("/api/ai/conversations/b1/stop").status_code == 404
+
+
+def test_stopping_your_own_thread_with_nothing_running_is_fine(client, db):
+    """Idempotent: the intent — "do not continue" — is already satisfied."""
+    alice = make_user(db, "alice")
+    own_conversation(db, alice, "a1")
+
+    sign_in(client, "alice")
+    response = client.post("/api/ai/conversations/a1/stop")
+
+    assert response.status_code == 200
+    assert response.json() == {"stopped": 0}
+
+
 def test_your_own_thread_is_readable(client, db):
     """The control. Without it the tests above would pass if everything 404'd."""
     alice = make_user(db, "alice")

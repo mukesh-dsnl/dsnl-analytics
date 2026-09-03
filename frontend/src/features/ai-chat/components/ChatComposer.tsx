@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Coins, Loader2, SendHorizontal } from 'lucide-react';
+import { Coins, SendHorizontal, Square } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ChatComposerProps {
   onSend: (question: string) => void;
+  /** Abandon the answer in progress. The same button that sent it stops it. */
+  onStop: () => void;
   isPending: boolean;
   /** The conversation's running cost, shown above the send button. */
   cost?: { amount: number; currency: string };
@@ -29,7 +31,7 @@ function formatCost(amount: number, currency: string): string {
   }
 }
 
-export function ChatComposer({ onSend, isPending, cost }: ChatComposerProps) {
+export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -101,18 +103,36 @@ export function ChatComposer({ onSend, isPending, cost }: ChatComposerProps) {
           aria-label="Ask a question about the call data"
           className="flex-1 min-w-0 resize-none bg-transparent text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none leading-6 max-h-40"
         />
+        {/* One button, two jobs. While an answer is being worked out this is
+            the way to abandon it — where a spinner used to sit, which showed
+            that something was happening but offered no way to end it.
+
+            `type` switches with the mode: left as "submit" it would post the
+            form on click, which the guard in `submit()` turns into nothing at
+            all rather than into a stop. And the disabled rule inverts — an
+            empty box disables sending, but must never disable stopping, which
+            is exactly when the box is most likely to be empty. */}
         <button
-          type="submit"
-          disabled={!value.trim() || isPending}
-          aria-label="Send question"
+          type={isPending ? 'button' : 'submit'}
+          onClick={isPending ? onStop : undefined}
+          disabled={isPending ? false : !value.trim()}
+          aria-label={isPending ? 'Stop generating' : 'Send question'}
+          title={isPending ? 'Stop generating' : 'Send'}
           className={clsx(
             'shrink-0 h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
-            'bg-blue-600 text-white hover:bg-blue-500',
+            // Not the accent while stopping: the accent means "send", and a
+            // stop control wearing it reads as the thing you just pressed
+            // rather than as its opposite.
+            isPending
+              ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-100 hover:bg-zinc-300 dark:hover:bg-zinc-600'
+              : 'bg-blue-600 text-white hover:bg-blue-500',
             'disabled:opacity-40 disabled:pointer-events-none',
           )}
         >
           {isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            // Filled, so it reads as a solid stop marker at 14px rather than
+            // as an empty outlined box.
+            <Square className="w-3.5 h-3.5 fill-current" />
           ) : (
             <SendHorizontal className="w-4 h-4" />
           )}

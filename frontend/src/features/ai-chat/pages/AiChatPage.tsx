@@ -98,7 +98,15 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
 
         {!message.isStreaming &&
-          (message.isError ? (
+          (message.isStopped ? (
+            // Quiet, and not the error panel: this is the assistant doing what
+            // it was told. The steps above stay, so what it did get through
+            // before stopping is still on the record.
+            <div className="flex items-center gap-1.5 text-xs italic text-zinc-500 dark:text-zinc-400">
+              <Square className="w-3 h-3 fill-current" />
+              {message.text || 'Stopped.'}
+            </div>
+          ) : message.isError ? (
             <div
               className="rounded-lg border border-amber-200 dark:border-amber-900/50
                          bg-amber-50 dark:bg-amber-950/30 px-3 py-2
@@ -151,6 +159,11 @@ export function AiChatPage() {
 
   // The page's identity goes in the layout's header, beside the theme toggle,
   // rather than being repeated inside the panel it already labels.
+  //
+  // The Stop button that used to sit here has moved into the composer, where
+  // the send button becomes it. Keeping both would have put two identical
+  // controls on screen at once, at opposite corners — and the composer is
+  // where the hand already is, having just pressed send.
   const title = headerSlot
     ? createPortal(
       <div className="min-w-0 flex items-center gap-2">
@@ -158,19 +171,6 @@ export function AiChatPage() {
         <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
           Analytics AI
         </h1>
-        {isPending && (
-          <button
-            type="button"
-            onClick={stop}
-            className="ml-2 shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
-                         text-zinc-600 dark:text-zinc-400
-                         hover:bg-zinc-100 dark:hover:bg-zinc-800/50
-                         hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors"
-          >
-            <Square className="w-3 h-3" />
-            Stop
-          </button>
-        )}
       </div>,
       headerSlot,
     )
@@ -230,6 +230,7 @@ export function AiChatPage() {
       <div className="max-w-4xl w-full mx-auto">
         <ChatComposer
           onSend={send}
+          onStop={stop}
           isPending={isPending}
           cost={{ amount: usage.cost, currency: usage.currency }}
         />

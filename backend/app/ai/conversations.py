@@ -42,6 +42,7 @@ from app.models.conversation import (
     STATUS_FAIL,
     STATUS_PASS,
     STATUS_PENDING,
+    STATUS_STOPPED,
     Conversation,
     DeletedConversation,
     Message,
@@ -161,6 +162,36 @@ def fail_interaction(db: Session, message: Message, reason: str) -> Message:
     """
     message.status = STATUS_FAIL
     message.response = reason
+    return message
+
+
+def stop_interaction(
+    db: Session,
+    conversation: Conversation,
+    message: Message,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    note: str = "Stopped before an answer was produced.",
+) -> Message:
+    """Close an interaction the user abandoned.
+
+    The tokens are the ones already spent when the stop landed — rounds that
+    had run and been paid for. Recording them matters: the point of stopping is
+    usually to stop spending, and a cost that silently omitted the spend up to
+    that moment would understate exactly the case the user was watching.
+    """
+    message.status = STATUS_STOPPED
+    message.response = note
+    message.input_token = input_tokens
+    message.output_tokens = output_tokens
+
+    conversation.input_tokens = (conversation.input_tokens or 0) + input_tokens
+    conversation.output_tokens = (conversation.output_tokens or 0) + output_tokens
+
+    logger.info(
+        f"AI conversation {conversation.id}: stopped "
+        f"+{input_tokens} in / +{output_tokens} out"
+    )
     return message
 
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
+import { TextShimmer } from '@/components/core/text-shimmer';
 import type { ChatStep } from '../hooks';
 
 interface RoundStepsProps {
@@ -54,9 +55,21 @@ function useTypewriter(text: string, enabled: boolean): string {
   return shown;
 }
 
-function StepRow({ step, animate }: { step: ChatStep; animate: boolean }) {
+function StepRow({
+  step,
+  animate,
+  shimmer,
+}: {
+  step: ChatStep;
+  animate: boolean;
+  shimmer: boolean;
+}) {
   const label = useTypewriter(step.label, animate);
   const isTyping = label.length < step.label.length;
+  // Not while it is still typing: the caret is already saying "this line is
+  // happening", and two motions on one line compete. The shimmer takes over
+  // the moment the caret goes, and runs until the next step displaces it.
+  const isShimmering = shimmer && !isTyping;
 
   return (
     <li className="flex items-start gap-2 text-[11px] leading-5">
@@ -73,13 +86,20 @@ function StepRow({ step, animate }: { step: ChatStep; animate: boolean }) {
       </span>
 
       <span className="min-w-0">
-        <span
-          className={clsx(
-            step.done ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-800 dark:text-zinc-200',
-          )}
-        >
-          {label}
-        </span>
+        {isShimmering ? (
+          // Same size as every other line — the motion is what marks it as
+          // live, and it does that without the row's metrics changing as a
+          // step settles.
+          <TextShimmer duration={1.4}>{label}</TextShimmer>
+        ) : (
+          <span
+            className={clsx(
+              step.done ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-800 dark:text-zinc-200',
+            )}
+          >
+            {label}
+          </span>
+        )}
 
         {/* The caret belongs to the line being typed, and goes away with it. */}
         {isTyping && (
@@ -134,7 +154,16 @@ export function RoundSteps({ steps, isLive }: RoundStepsProps) {
       aria-live={isLive ? 'polite' : undefined}
     >
       {steps.map((step, index) => (
-        <StepRow key={step.id} step={step} animate={animate && index >= initialCount.current} />
+        <StepRow
+          key={step.id}
+          step={step}
+          animate={animate && index >= initialCount.current}
+          // Only the newest line, and only while the turn is still running.
+          // Appending the next step ends the previous one's shimmer by making
+          // it no longer last, and the answer arriving ends it for all of them
+          // — at which point the list stops being progress and becomes record.
+          shimmer={isLive && index === steps.length - 1}
+        />
       ))}
     </ul>
   );

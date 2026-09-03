@@ -17,11 +17,31 @@ A thread rather than a task because everything below it is blocking — the
 provider SDKs and DuckDB both are — so this would occupy the event loop
 regardless; a thread at least says so honestly.
 
-Deliberately no cross-request registry. A reconnecting client does not
-re-attach to a running job, it polls for the result (the interaction is
+Deliberately no cross-request registry for *reading*. A reconnecting client does
+not re-attach to a running job, it polls for the result (the interaction is
 `pending` until it lands). Re-attaching would need buffering, replay, and — with
 more than one worker process — a shared broker, which is a great deal of
 machinery for the ability to watch a progress line you have already seen.
+
+Stopping is the one thing that does need to reach a running job, and it is
+carefully distinguished from a client merely going away:
+
+    the browser disconnects   →  the work continues and is saved
+    the user presses Stop     →  the work is abandoned
+
+Those look identical from the socket, which is why a disconnect cannot be
+treated as a cancellation — it is exactly the case the design above exists to
+survive. So a stop is an explicit request (`POST .../stop`), never an inference.
+
+It is honoured in two independent ways, because they fail in different places:
+
+  * an in-process `threading.Event`, checked between the orchestrator's own
+    events — instant, and what actually halts the loop;
+  * the interaction's stored status, which the worker re-reads before it writes
+    an answer. With more than one uvicorn worker the stop request may land in a
+    process that is not running the job, and the Event there signals nothing.
+    The status check is what stops a job in that situation from overwriting the
+    record with an answer nobody is waiting for.
 """
 
 import logging
@@ -29,11 +49,13 @@ import queue
 import threading
 from typing import Any, Iterator
 
+from sqlalchemy.orm import Session
+
 from app.ai import conversations as store
 from app.ai import orchestrator
 from app.ai.providers.base import LLMClient, NeutralMessage
 from app.core.database import SessionLocal
-from app.models.conversation import Conversation, Message
+from app.models.conversation import STATUS_PENDING, Conversation, Message
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +65,37 @@ _SENTINEL = object()
 # How long a reader waits on an empty queue before checking whether the worker
 # is still alive. Only bounds how quickly a dead worker is noticed.
 _POLL_SECONDS = 0.5
+
+# ── Stop signalling ────────────────────────────────────────────────────────
+# One Event per running answer, keyed by interaction id. Guarded by a lock
+# because the setter is a request thread and the reader is the worker.
+
+_stops: dict[int, threading.Event] = {}
+_stops_lock = threading.Lock()
+
+
+def _register(interaction_id: int) -> threading.Event:
+    event = threading.Event()
+    with _stops_lock:
+        _stops[interaction_id] = event
+    return event
+
+
+def _unregister(interaction_id: int) -> None:
+    with _stops_lock:
+        _stops.pop(interaction_id, None)
+
+
+def request_stop(interaction_id: int) -> bool:
+    """Ask a running answer to give up. True if one was listening in *this*
+    process — false is not a failure, only "not running here"; the caller has
+    already recorded the stop in the database, which is what makes it stick."""
+    with _stops_lock:
+        event = _stops.get(interaction_id)
+    if event is None:
+        return False
+    event.set()
+    return True
 
 
 def _worker(
@@ -60,10 +113,35 @@ def _worker(
     this thread is done with it.
     """
     db = SessionLocal()
+    stop = _register(interaction_id)
+    # What has been spent so far. Accumulated as the rounds report it, so that
+    # an answer abandoned half way can still say what it cost.
+    spent_in = 0
+    spent_out = 0
     try:
         for event in orchestrator.answer_events(
             history=history, question=question, llm=llm
         ):
+            if event["type"] == "round_thinking":
+                spent_in += int(event.get("input_tokens") or 0)
+                spent_out += int(event.get("output_tokens") or 0)
+
+            # Checked here, between the orchestrator's events, which is what
+            # makes the stop real rather than cosmetic: abandoning the
+            # generator suspends it, so no further round is started and no
+            # further request is billed. Whatever call is in flight at this
+            # instant still finishes — a provider request cannot be recalled —
+            # so a stop bounds the spend at the current round rather than
+            # ending it mid-word.
+            if stop.is_set():
+                logger.info(
+                    f"AI answer for {conversation_id} stopped by request "
+                    f"after {spent_in} in / {spent_out} out"
+                )
+                _record_stop(db, conversation_id, interaction_id, spent_in, spent_out)
+                events.put({"type": "stopped"})
+                break
+
             if event["type"] != "done":
                 events.put(event)
                 continue
@@ -79,6 +157,19 @@ def _worker(
                     f"Conversation {conversation_id} vanished mid-answer; discarding result"
                 )
                 events.put(event)
+                break
+
+            # Someone stopped this while the last round was running — in
+            # another process, where the Event above signals nothing. The
+            # record already says `stopped`; writing the answer over it would
+            # undo a decision the user has already been told was carried out.
+            db.refresh(interaction)
+            if interaction.status != STATUS_PENDING:
+                logger.info(
+                    f"Discarding answer for {conversation_id}: interaction is "
+                    f"{interaction.status}, not pending"
+                )
+                events.put({"type": "stopped"})
                 break
 
             store.complete_interaction(db, conversation, interaction, event, ok=True)
@@ -120,8 +211,31 @@ def _worker(
             }
         )
     finally:
+        _unregister(interaction_id)
         events.put(_SENTINEL)
         db.close()
+
+
+def _record_stop(
+    db: "Session", conversation_id: str, interaction_id: int, spent_in: int, spent_out: int
+) -> None:
+    """Mark the interaction stopped and bank what it already cost.
+
+    The API sets the status first, so this is usually confirming a decision
+    rather than making one; what only this thread knows is the token spend, so
+    that is the part worth writing. Failure here must not propagate — the work
+    has already stopped, which is what was asked for.
+    """
+    try:
+        conversation = db.get(Conversation, conversation_id)
+        interaction = db.get(Message, interaction_id)
+        if conversation is None or interaction is None:
+            return
+        store.stop_interaction(db, conversation, interaction, spent_in, spent_out)
+        db.commit()
+    except Exception:  # noqa: BLE001 — the stop itself already succeeded
+        db.rollback()
+        logger.exception(f"Could not record the stop for {conversation_id}")
 
 
 def run(
