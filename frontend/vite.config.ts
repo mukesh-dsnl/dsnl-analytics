@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   server: {
-    // host: true,
+    host: true,
     // allowedHosts: true,
     proxy: {
       // The analytics backend runs on 8001. Port 8000 belongs to the separate

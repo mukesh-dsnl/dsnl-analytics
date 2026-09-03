@@ -10,13 +10,18 @@
  * actually render on — white in light mode, #0e1424 in dark:
  *
  *   light  #1b8fe0 / #eb6834  vs #ffffff — CVD dE 24.1, normal dE 32.4, >=3:1
- *   dark   #1b8fe0 / #d95926  vs #0e1424 — CVD dE 25.9, normal dE 31.9, >=3:1
+ *   dark   #1b8fe0 / #d95926  vs #2c2927 — 3.61:1 and 3.21:1
  *
- * The dark surface moved from near-black #09090B to the navy #0e1424 when the
- * app's neutrals were re-hued; the *data* hues were re-checked against both
- * dark surfaces rather than re-picked, and every one still clears 3:1 (the
- * floor is green #008300 at 3.39:1 on the lighter of the two). So this palette
- * is unchanged — only the chrome below moved.
+ * The dark surface has moved three times — near-black #09090B, navy #0e1424,
+ * then the warm #1a1715 — and each time the data hues were re-checked against
+ * it rather than re-picked. The fourth move broke that streak: cards are now
+ * lit and glossy at L* 16.8 (21.9 under the sheen), and two hues could not
+ * survive it — green #008300 at 2.24:1 and critical #d03b3b at 2.31:1. Both
+ * were re-stepped, the rest kept.
+ *
+ * Every colour here is measured against the *brightest* point of a card, the
+ * top of the sheen, not the flat token beneath it — a figure that passes
+ * beside the gloss and fails under it has not passed.
  *
  * Most charts here are a single measure across one dimension, so they use
  * `series1` alone and let the axis carry identity — a hue per bar would be
@@ -37,7 +42,7 @@ export interface ChartTheme {
    * The full categorical ramp, in fixed slot order — a bar's hue comes from
    * its position here, never from a cycled or generated colour. Both modes
    * were validated (not eyeballed) against the surfaces these charts render
-   * on, #ffffff light and #0e1424 dark:
+   * on, #ffffff light and #2c2927 dark:
    *
    *   light  worst adjacent CVD ΔE 9.1, normal-vision ΔE 19.6, lightness + chroma pass
    *   dark   worst adjacent CVD ΔE 8.4, normal-vision ΔE 19.3, all ≥3:1 contrast
@@ -96,17 +101,33 @@ const DARK: ChartTheme = {
     '#199e70', // aqua
     '#c98500', // yellow
     '#d55181', // magenta
-    '#008300', // green
+    // Was #008300, a green mixed for the near-black surface. The card is four
+    // times lighter now and that green fell to 2.24:1 against it — re-stepped
+    // rather than kept, which is what the dark ramp exists to do. ΔE 26 from
+    // the aqua above it, so the two stay separable.
+    '#4caf50', // green
     '#9085e9', // violet
     '#e66767', // red
   ],
-  good: '#0ca30c',
-  critical: '#d03b3b',
-  grid: '#29314a',
-  axis: '#8f9ab6',
-  tooltipBg: '#0e1424',
-  tooltipBorder: '#29314a',
-  tooltipText: '#edf1f8',
+  // Status pair, re-stepped for the same reason: the old #d03b3b sat at 2.31:1
+  // on a lit card, which is below the floor for the one colour that has to
+  // read as "wrong".
+  good: '#3fb355',
+  critical: '#e35555',
+  // Chrome follows the dark neutrals, which are now warm (see the :root.dark
+  // block in index.css) — zinc-800 gridlines, zinc-400 axis ink, the panel
+  // colour behind the tooltip. Same slots as before, re-hued with them.
+  //
+  // The *data* hues above are deliberately unchanged. They were picked for
+  // CVD separation and re-validated against the new surfaces rather than
+  // re-picked: every one still clears 3:1 (floor is green #008300 at 3.35:1
+  // on the lighter of the two), so the palette holds and only the chrome
+  // moved — exactly as it did the last time the surfaces changed.
+  grid: '#3d3835',
+  axis: '#a59c94',
+  tooltipBg: '#2c2927',
+  tooltipBorder: '#3d3835',
+  tooltipText: '#f2efeb',
 };
 
 export function useChartTheme(): ChartTheme {
