@@ -83,7 +83,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DARK MODE — warm neutral retheme.
+   DARK MODE — lit navy.
 
    Light mode is untouched. Everything below re-points the *tokens* the
    utilities already compile against (`bg-zinc-800` emits
@@ -96,18 +96,21 @@
    the (0,1,0) of the `:root` block Tailwind emits for `@theme`, so this wins
    regardless of which order the two end up in.
 
-   The neutral ramp rotates from the indigo hue (~280°) to warm (~70-90°) at
-   the *same lightness*: every step is within 2.1 L* of the value it replaces,
-   so each existing zinc-N class keeps the contrast it was chosen for and only
-   the temperature moves. The accent ramp swaps brand cyan for the reference's
-   orange over the same 50..950 slots the app already spends its accent on.
+   The hue is the organisation's — indigo 283°, the same family as the light
+   ramp and the brand's own #21257a. What this changes is *depth*, not colour:
+   the surfaces are lit rather than near-black, stacked so cards sit above the
+   panel that holds them, and the gloss further down gives them an edge to
+   catch. The accent is not restated at all; the brand cyan from @theme carries
+   straight through, so both modes share one accent.
    ───────────────────────────────────────────────────────────────────────── */
 :root.dark {
-  /* Warm neutrals. Lightness-matched to the light-mode ramp above. */
-  --color-zinc-50: #faf9f7;
-  --color-zinc-100: #f2efeb;
-  --color-zinc-200: #e4dfd8;
-  --color-zinc-300: #cbc4bb;
+  /* The neutrals stay in the brand's indigo family — hue 283°, the same one
+     the light ramp and the old dark panels sit at. What changes from light
+     mode is only where the steps are *used*, not their temperature. */
+  --color-zinc-50: #f6f8fc;
+  --color-zinc-100: #eef2f9;
+  --color-zinc-200: #dfe5f1;
+  --color-zinc-300: #bfc7db;
   /* 400 and 500 carry muted text, and they sit on cards that are now four
      times lighter than the near-black they were tuned against. Both are lifted
      until they clear their tier again on the *brightest* point of a card —
@@ -115,35 +118,20 @@
      placeholders) 3.75:1. Lifting these is only safe because the ramp is
      dark-mode-only: in dark mode these steps are ink on a dark ground, never
      the reverse. */
-  --color-zinc-400: #a59c94;
-  --color-zinc-500: #948b82;
-  --color-zinc-600: #635b53;
-  --color-zinc-700: #4d463f;
-  /* Borders. Also lifted — at the old value a hairline was 1.08:1 against the
-     lifted card and simply disappeared. */
-  --color-zinc-800: #383330;
-  --color-zinc-900: #221f1c;
-  --color-zinc-950: #161311;
+  --color-zinc-400: #939eba;
+  --color-zinc-500: #8590ae;
+  --color-zinc-600: #525c79;
+  --color-zinc-700: #3e4661;
+  /* Borders. Also lifted — at the light-mode value a hairline was 1.08:1
+     against the lifted card and simply disappeared. */
+  --color-zinc-800: #2c334a;
+  --color-zinc-900: #191f31;
+  --color-zinc-950: #0f1322;
 
-  /* The accent, orange. 500 is the reference's own button colour and is what
-     carries icons, borders and washes. White text sits on 600 instead — 500
-     is only 3.38:1 under white, where 600 clears 4.64:1, better than the 3.94
-     the brand cyan manages in light mode. */
-  --color-blue-50: #fef4f0;
-  --color-blue-100: #fde4dc;
-  --color-blue-200: #fac8b8;
-  --color-blue-300: #f6a48a;
-  --color-blue-400: #f27f5b;
-  --color-blue-500: #ee5c33;
-  --color-blue-600: #cf4520;
-  --color-blue-700: #ab381b;
-  --color-blue-800: #872e18;
-  --color-blue-900: #6b2716;
-  --color-blue-950: #3a120a;
-
-  --color-primary: #ee5c33;
-  --color-primary-hover: #cf4520;
-  --color-primary-subtle: #3a120a;
+  /* No accent override. The brand cyan ramp defined in @theme carries through
+     to dark mode unchanged, which is the point: one accent, both modes, the
+     organisation's blue. Deliberately not restated here — a second copy of the
+     brand would be a second thing to keep in step with it. */
 
   /* Surfaces, and the one place this departs from a pure re-hue.
 
@@ -153,13 +141,13 @@
      the page, and it is the arrangement the reference uses — the gloss below
      has nothing to catch unless the card is above its surroundings.
 
-     Cards land at L* 16.8, roughly double the L* 8.0 near-black they replace,
-     and L* 21.9 under the sheen. That ceiling is not taste: past it the
+     Cards land at L* 16.9, well above the L* 6.5 the old navy panel sat at,
+     and L* 22.3 under the sheen. That ceiling is not taste: past it the
      magenta and orange chart hues drop under 3:1 against their own card. */
-  --color-surface-dark: #2c2927;
-  --color-canvas-dark: #232120;
-  --color-ground-dark: #1c1a19;
-  --color-ground-deep-dark: #171514;
+  --color-surface-dark: #212940;
+  --color-canvas-dark: #1b2236;
+  --color-ground-dark: #141a2b;
+  --color-ground-deep-dark: #101524;
 }
 
 /* ── The ground ────────────────────────────────────────────────────────────
@@ -271,19 +259,6 @@
       rgba(4, 22, 46, 0.26) 0%,
       rgba(4, 22, 46, 0.13) 62%,
       rgba(4, 22, 46, 0) 100%);
-}
-
-/* The scrim above is a navy, mixed for the cyan ground it darkens in light
-   mode. Over the warm ground it would pull the sidebar back toward blue —
-   the one place the retheme could leak a cold cast — so dark mode gets the
-   same gradient in a warm near-black. The two-class specificity matches the
-   .app-ground override above for the same reason. */
-:is(.dark *).app-sidebar-scrim,
-.dark .app-sidebar-scrim {
-  background-image: linear-gradient(90deg,
-      rgba(18, 12, 9, 0.30) 0%,
-      rgba(18, 12, 9, 0.15) 62%,
-      rgba(18, 12, 9, 0) 100%);
 }
 
 body {
