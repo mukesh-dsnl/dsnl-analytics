@@ -34,6 +34,23 @@ from app.models.conversation import (
 from app.models.user import User
 
 
+def owner(db, username: str = "mukesh", user_id: str = "uuid-for-mukesh") -> User:
+    """The signed-in user a conversation belongs to.
+
+    A plain helper rather than a fixture so adding the owner argument did not
+    mean editing every test's signature. `get_or_create` takes a User now, not
+    a username string: the caller is authenticated and the owner is no longer
+    something a request can assert about itself.
+    """
+    existing = db.query(User).filter(User.username == username).first()
+    if existing is not None:
+        return existing
+    user = User(username=username, password_hash="secret", user_id=user_id)
+    db.add(user)
+    db.commit()
+    return user
+
+
 def result_payload(text: str = "42 calls.", **overrides) -> dict:
     """What the orchestrator hands back, in the shape complete_interaction reads."""
     return {
@@ -60,7 +77,7 @@ def exchange(db, conversation, question: str, answer: str = "an answer", **overr
 
 
 def test_a_question_with_no_id_starts_a_conversation(db_session):
-    conversation = store.get_or_create(db_session, None, "how many calls?", "mukesh")
+    conversation = store.get_or_create(db_session, None, "how many calls?", owner(db_session))
     db_session.commit()
 
     assert conversation.id
@@ -70,10 +87,10 @@ def test_a_question_with_no_id_starts_a_conversation(db_session):
 
 
 def test_an_existing_id_resumes_rather_than_starting_over(db_session):
-    first = store.get_or_create(db_session, None, "first question")
+    first = store.get_or_create(db_session, None, "first question", owner(db_session))
     db_session.commit()
 
-    again = store.get_or_create(db_session, first.id, "second question")
+    again = store.get_or_create(db_session, first.id, "second question", owner(db_session))
     db_session.commit()
 
     assert again.id == first.id
@@ -85,34 +102,69 @@ def test_an_existing_id_resumes_rather_than_starting_over(db_session):
 def test_an_unknown_id_is_adopted_rather_than_rejected(db_session):
     """The client already believes it owns that thread; handing back a
     different id would silently split the transcript in two."""
-    conversation = store.get_or_create(db_session, "not-in-the-database", "q")
+    conversation = store.get_or_create(db_session, "not-in-the-database", "q", owner(db_session))
     db_session.commit()
     assert conversation.id == "not-in-the-database"
 
 
-def test_a_known_username_is_resolved_to_its_uuid(db_session):
-    user = User(username="mukesh", password_hash="x", user_id="uuid-for-mukesh")
-    db_session.add(user)
-    db_session.commit()
-
-    conversation = store.get_or_create(db_session, None, "q", "mukesh")
+def test_a_new_thread_belongs_to_the_signed_in_user(db_session):
+    user = owner(db_session)
+    conversation = store.get_or_create(db_session, None, "q", user)
     db_session.commit()
 
     assert conversation.user_id == "uuid-for-mukesh"
     assert conversation.username == "mukesh"
 
 
-def test_an_unknown_username_is_still_recorded(db_session):
-    """It labels a conversation; it is not a permission check."""
-    conversation = store.get_or_create(db_session, None, "q", "nobody-by-that-name")
+def test_another_users_thread_is_refused(db_session):
+    """The check that makes conversations private.
+
+    Before authentication the owner came from a `username` field on the
+    request body, so anyone could read or continue anyone's thread by naming
+    it. Now the owner is the session's, and a mismatch is refused here rather
+    than being left for the route to remember to check.
+    """
+    alice = owner(db_session, "alice", "uuid-alice")
+    bob = owner(db_session, "bob", "uuid-bob")
+
+    hers = store.get_or_create(db_session, None, "her question", alice)
     db_session.commit()
 
-    assert conversation.username == "nobody-by-that-name"
-    assert conversation.user_id is None
+    with pytest.raises(store.NotOwned):
+        store.get_or_create(db_session, hers.id, "his question", bob)
+
+
+def test_an_id_a_stranger_invents_becomes_their_own_thread(db_session):
+    """An unknown id is still adopted — but as the caller's, never as a way to
+    reach into someone else's."""
+    bob = owner(db_session, "bob", "uuid-bob")
+    conversation = store.get_or_create(db_session, "an-id-bob-made-up", "q", bob)
+    db_session.commit()
+
+    assert conversation.id == "an-id-bob-made-up"
+    assert conversation.user_id == "uuid-bob"
+
+
+def test_a_thread_from_before_auth_is_claimed_on_use(db_session):
+    """Threads written by the old unauthenticated endpoints have no owner.
+
+    They are adopted by whoever opens them next rather than being orphaned
+    behind a 404 — otherwise switching authentication on would make everyone's
+    existing history vanish.
+    """
+    legacy = Conversation(id="legacy", user_id=None, username=None, title="old")
+    db_session.add(legacy)
+    db_session.commit()
+
+    user = owner(db_session)
+    conversation = store.get_or_create(db_session, "legacy", "q", user)
+    db_session.commit()
+
+    assert conversation.user_id == "uuid-for-mukesh"
 
 
 def test_a_long_question_is_truncated_into_the_title(db_session):
-    conversation = store.get_or_create(db_session, None, "x" * 500)
+    conversation = store.get_or_create(db_session, None, "x" * 500, owner(db_session))
     db_session.commit()
     assert len(conversation.title) == store.TITLE_LENGTH
 
@@ -121,7 +173,7 @@ def test_a_long_question_is_truncated_into_the_title(db_session):
 
 
 def test_a_question_and_its_answer_share_one_row(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     exchange(db_session, conversation, "how many calls?", "There were 42.")
     db_session.commit()
 
@@ -135,7 +187,7 @@ def test_a_question_and_its_answer_share_one_row(db_session):
 def test_an_interaction_starts_pending_and_is_resolved(db_session):
     """`pending` is what lets a client reloading mid-answer tell "still
     working" from "gave up" — without it the two look identical."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     message = store.start_interaction(db_session, conversation, "q")
     db_session.commit()
 
@@ -148,7 +200,7 @@ def test_an_interaction_starts_pending_and_is_resolved(db_session):
 
 
 def test_an_interaction_can_be_resolved_as_failed(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     message = store.start_interaction(db_session, conversation, "the question that failed")
     store.fail_interaction(db_session, message, "The provider timed out.")
     db_session.commit()
@@ -163,7 +215,7 @@ def test_an_interaction_can_be_resolved_as_failed(db_session):
 
 def test_a_pending_interaction_keeps_its_question(db_session):
     """What a reload finds when it lands mid-answer."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     store.start_interaction(db_session, conversation, "still being answered")
     db_session.commit()
 
@@ -177,7 +229,7 @@ def test_a_pending_interaction_keeps_its_question(db_session):
 
 
 def test_history_alternates_question_and_answer_in_order(db_session):
-    conversation = store.get_or_create(db_session, None, "first")
+    conversation = store.get_or_create(db_session, None, "first", owner(db_session))
     exchange(db_session, conversation, "first", "one")
     exchange(db_session, conversation, "second", "two")
     db_session.commit()
@@ -194,7 +246,7 @@ def test_history_alternates_question_and_answer_in_order(db_session):
 
 def test_only_the_last_ten_interactions_are_replayed(db_session):
     """The window that stops a question's cost growing with the thread."""
-    conversation = store.get_or_create(db_session, None, "q1")
+    conversation = store.get_or_create(db_session, None, "q1", owner(db_session))
     for i in range(1, 16):
         exchange(db_session, conversation, f"q{i}", f"a{i}")
     db_session.commit()
@@ -214,7 +266,7 @@ def test_only_the_last_ten_interactions_are_replayed(db_session):
 def test_a_failed_interaction_replays_its_question_but_no_answer(db_session):
     """There is nothing to replay, and inventing one would put words in the
     assistant's mouth."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     message = store.start_interaction(db_session, conversation, "the one that failed")
     store.fail_interaction(db_session, message, "The provider gave out.")
     db_session.commit()
@@ -224,15 +276,15 @@ def test_a_failed_interaction_replays_its_question_but_no_answer(db_session):
 
 
 def test_history_is_empty_for_a_fresh_conversation(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     db_session.commit()
     assert store.load_history(db_session, conversation.id) == []
 
 
 def test_history_does_not_leak_between_conversations(db_session):
-    one = store.get_or_create(db_session, None, "in thread one")
+    one = store.get_or_create(db_session, None, "in thread one", owner(db_session))
     exchange(db_session, one, "in thread one", "answer one")
-    two = store.get_or_create(db_session, None, "in thread two")
+    two = store.get_or_create(db_session, None, "in thread two", owner(db_session))
     exchange(db_session, two, "in thread two", "answer two")
     db_session.commit()
 
@@ -248,7 +300,7 @@ def test_history_does_not_leak_between_conversations(db_session):
 
 def test_stored_tool_calls_are_recorded_but_not_replayed(db_session):
     """The split that keeps replay safe — see the module docstring."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     exchange(db_session, conversation, "q", "a")
     db_session.commit()
 
@@ -265,7 +317,7 @@ def test_stored_tool_calls_are_recorded_but_not_replayed(db_session):
 
 
 def test_tokens_accumulate_across_interactions(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     exchange(db_session, conversation, "q1", "a1", input_tokens=100, output_tokens=20)
     exchange(db_session, conversation, "q2", "a2", input_tokens=250, output_tokens=35)
     db_session.commit()
@@ -277,7 +329,7 @@ def test_tokens_accumulate_across_interactions(db_session):
 
 def test_each_interaction_keeps_its_own_cost(db_session):
     """So one expensive question is visible, not averaged into the thread."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     exchange(db_session, conversation, "q1", "a1", input_tokens=100, output_tokens=20)
     exchange(db_session, conversation, "q2", "a2", input_tokens=9000, output_tokens=40)
     db_session.commit()
@@ -289,7 +341,7 @@ def test_each_interaction_keeps_its_own_cost(db_session):
 
 def test_missing_token_counts_are_treated_as_zero(db_session):
     """A provider that reports no usage must not poison the arithmetic."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     message = store.start_interaction(db_session, conversation, "q")
     store.complete_interaction(db_session, conversation, message, {"answer": "hi"}, ok=True)
     db_session.commit()
@@ -312,7 +364,7 @@ def test_input_and_output_are_priced_separately(db_session):
 
 
 def test_usage_reports_tokens_and_cost(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     exchange(db_session, conversation, "q", "a", input_tokens=1000, output_tokens=500)
     db_session.commit()
 
@@ -325,7 +377,7 @@ def test_usage_reports_tokens_and_cost(db_session):
 
 
 def test_zero_tokens_cost_nothing(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     db_session.commit()
     assert store.usage(conversation)["cost"] == 0
 
@@ -334,7 +386,7 @@ def test_zero_tokens_cost_nothing(db_session):
 
 
 def test_rename_replaces_the_title(db_session):
-    conversation = store.get_or_create(db_session, None, "how many calls?")
+    conversation = store.get_or_create(db_session, None, "how many calls?", owner(db_session))
     store.rename(db_session, conversation, "Monday capacity review")
     db_session.commit()
 
@@ -342,7 +394,7 @@ def test_rename_replaces_the_title(db_session):
 
 
 def test_rename_truncates_an_overlong_title(db_session):
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     store.rename(db_session, conversation, "y" * 400)
     db_session.commit()
 
@@ -351,7 +403,7 @@ def test_rename_truncates_an_overlong_title(db_session):
 
 def test_deleting_moves_the_thread_and_its_transcript(db_session):
     """A move, not a destruction — the whole thing has to survive."""
-    conversation = store.get_or_create(db_session, None, "first", "mukesh")
+    conversation = store.get_or_create(db_session, None, "first", owner(db_session))
     exchange(db_session, conversation, "first", "one", input_tokens=100, output_tokens=20)
     exchange(db_session, conversation, "second", "two", input_tokens=250, output_tokens=35)
     db_session.commit()
@@ -380,7 +432,7 @@ def test_deleting_moves_the_thread_and_its_transcript(db_session):
 
 def test_the_archived_thread_keeps_its_original_id(db_session):
     """It is the same thread in a different place, not a note about one."""
-    conversation = store.get_or_create(db_session, None, "q")
+    conversation = store.get_or_create(db_session, None, "q", owner(db_session))
     original_id = conversation.id
     store.archive(db_session, conversation)
     db_session.commit()
@@ -389,7 +441,7 @@ def test_the_archived_thread_keeps_its_original_id(db_session):
 
 
 def test_deleting_an_empty_thread_still_archives_it(db_session):
-    conversation = store.get_or_create(db_session, None, "never asked anything")
+    conversation = store.get_or_create(db_session, None, "never asked anything", owner(db_session))
     db_session.commit()
 
     store.archive(db_session, conversation)
@@ -401,9 +453,9 @@ def test_deleting_an_empty_thread_still_archives_it(db_session):
 
 
 def test_deleting_one_thread_leaves_the_others_alone(db_session):
-    keep = store.get_or_create(db_session, None, "keep me")
+    keep = store.get_or_create(db_session, None, "keep me", owner(db_session))
     exchange(db_session, keep, "keep me", "still here")
-    drop = store.get_or_create(db_session, None, "drop me")
+    drop = store.get_or_create(db_session, None, "drop me", owner(db_session))
     exchange(db_session, drop, "drop me", "gone")
     db_session.commit()
 

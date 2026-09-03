@@ -71,7 +71,7 @@ export function Login() {
    * open on a cold visit too.
    */
   const [hasEntered, setHasEntered] = useState(false);
-  const login = useAuthStore((s) => s.login);
+  const signedIn = useAuthStore((s) => s.signedIn);
   const theme = useUIStore((s) => s.theme);
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,6 +99,9 @@ export function Login() {
     setError(null);
     setIsSubmitting(true);
     try {
+      // Succeeds only if the server set a session cookie; from here on the
+      // browser carries it automatically and nothing about the signed-in state
+      // is this code's to remember.
       const result = await api.login(username.trim(), password);
       const redirectTo = (location.state as { from?: string } | null)?.from || '/';
       // The store write is what flips RequireAuth, so it is held back until the
@@ -106,7 +109,7 @@ export function Login() {
       // authenticated and could bounce us off the page mid-animation.
       setIsLeaving(true);
       expandTimer.current = window.setTimeout(() => {
-        login(result.username);
+        signedIn(result.username);
         navigate(redirectTo, { replace: true });
       }, EXPAND_MS);
     } catch (err) {

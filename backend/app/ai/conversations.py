@@ -58,38 +58,45 @@ TITLE_LENGTH = 120
 CONTEXT_INTERACTIONS = 10
 
 
-def _resolve_user(db: Session, username: str | None) -> tuple[str | None, str | None]:
-    """Map an asserted username to its UUID, if it names a real account.
-
-    An unknown username is kept as text rather than rejected: it is a label on
-    a conversation, not a permission check, and this application has no session
-    token that would make it one.
-    """
-    if not username:
-        return None, None
-    user = db.query(User).filter(User.username == username).first()
-    return (user.user_id if user else None), username
+class NotOwned(Exception):
+    """The named conversation exists but belongs to somebody else."""
 
 
 def get_or_create(
-    db: Session, conversation_id: str | None, question: str, username: str | None = None
+    db: Session, conversation_id: str | None, question: str, user: User
 ) -> Conversation:
-    """Fetch the named conversation, or start one.
+    """Fetch the caller's conversation, or start one for them.
 
-    An unknown id starts a new conversation under *that* id rather than
+    The owner is taken from the authenticated session and is not negotiable —
+    it used to come from a `username` field on the request body, which any
+    caller could set to anything. That field is gone.
+
+    An unknown id still starts a conversation under *that* id rather than
     erroring: the client already believes it owns that thread, and handing back
-    a different id would silently split the transcript in two.
+    a different id would silently split the transcript in two. What is new is
+    that the row is created owned by the caller, so the id a client invents can
+    only ever become the client's own thread.
+
+    An id that exists but belongs to someone else raises `NotOwned`. The API
+    turns that into a 404 rather than a 403 — see the route.
     """
     if conversation_id:
         existing = db.get(Conversation, conversation_id)
         if existing is not None:
+            if existing.user_id and existing.user_id != user.user_id:
+                raise NotOwned(conversation_id)
+            # Adopt a thread from before ownership was recorded. Only possible
+            # for rows written by the old unauthenticated endpoints; a
+            # conversation with no owner cannot be created any more.
+            if not existing.user_id:
+                existing.user_id = user.user_id
+                existing.username = user.username
             return existing
 
-    user_id, name = _resolve_user(db, username)
     conversation = Conversation(
         id=conversation_id or new_conversation_id(),
-        user_id=user_id,
-        username=name,
+        user_id=user.user_id,
+        username=user.username,
         title=question.strip()[:TITLE_LENGTH] or None,
     )
     db.add(conversation)

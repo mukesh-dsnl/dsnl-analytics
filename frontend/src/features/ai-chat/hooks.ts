@@ -27,6 +27,7 @@ import { CONVERSATIONS_KEY } from './components/ConversationList';
 import type { ChatEvent, ChatQuery, InteractionUsage, TokenUsage } from './api';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store';
+import { ApiError } from '../../services/api';
 import { summarizeQuery } from './queryLabel';
 
 export interface ChatStep {
@@ -78,6 +79,8 @@ const nextId = () => `m${++messageCounter}`;
 export function useChat(conversationId: string | null) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Only used to key the query cache below; the request itself is scoped by
+  // the session cookie, not by anything sent from here.
   const username = useAuthStore((state) => state.username);
 
   // Forces a reload of the thread already on screen — after a poll lands, or
@@ -87,6 +90,10 @@ export function useChat(conversationId: string | null) {
   const reload = useCallback(() => setReloadToken((n) => n + 1), []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Why the panel is empty, when it is empty for a reason. Without this a
+  // thread you cannot open is indistinguishable from a new chat, which is
+  // exactly how a link to someone else's conversation used to look.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [usage, setUsage] = useState<TokenUsage>(EMPTY_USAGE);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -165,6 +172,7 @@ export function useChat(conversationId: string | null) {
         // read that claim and skip the very fetch it was there to reissue.
         // Only a response that is actually about to be rendered counts.
         loadedRef.current = id;
+        setLoadError(null);
         setUsage(detail.usage);
         // One stored row is one exchange, so it unfolds into two bubbles.
         setMessages(
@@ -217,13 +225,40 @@ export function useChat(conversationId: string | null) {
           setPollFor(null);
         }
       })
-      .catch(() => {
-        // The thread is gone, or the server is unreachable. Clear the panel
-        // and leave the URL alone: rewriting it here is what previously put
-        // this in a fight with the address bar.
+      .catch((error: unknown) => {
         if (cancelled) return;
         setMessages([]);
         setUsage(EMPTY_USAGE);
+
+        // 404 means this browser cannot open that thread — it was deleted, or
+        // it belongs to another account. Both are permanent for this session,
+        // so the id has to be *let go of*, not just failed on.
+        //
+        // Leaving it in place was the bug: `conversationRef` is set at the top
+        // of this effect, before the request, so a failed load still left the
+        // hook pointing at a thread the server would refuse. The next question
+        // was then posted against it and failed too — which is why a pasted
+        // link showed an empty chat that then rejected whatever you typed. The
+        // failure had moved from the load, where it made sense, to the send,
+        // where it did not.
+        const status = error instanceof ApiError ? error.status : 0;
+        if (status === 404) {
+          conversationRef.current = null;
+          loadedRef.current = null;
+          setLoadError(
+            'That conversation isn’t available. It may have been deleted, or it ' +
+              'belongs to a different account.',
+          );
+          // Safe to navigate here now. The old warning against it was about a
+          // store that mirrored the URL and fought back; that store is gone,
+          // and the effect this triggers takes the `!id` branch and stops.
+          navigate('/assistant', { replace: true });
+          return;
+        }
+
+        // Anything else — offline, a 500, a proxy hiccup — is not the
+        // conversation's fault, so the id is kept and a reload can retry it.
+        setLoadError('That conversation could not be loaded. Please try again.');
       })
       .finally(() => {
         if (!cancelled) setIsRestoring(false);
@@ -232,7 +267,7 @@ export function useChat(conversationId: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, reloadToken]);
+  }, [conversationId, reloadToken, navigate]);
 
   /**
    * Wait for an answer that is being worked out without us.
@@ -283,6 +318,9 @@ export function useChat(conversationId: string | null) {
       if (!trimmed || isPending) return;
 
       const liveId = nextId();
+      // Asking a question is the user moving on from whatever could not be
+      // opened; the notice has served its purpose.
+      setLoadError(null);
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: 'user', text: trimmed },
@@ -387,7 +425,7 @@ export function useChat(conversationId: string | null) {
 
       try {
         await aiApi.chatStream(
-          { question: trimmed, conversation_id: conversationRef.current, username },
+          { question: trimmed, conversation_id: conversationRef.current },
           onEvent,
           controller.signal,
         );
@@ -405,6 +443,13 @@ export function useChat(conversationId: string | null) {
             isError: true,
             isStreaming: false,
           }));
+          // The thread was refused — deleted mid-conversation, or never ours.
+          // Release it so the *next* question opens a fresh one instead of
+          // failing against the same id forever.
+          if (error instanceof ApiError && error.status === 404) {
+            conversationRef.current = null;
+            loadedRef.current = null;
+          }
         }
       } finally {
         abortRef.current = null;
@@ -428,6 +473,8 @@ export function useChat(conversationId: string | null) {
     reset,
     isPending,
     isRestoring,
+    /** Set when the panel is empty for a reason the user should be told. */
+    loadError,
     usage,
     conversationId,
     hasConversation: messages.length > 0,

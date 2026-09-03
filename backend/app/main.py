@@ -5,10 +5,11 @@ FastAPI application entrypoint.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import ai, auth, campaign, cdr
+from app.api.deps import require_user
 from app.core.config import get_settings
 from app.core.database import Base, engine
 
@@ -53,14 +54,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routers
+# ── Routers ──────────────────────────────────────────────────────────────
+# Everything except /api/auth/* and /health requires a signed-in caller, and
+# the guard is attached here rather than on each endpoint. That is the point:
+# a route added to any of these modules later inherits it, where a per-endpoint
+# decorator would have to be remembered every time. `require_user` resolves the
+# session and discards the result — the dashboards read a parquet lake and hold
+# no per-user data, so they need the caller to exist, not to know who it is.
+#
+# The AI router is protected the same way *and* its endpoints take the user
+# explicitly, because its data is per-user and has to be scoped, not just
+# gated.
 app.include_router(auth.router, prefix="/api", tags=["Auth"])
-app.include_router(cdr.router, prefix="/api", tags=["CDR Analytics"])
-app.include_router(campaign.router, prefix="/api", tags=["Campaign Metrics"])
+app.include_router(
+    cdr.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["CDR Analytics"],
+)
+app.include_router(
+    campaign.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["Campaign Metrics"],
+)
 # Registers unconditionally. With no AI key configured the route still exists
 # and answers 503 naming the variable to set — the dashboards above are
 # unaffected either way.
-app.include_router(ai.router, prefix="/api", tags=["AI Chat"])
+app.include_router(
+    ai.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["AI Chat"],
+)
 
 
 @app.get("/health", tags=["Health"])

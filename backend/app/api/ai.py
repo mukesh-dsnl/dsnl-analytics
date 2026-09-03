@@ -29,7 +29,7 @@ import json
 import logging
 from typing import Any, Iterator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -37,22 +37,57 @@ from sqlalchemy.orm import Session
 from app.ai import conversations as store
 from app.ai import jobs, orchestrator
 from app.ai.providers.factory import ProviderNotConfigured, get_llm_client
+from app.api.deps import current_user
 from app.core.database import SessionLocal, get_db
 from app.models.conversation import Conversation, Message
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _no_such_conversation() -> HTTPException:
+    """404 for both "does not exist" and "is not yours".
+
+    Not 403. A 403 would confirm the thread exists, which tells the caller
+    something about another user's data — the one thing scoping is meant to
+    prevent. The two cases are indistinguishable from outside by design.
+    """
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="No such conversation."
+    )
+
+
+def _owned_or_404(db: Session, conversation_id: str, user: User) -> Conversation:
+    """Fetch a conversation the caller owns, or raise 404.
+
+    Rows written before ownership was recorded have no `user_id`. They are
+    treated as unclaimed and readable rather than orphaned behind a 404 — the
+    alternative is that everyone's existing history disappears the day auth is
+    switched on. Nothing new can be created unowned, so this is a finite set
+    that drains as those threads are used.
+    """
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise _no_such_conversation()
+    if conversation.user_id and conversation.user_id != user.user_id:
+        raise _no_such_conversation()
+    return conversation
+
+
 class ChatRequest(BaseModel):
-    """A question, and which conversation it belongs to."""
+    """A question, and which conversation it belongs to.
+
+    There is no `username` field any more. It used to be here for attribution
+    and was explicitly not trusted — but an untrusted field that decides which
+    rows get written is a distinction without a difference once the endpoint is
+    reachable. The asker now comes from the session cookie and cannot be
+    asserted by the caller at all.
+    """
 
     question: str = Field(..., min_length=1, max_length=4000)
     # Omit to start a new thread; the response carries the id to use next time.
     conversation_id: Optional[str] = Field(None, max_length=36)
-    # Who is asking. Recorded for attribution, not trusted as authentication —
-    # this application's login issues no token (see app/api/auth.py).
-    username: Optional[str] = Field(None, max_length=100)
 
 
 class TokenUsage(BaseModel):
@@ -139,14 +174,14 @@ def _summary(conversation: Conversation, message_count: int) -> ConversationSumm
 # ── Asking ─────────────────────────────────────────────────────────────────
 
 
-def _answer(db: Session, body: ChatRequest, llm) -> dict[str, Any]:
+def _answer(db: Session, body: ChatRequest, llm, user: User) -> dict[str, Any]:
     """Load, open the row, run, close the row — the flow both endpoints share.
 
     The interaction row is opened before the model is called and starts marked
     `fail`; it is promoted to `pass` once an answer exists. A request that dies
     mid-flight therefore leaves an honest record rather than an optimistic one.
     """
-    conversation = store.get_or_create(db, body.conversation_id, body.question, body.username)
+    conversation = store.get_or_create(db, body.conversation_id, body.question, user)
     history = store.load_history(db, conversation.id)
     interaction = store.start_interaction(db, conversation, body.question)
     db.commit()
@@ -174,8 +209,12 @@ def _answer(db: Session, body: ChatRequest, llm) -> dict[str, Any]:
 
 
 @router.post("/ai/chat", response_model=ChatResponse)
-def chat(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
-    """Answer one question about the CDR/CODR data.
+def chat(
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> ChatResponse:
+    """Answer one question about the CDR/CODR data, for the signed-in user.
 
     The model may call tools while working; every call it made comes back in
     `queries`, so an answer can be traced to the query behind it. An empty
@@ -188,7 +227,10 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
         raise HTTPException(status_code=503, detail=str(exc))
 
     try:
-        result = _answer(db, body, llm)
+        result = _answer(db, body, llm, user)
+    except store.NotOwned:
+        db.rollback()
+        raise _no_such_conversation()
     except Exception as exc:  # noqa: BLE001 — nothing internal may reach the client
         db.rollback()
         logger.exception("AI chat failed")
@@ -209,7 +251,9 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
 
 
 @router.post("/ai/chat/stream")
-def chat_stream(body: ChatRequest) -> StreamingResponse:
+def chat_stream(
+    body: ChatRequest, user: User = Depends(current_user)
+) -> StreamingResponse:
     """The same answer, reported as it is worked out.
 
     Server-sent events, because a question can take several rounds and tens of
@@ -242,14 +286,15 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
     # be open while the worker holds its own.
     db = SessionLocal()
     try:
-        conversation = store.get_or_create(
-            db, body.conversation_id, body.question, body.username
-        )
+        conversation = store.get_or_create(db, body.conversation_id, body.question, user)
         history = store.load_history(db, conversation.id)
         interaction = store.start_interaction(db, conversation, body.question)
         db.commit()
         conversation_id = conversation.id
         interaction_id = interaction.id
+    except store.NotOwned:
+        db.rollback()
+        raise _no_such_conversation()
     except Exception:
         db.rollback()
         logger.exception("Could not open the interaction")
@@ -290,16 +335,24 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
 
 @router.get("/ai/conversations", response_model=list[ConversationSummary])
 def list_conversations(
-    username: Optional[str] = None,
-    limit: int = 30,
+    limit: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ) -> list[ConversationSummary]:
-    """Recent threads, newest first. Filtered by username when one is given."""
-    query = db.query(Conversation)
-    if username:
-        query = query.filter(Conversation.username == username)
+    """The signed-in user's threads, newest first.
 
-    rows = query.order_by(Conversation.updated_at.desc()).limit(max(1, min(limit, 100))).all()
+    The `username` query parameter is gone. It used to decide the filter, which
+    meant passing someone else's name returned their threads and passing none
+    returned everybody's. The owner now comes from the session and there is no
+    way to ask for anyone else's list.
+    """
+    rows = (
+        db.query(Conversation)
+        .filter(Conversation.user_id == user.user_id)
+        .order_by(Conversation.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
 
     counts = {
         conversation.id: db.query(Message)
@@ -312,12 +365,17 @@ def list_conversations(
 
 @router.get("/ai/conversations/{conversation_id}", response_model=ConversationDetail)
 def get_conversation(
-    conversation_id: str, db: Session = Depends(get_db)
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ) -> ConversationDetail:
-    """One thread and its messages, oldest first — what the UI restores from."""
-    conversation = db.get(Conversation, conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="No such conversation.")
+    """One of the caller's threads and its messages, oldest first.
+
+    Someone else's thread is a 404, exactly as a nonexistent one is. That is
+    the whole difference between this and what it replaced, which returned any
+    thread to anyone who knew its id.
+    """
+    conversation = _owned_or_404(db, conversation_id, user)
 
     rows = (
         db.query(Message)
@@ -351,12 +409,13 @@ class RenameRequest(BaseModel):
 
 @router.patch("/ai/conversations/{conversation_id}", response_model=ConversationSummary)
 def rename_conversation(
-    conversation_id: str, body: RenameRequest, db: Session = Depends(get_db)
+    conversation_id: str,
+    body: RenameRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ) -> ConversationSummary:
-    """Give a thread a name of its own instead of its opening question."""
-    conversation = db.get(Conversation, conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="No such conversation.")
+    """Give one of your own threads a name instead of its opening question."""
+    conversation = _owned_or_404(db, conversation_id, user)
 
     store.rename(db, conversation, body.title)
     db.commit()
@@ -366,7 +425,11 @@ def rename_conversation(
 
 
 @router.delete("/ai/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str, db: Session = Depends(get_db)) -> dict:
+def delete_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> dict:
     """Remove a thread from the list — by moving it, not destroying it.
 
     The conversation and its whole transcript are copied into
@@ -380,6 +443,12 @@ def delete_conversation(conversation_id: str, db: Session = Depends(get_db)) -> 
         # Already gone, by this call or an earlier one. Reporting success is
         # the honest answer to "make sure this is not in my list".
         return {"deleted": conversation_id, "archived": False}
+
+    # Somebody else's thread reads as already-absent, the same as a thread that
+    # never existed. Idempotent success would be a lie here — it would report
+    # having removed something the caller cannot see and which is still there.
+    if conversation.user_id and conversation.user_id != user.user_id:
+        raise _no_such_conversation()
 
     try:
         store.archive(db, conversation)
