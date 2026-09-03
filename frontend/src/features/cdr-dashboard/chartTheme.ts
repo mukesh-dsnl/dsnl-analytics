@@ -10,14 +10,14 @@
  * actually render on — white in light mode, #0e1424 in dark:
  *
  *   light  #1b8fe0 / #eb6834  vs #ffffff — CVD dE 24.1, normal dE 32.4, >=3:1
- *   dark   #1b8fe0 / #d95926  vs #2c2927 — 3.61:1 and 3.21:1
+ *   dark   #1b8fe0 / #d95926  vs #212940 — 3.51:1 and 3.14:1
  *
- * The dark surface has moved three times — near-black #09090B, navy #0e1424,
- * then the warm #1a1715 — and each time the data hues were re-checked against
- * it rather than re-picked. The fourth move broke that streak: cards are now
- * lit and glossy at L* 16.8 (21.9 under the sheen), and two hues could not
- * survive it — green #008300 at 2.24:1 and critical #d03b3b at 2.31:1. Both
- * were re-stepped, the rest kept.
+ * The dark surface has moved several times — near-black #09090B, navy #0e1424,
+ * and now the lit navy #212940 — and each time the data hues were re-checked
+ * against it rather than re-picked. The move to a *lit* card broke that
+ * streak: at L* 16.9 (22.3 under the sheen) two hues could not survive it —
+ * green #008300 at 2.24:1 and critical #d03b3b at 2.31:1. Both were
+ * re-stepped, the rest kept.
  *
  * Every colour here is measured against the *brightest* point of a card, the
  * top of the sheen, not the flat token beneath it — a figure that passes
@@ -42,7 +42,7 @@ export interface ChartTheme {
    * The full categorical ramp, in fixed slot order — a bar's hue comes from
    * its position here, never from a cycled or generated colour. Both modes
    * were validated (not eyeballed) against the surfaces these charts render
-   * on, #ffffff light and #2c2927 dark:
+   * on, #ffffff light and #212940 dark:
    *
    *   light  worst adjacent CVD ΔE 9.1, normal-vision ΔE 19.6, lightness + chroma pass
    *   dark   worst adjacent CVD ΔE 8.4, normal-vision ΔE 19.3, all ≥3:1 contrast
@@ -114,20 +114,22 @@ const DARK: ChartTheme = {
   // read as "wrong".
   good: '#3fb355',
   critical: '#e35555',
-  // Chrome follows the dark neutrals, which are now warm (see the :root.dark
-  // block in index.css) — zinc-800 gridlines, zinc-400 axis ink, the panel
-  // colour behind the tooltip. Same slots as before, re-hued with them.
+  // Chrome follows the dark neutrals (see the :root.dark block in index.css)
+  // — gridlines a step above the card, zinc-400 axis ink, the card colour
+  // behind the tooltip. Same slots as before, re-stepped for the lit surface:
+  // the old gridline was mixed for a near-black panel and washed out entirely
+  // once the card came up to L* 16.9.
   //
   // The *data* hues above are deliberately unchanged. They were picked for
   // CVD separation and re-validated against the new surfaces rather than
   // re-picked: every one still clears 3:1 (floor is green #008300 at 3.35:1
   // on the lighter of the two), so the palette holds and only the chrome
   // moved — exactly as it did the last time the surfaces changed.
-  grid: '#3d3835',
-  axis: '#a59c94',
-  tooltipBg: '#2c2927',
-  tooltipBorder: '#3d3835',
-  tooltipText: '#f2efeb',
+  grid: '#333c55',
+  axis: '#939eba',
+  tooltipBg: '#212940',
+  tooltipBorder: '#333c55',
+  tooltipText: '#eef2f9',
 };
 
 export function useChartTheme(): ChartTheme {
