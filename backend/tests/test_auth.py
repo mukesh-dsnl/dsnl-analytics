@@ -262,6 +262,43 @@ def test_there_is_at_least_one_route_under_test():
     assert len(list(_api_routes())) > 20
 
 
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_api_documentation_requires_a_session(client, db, path):
+    """The schema lists every route, request shape and field name in the system.
+
+    FastAPI serves these unauthenticated by default, which would leave that map
+    readable by anyone who can reach the port — a hole of a different kind than
+    an open endpoint, but a hole.
+    """
+    assert client.get(path).status_code == 401
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_api_documentation_opens_once_signed_in(client, db, path):
+    """The control. Without it the test above would pass if /docs 401'd for
+    everyone, which would be a broken page rather than a protected one."""
+    make_user(db)
+    sign_in(client)
+    assert client.get(path).status_code == 200
+
+
+def test_the_schema_marks_guarded_routes_as_requiring_the_cookie(client, db):
+    """The padlock on /docs is generated from this, so it is worth asserting
+    rather than eyeballing."""
+    make_user(db)
+    sign_in(client)
+    schema = client.get("/openapi.json").json()
+
+    assert "session" in schema["components"]["securitySchemes"]
+    assert schema["components"]["securitySchemes"]["session"]["in"] == "cookie"
+
+    guarded = schema["paths"]["/api/ai/conversations"]["get"]
+    assert any("session" in requirement for requirement in guarded.get("security", []))
+
+    # And the open one is not marked, or the padlock would mean nothing.
+    assert "security" not in schema["paths"]["/api/auth/login"]["post"]
+
+
 # ── Ownership ──────────────────────────────────────────────────────────────
 
 

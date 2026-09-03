@@ -20,6 +20,7 @@ where 403/404 belongs.
 import logging
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import APIKeyCookie
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -28,6 +29,22 @@ from app.models.session import AuthSession, hash_token, utcnow
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+# Documentation only. Declaring the scheme is what puts a padlock beside every
+# guarded route on /docs and names the cookie that opens it — without it the
+# page shows no difference between the two open endpoints and the thirty-odd
+# closed ones.
+#
+# `auto_error=False`, and its value is deliberately ignored: the token is still
+# read from `request.cookies` below, so the cookie name stays whatever settings
+# say at call time rather than whatever it was at import. Behaviour is
+# unchanged; only the schema gains.
+session_cookie_scheme = APIKeyCookie(
+    name=get_settings().SESSION_COOKIE_NAME,
+    scheme_name="session",
+    description="Set by POST /api/auth/login. httpOnly — the browser sends it for you.",
+    auto_error=False,
+)
 
 
 def _unauthorised(detail: str) -> HTTPException:
@@ -39,7 +56,11 @@ def _unauthorised(detail: str) -> HTTPException:
     )
 
 
-def get_session(request: Request, db: Session = Depends(get_db)) -> AuthSession:
+def get_session(
+    request: Request,
+    db: Session = Depends(get_db),
+    _scheme: str | None = Depends(session_cookie_scheme),
+) -> AuthSession:
     """The live session behind this request, or 401.
 
     An expired row is deleted as it is found. Sessions are only ever read by
