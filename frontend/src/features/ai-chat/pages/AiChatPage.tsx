@@ -128,7 +128,7 @@ export function AiChatPage() {
   // precondition and the URL oscillated. There is nothing to keep in step now.
   const { conversationId } = useParams();
 
-  const { messages, send, stop, isPending, isRestoring, usage } = useChat(
+  const { messages, send, stop, isPending, isRestoring, usage, loadError } = useChat(
     conversationId ?? null,
   );
   const endRef = useRef<HTMLDivElement>(null);
@@ -195,7 +195,23 @@ export function AiChatPage() {
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400 dark:text-zinc-600" />
           </div>
         ) : isBlank ? (
-          <div className="h-full flex items-end justify-center pb-2">
+          // A blank panel means one of two very different things: a new chat,
+          // or a thread this account cannot open. They looked identical until
+          // the notice below existed — which is how a link to someone else's
+          // conversation used to present as an ordinary new chat.
+          <div className="h-full flex flex-col items-center justify-end pb-2">
+            {loadError && (
+              <div
+                role="status"
+                className="mb-4 max-w-xl flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-sm
+                           border border-amber-200 dark:border-amber-900/50
+                           bg-amber-50 dark:bg-amber-950/30
+                           text-amber-900 dark:text-amber-200"
+              >
+                <TriangleAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{loadError}</span>
+              </div>
+            )}
             <EmptyState onPick={send} />
           </div>
         ) : (

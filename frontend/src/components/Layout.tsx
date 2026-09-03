@@ -317,12 +317,14 @@ export function Layout() {
    *
    * The store write waits for the same reason it does on the way in: clearing
    * auth now would send RequireAuth straight to /login and cut the animation.
+   * `logout` now also destroys the session server-side, so the delay is the
+   * animation's, not the request's — it is awaited inside the timeout rather
+   * than before it.
    */
   const handleLogout = () => {
     setIsLoggingOut(true);
     collapseTimer.current = window.setTimeout(() => {
-      logout();
-      navigate('/login', { replace: true });
+      void logout().finally(() => navigate('/login', { replace: true }));
     }, COLLAPSE_MS);
   };
 

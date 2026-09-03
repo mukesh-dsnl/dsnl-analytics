@@ -26,6 +26,22 @@ class Settings(BaseSettings):
     # Timezone
     TIMEZONE: str = "Asia/Kolkata"
 
+    # ── Sessions ─────────────────────────────────────────────────────────
+    # How long a login stays valid. The expiry is written onto the session row
+    # when it is created, so changing this affects new logins only — existing
+    # sessions keep the lifetime they were issued with, which is what makes the
+    # stored value the authority rather than this setting.
+    SESSION_TTL_DAYS: int = 7
+    SESSION_COOKIE_NAME: str = "dsnl_session"
+    # Browsers silently refuse to store a Secure cookie over plain http, so
+    # this has to be false for local development and true anywhere served over
+    # TLS. It is config rather than a constant for exactly that reason.
+    SESSION_COOKIE_SECURE: bool = False
+    # "lax" lets the cookie ride ordinary top-level navigations while still
+    # withholding it from cross-site form posts, which is the CSRF exposure
+    # that matters for a cookie-authenticated API.
+    SESSION_COOKIE_SAMESITE: str = "lax"
+
     # ── CDR analytics lake ───────────────────────────────────────────────
     # Two directories of daily parquet exports, named cdr_YYYYMMDD.parquet and
     # codr_YYYYMMDD.parquet. Queried in place with DuckDB — nothing is uploaded

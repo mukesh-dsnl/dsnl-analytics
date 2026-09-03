@@ -11,7 +11,14 @@
  * then on comes back in the response (and, when streaming, in the very first
  * event, so a browser that navigates away mid-answer still knows which thread
  * it started).
+ *
+ * Every request here is authenticated by the session cookie the browser
+ * attaches on its own, and every response goes through `handle`, so a session
+ * that ends mid-visit surfaces once, in one place, instead of as a scatter of
+ * unexplained failures.
  */
+
+import { ApiError, handle, notifyUnauthorized, Unauthorized } from '../../services/api';
 
 const API_BASE = '/api/ai';
 
@@ -60,8 +67,9 @@ export interface ChatRequest {
   question: string;
   /** Omit to start a new thread. */
   conversation_id?: string | null;
-  /** Recorded for attribution; the server does not treat it as authentication. */
-  username?: string | null;
+  // No `username`. The asker comes from the session cookie; the server no
+  // longer accepts one here and would reject a body that carried it as
+  // attribution it cannot verify.
 }
 
 /** One stored exchange: the question, its answer, and what it cost. */
@@ -147,8 +155,25 @@ export const aiApi = {
         .json()
         .then((b) => b?.detail)
         .catch(() => null);
+      // Handled here rather than via `handle` because this response is a
+      // stream: the shared helper would try to parse a body that either is not
+      // JSON or has not arrived. The session-ended path still has to fire.
+      if (res.status === 401) {
+        notifyUnauthorized();
+        throw new Unauthorized(detail || undefined);
+      }
       if (res.status === 503) {
         throw new Error(detail || 'AI chat is not configured on the server.');
+      }
+      if (res.status === 404) {
+        // ApiError, not a plain Error: the hook has to recognise this one to
+        // release the conversation id rather than keep posting against it.
+        throw new ApiError(
+          404,
+          detail === 'No such conversation.'
+            ? 'That conversation isn’t available on this account.'
+            : detail || 'That conversation is no longer available.',
+        );
       }
       throw new Error(detail || `The assistant could not answer that (HTTP ${res.status}).`);
     }
@@ -184,19 +209,22 @@ export const aiApi = {
     drain(decoder.decode(), true);
   },
 
-  /** Recent threads, newest first. */
-  listConversations: async (username?: string | null): Promise<ConversationSummary[]> => {
-    const query = username ? `?username=${encodeURIComponent(username)}` : '';
-    const res = await fetch(`${API_BASE}/conversations${query}`);
-    if (!res.ok) throw new Error('Could not load past conversations.');
-    return res.json();
+  /**
+   * The signed-in user's threads, newest first.
+   *
+   * Takes no username. The server scopes this to the session, so there is no
+   * longer any such thing as asking for someone else's list — nor for
+   * everybody's, which is what omitting the old parameter did.
+   */
+  listConversations: async (): Promise<ConversationSummary[]> => {
+    const res = await fetch(`${API_BASE}/conversations`);
+    return handle<ConversationSummary[]>(res);
   },
 
   /** One thread and its messages — what the UI restores a conversation from. */
   getConversation: async (id: string): Promise<ConversationDetail> => {
     const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error('Could not load that conversation.');
-    return res.json();
+    return handle<ConversationDetail>(res);
   },
 
   /** Give a thread a name of its own instead of its opening question. */
@@ -206,8 +234,7 @@ export const aiApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title }),
     });
-    if (!res.ok) throw new Error('Could not rename that conversation.');
-    return res.json();
+    return handle<ConversationSummary>(res);
   },
 
   /**
@@ -221,7 +248,7 @@ export const aiApi = {
     const res = await fetch(`${API_BASE}/conversations/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error('Could not delete that conversation.');
+    await handle<unknown>(res);
   },
 
   chat: async (body: ChatRequest): Promise<ChatResponse> => {

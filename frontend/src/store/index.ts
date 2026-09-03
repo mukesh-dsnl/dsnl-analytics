@@ -1,27 +1,75 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api, onUnauthorized } from '../services/api';
+
+/**
+ * Whether the caller is signed in.
+ *
+ * Three states, not two. `unknown` is the one a naive version forgets: on a
+ * cold load the app genuinely does not know yet, because the answer lives in
+ * an httpOnly cookie it cannot read and has to ask the server for. Treating
+ * that as "no" would bounce every refresh to /login and back.
+ *
+ * Nothing here is authorisation. The session cookie is what authenticates a
+ * request; this only decides what to render while the server is being asked.
+ * Setting `status: 'authenticated'` by hand in devtools reveals a UI shell
+ * whose every request still comes back 401.
+ */
+export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous';
 
 interface AuthState {
+  status: AuthStatus;
   username: string | null;
-  isAuthenticated: boolean;
-  login: (username: string) => void;
-  logout: () => void;
+  /** Ask the server who we are. Called once on boot, and after signing in. */
+  check: () => Promise<void>;
+  /** Record a successful sign-in. The cookie is already set by then. */
+  signedIn: (username: string) => void;
+  /** Sign out here and on the server. */
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
+      status: 'unknown',
       username: null,
-      isAuthenticated: false,
-      login: (username) => set({ username, isAuthenticated: true }),
-      logout: () => set({ username: null, isAuthenticated: false }),
+
+      check: async () => {
+        try {
+          const me = await api.me();
+          set({ status: 'authenticated', username: me.username });
+        } catch {
+          set({ status: 'anonymous', username: null });
+        }
+      },
+
+      signedIn: (username) => set({ status: 'authenticated', username }),
+
+      logout: async () => {
+        await api.logout();
+        set({ status: 'anonymous', username: null });
+      },
     }),
-    // Namespaced. localStorage is scoped per origin, not per path, so a bare
-    // 'auth-storage' would be shared with any other app served from the same
-    // host — silently overwriting each other's sessions.
-    { name: 'dsnl-analytics:auth' }
-  )
+    {
+      // Namespaced. localStorage is scoped per origin, not per path, so a bare
+      // 'auth-storage' would be shared with any other app served from the same
+      // host — silently overwriting each other's sessions.
+      name: 'dsnl-analytics:auth',
+      // Only the name is kept, and only so the header does not flash empty
+      // while `check()` is in flight. `status` is deliberately NOT persisted:
+      // a stored "authenticated" is exactly the stale claim this design
+      // replaces, and would recreate the bug it exists to fix.
+      partialize: (state) => ({ username: state.username }),
+    },
+  ),
 );
+
+// Any 401, from any endpoint, means the session ended mid-visit. Registered
+// here rather than in a component so it survives navigation and cannot be
+// mounted twice.
+onUnauthorized(() => {
+  useAuthStore.setState({ status: 'anonymous', username: null });
+});
 
 /**
  * The analytics date range, hoisted out of the page because the control that

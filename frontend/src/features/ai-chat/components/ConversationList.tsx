@@ -261,8 +261,11 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
     : null;
 
   const { data, isLoading } = useQuery({
+    // Keyed by username only so switching accounts cannot show the previous
+    // one's cached list. The server scopes the request regardless — this is
+    // about the client's cache, not about who the rows belong to.
     queryKey: [...CONVERSATIONS_KEY, username],
-    queryFn: () => aiApi.listConversations(username),
+    queryFn: () => aiApi.listConversations(),
     // A new thread appears as soon as its first answer lands, so this is
     // refetched on mount rather than trusted indefinitely.
     staleTime: 10_000,
