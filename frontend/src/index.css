@@ -82,74 +82,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ─────────────────────────────────────────────────────────────────────────
-   DARK MODE — lit navy.
-
-   Light mode is untouched. Everything below re-points the *tokens* the
-   utilities already compile against (`bg-zinc-800` emits
-   `background-color: var(--color-zinc-800)`), so the whole dark theme moves
-   from one place and not a single component class had to change. That is also
-   why elements with no explicit `dark:` variant come along: they are reading
-   the same variables.
-
-   `:root.dark` rather than `.dark` deliberately — specificity (0,2,0) beats
-   the (0,1,0) of the `:root` block Tailwind emits for `@theme`, so this wins
-   regardless of which order the two end up in.
-
-   The hue is the organisation's — indigo 283°, the same family as the light
-   ramp and the brand's own #21257a. What this changes is *depth*, not colour:
-   the surfaces are lit rather than near-black, stacked so cards sit above the
-   panel that holds them, and the gloss further down gives them an edge to
-   catch. The accent is not restated at all; the brand cyan from @theme carries
-   straight through, so both modes share one accent.
-   ───────────────────────────────────────────────────────────────────────── */
-:root.dark {
-  /* The neutrals stay in the brand's indigo family — hue 283°, the same one
-     the light ramp and the old dark panels sit at. What changes from light
-     mode is only where the steps are *used*, not their temperature. */
-  --color-zinc-50: #f6f8fc;
-  --color-zinc-100: #eef2f9;
-  --color-zinc-200: #dfe5f1;
-  --color-zinc-300: #bfc7db;
-  /* 400 and 500 carry muted text, and they sit on cards that are now four
-     times lighter than the near-black they were tuned against. Both are lifted
-     until they clear their tier again on the *brightest* point of a card —
-     under the sheen, not beside it. 400 reaches 4.65:1, 500 (hints and
-     placeholders) 3.75:1. Lifting these is only safe because the ramp is
-     dark-mode-only: in dark mode these steps are ink on a dark ground, never
-     the reverse. */
-  --color-zinc-400: #939eba;
-  --color-zinc-500: #8590ae;
-  --color-zinc-600: #525c79;
-  --color-zinc-700: #3e4661;
-  /* Borders. Also lifted — at the light-mode value a hairline was 1.08:1
-     against the lifted card and simply disappeared. */
-  --color-zinc-800: #2c334a;
-  --color-zinc-900: #191f31;
-  --color-zinc-950: #0f1322;
-
-  /* No accent override. The brand cyan ramp defined in @theme carries through
-     to dark mode unchanged, which is the point: one accent, both modes, the
-     organisation's blue. Deliberately not restated here — a second copy of the
-     brand would be a second thing to keep in step with it. */
-
-  /* Surfaces, and the one place this departs from a pure re-hue.
-
-     The order is inverted from light mode: cards are now the *lightest* thing
-     on screen, the panel behind them a step down, the outer field darkest.
-     That is what makes a card read as lit from in front rather than cut out of
-     the page, and it is the arrangement the reference uses — the gloss below
-     has nothing to catch unless the card is above its surroundings.
-
-     Cards land at L* 16.9, well above the L* 6.5 the old navy panel sat at,
-     and L* 22.3 under the sheen. That ceiling is not taste: past it the
-     magenta and orange chart hues drop under 3:1 against their own card. */
-  --color-surface-dark: #212940;
-  --color-canvas-dark: #1b2236;
-  --color-ground-dark: #141a2b;
-  --color-ground-deep-dark: #101524;
-}
-
 /* ── The ground ────────────────────────────────────────────────────────────
    The field the sidebar and the gutter share, taken from the two brand
    surfaces: a broad diagonal sheen and a fine halftone dot grid over a flat
@@ -211,42 +143,6 @@
 :is(.dark *).app-ground-hero,
 .dark .app-ground-hero {
   --ground-dot: rgba(0, 0, 0, 0.26);
-}
-
-/* ── Gloss ─────────────────────────────────────────────────────────────────
-   The sheen that makes a dark card read as a lit surface rather than a hole.
-
-   Two layers over the flat token colour: a 1px highlight along the top edge,
-   where a real bevel would catch the light, and a soft fall-off below it.
-   Applied to the utilities themselves — `[class~="…"]` matches the class as a
-   whole token, so it needs no escaping and cannot half-match — because the
-   surfaces are spent across twenty places in fifteen files and the alternative
-   is twenty chances to write it differently.
-
-   Sized in pixels, not percentages: the band is a fixed 180px from the top
-   whatever the card's height, so a tall chart panel gets the same edge as a
-   short KPI tile instead of a sheen stretched down its whole face.
-
-   `background-image` only — every one of these elements sets its own
-   `box-shadow`, and taking that over to fake the top edge would flatten the
-   elevation the layout already establishes. */
-.dark [class~="dark:bg-surface-dark"] {
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0) 1px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0));
-  background-repeat: no-repeat;
-  background-size: 100% 100%, 100% 180px;
-}
-
-/* The panel the cards sit on gets the same treatment at about half strength.
-   It is the larger surface and the one they have to stand off from, so it
-   reads as lit without competing with them. */
-.dark [class~="dark:bg-canvas-dark"] {
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 1px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0));
-  background-repeat: no-repeat;
-  background-size: 100% 100%, 100% 240px;
 }
 
 /* The sidebar is the same field, not a separate surface — so instead of a
@@ -365,9 +261,13 @@ body {
   animation: text-shimmer var(--shimmer-duration, 2s) linear infinite;
 }
 
+/* zinc-400 and zinc-100 from the ramp above — the same steps dark-mode text
+   already uses. The previous pair was mixed for a lighter panel and dropped to
+   4.10:1 against #0e1424; these clear 4.64 and 11.51 on the darkest surface
+   the shimmer can land on. */
 :root.dark .text-shimmer {
-  --shimmer-base: #8590ae;
-  --shimmer-highlight: #eef2f9;
+  --shimmer-base: #8f9ab6;
+  --shimmer-highlight: #edf1f8;
 }
 
 /* The text still has to be readable, so the base colour stays and only the
