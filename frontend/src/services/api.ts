@@ -87,6 +87,7 @@ export async function handle<T>(res: Response): Promise<T> {
 export interface Me {
   username: string;
   user_id: string | null;
+  ai_permission: boolean;
 }
 
 export const api = {

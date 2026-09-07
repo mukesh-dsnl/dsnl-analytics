@@ -20,10 +20,11 @@ export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous';
 interface AuthState {
   status: AuthStatus;
   username: string | null;
+  aiPermission: boolean;
   /** Ask the server who we are. Called once on boot, and after signing in. */
   check: () => Promise<void>;
   /** Record a successful sign-in. The cookie is already set by then. */
-  signedIn: (username: string) => void;
+  signedIn: (username: string, aiPermission: boolean) => void;
   /** Sign out here and on the server. */
   logout: () => Promise<void>;
 }
@@ -33,21 +34,22 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       status: 'unknown',
       username: null,
+      aiPermission: false,
 
       check: async () => {
         try {
           const me = await api.me();
-          set({ status: 'authenticated', username: me.username });
+          set({ status: 'authenticated', username: me.username, aiPermission: me.ai_permission });
         } catch {
-          set({ status: 'anonymous', username: null });
+          set({ status: 'anonymous', username: null, aiPermission: false });
         }
       },
 
-      signedIn: (username) => set({ status: 'authenticated', username }),
+      signedIn: (username, aiPermission) => set({ status: 'authenticated', username, aiPermission }),
 
       logout: async () => {
         await api.logout();
-        set({ status: 'anonymous', username: null });
+        set({ status: 'anonymous', username: null, aiPermission: false });
       },
     }),
     {
@@ -68,7 +70,7 @@ export const useAuthStore = create<AuthState>()(
 // here rather than in a component so it survives navigation and cannot be
 // mounted twice.
 onUnauthorized(() => {
-  useAuthStore.setState({ status: 'anonymous', username: null });
+  useAuthStore.setState({ status: 'anonymous', username: null, aiPermission: false });
 });
 
 /**

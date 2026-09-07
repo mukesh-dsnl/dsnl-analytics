@@ -11,7 +11,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.api import ai, auth, campaign, cdr
-from app.api.deps import require_user
+from app.api.deps import require_user, require_ai_permission
 from app.core.config import get_settings
 from app.core.database import Base, engine
 
@@ -156,7 +156,7 @@ app.include_router(
 app.include_router(
     ai.router,
     prefix="/api",
-    dependencies=[Depends(require_user)],
+    dependencies=[Depends(require_ai_permission)],
     tags=["AI Chat"],
 )
 

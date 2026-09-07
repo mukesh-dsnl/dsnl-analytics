@@ -182,7 +182,7 @@ export function AiChatPage() {
     // foot of a conversation instead of disappearing from one place and
     // reappearing in another — and whatever is half-typed in it survives the
     // move.
-    <div className="h-full flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col">
       {title}
 
       {/* The transcript scrolls; the composer below it does not. */}

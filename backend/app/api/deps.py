@@ -118,3 +118,12 @@ def require_user(user: User = Depends(current_user)) -> None:
     modules without inheriting the guard.
     """
     return None
+
+def require_ai_permission(user: User = Depends(current_user)) -> None:
+    """Ensure the signed-in user has permission to use AI features."""
+    if not user.ai_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access AI features."
+        )
+    return None

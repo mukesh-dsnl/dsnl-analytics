@@ -5,8 +5,8 @@ security; credentials are inserted directly into the DB (prompt4.md §3).
 
 import uuid
 
-from sqlalchemy import BigInteger, Column, DateTime, Integer, String
-from sqlalchemy.sql import func
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String
+from sqlalchemy.sql import func, text
 
 from app.core.database import Base
 
@@ -41,6 +41,7 @@ class User(Base):
 
     username = Column(String(100), nullable=False, unique=True)
     password_hash = Column(String(128), nullable=False)
+    ai_permission = Column(Boolean, nullable=False, default=False, server_default=text('0'))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     def __repr__(self) -> str:

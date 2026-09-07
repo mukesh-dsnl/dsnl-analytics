@@ -55,6 +55,12 @@ def migrate_users(connection, dialect: str) -> None:
     else:
         print("  users: user_id already present")
 
+    if "ai_permission" not in columns:
+        print("  users: adding ai_permission")
+        connection.execute(text("ALTER TABLE users ADD COLUMN ai_permission BOOLEAN NOT NULL DEFAULT 0"))
+    else:
+        print("  users: ai_permission already present")
+
     # Backfill anything missing one, in Python so the UUIDs match the format
     # the application generates.
     rows = connection.execute(

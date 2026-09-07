@@ -16,6 +16,7 @@ class LoginResponse(BaseModel):
     # The stable public identifier. Everything the signed-in user owns is
     # scoped by this, never by the username, which is only a label.
     user_id: Optional[str] = None
+    ai_permission: bool = False
 
 
 class MeResponse(BaseModel):
@@ -25,3 +26,4 @@ class MeResponse(BaseModel):
 
     username: str
     user_id: Optional[str] = None
+    ai_permission: bool = False

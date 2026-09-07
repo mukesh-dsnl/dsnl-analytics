@@ -109,7 +109,7 @@ export function Login() {
       // authenticated and could bounce us off the page mid-animation.
       setIsLeaving(true);
       expandTimer.current = window.setTimeout(() => {
-        signedIn(result.username);
+        signedIn(result.username, result.ai_permission);
         navigate(redirectTo, { replace: true });
       }, EXPAND_MS);
     } catch (err) {
