@@ -112,7 +112,7 @@ def login(
     _set_session_cookie(response, token, settings.SESSION_TTL_DAYS * 24 * 60 * 60)
     logger.info("Signed in username=%r for %s days", user.username, settings.SESSION_TTL_DAYS)
 
-    return LoginResponse(username=user.username, user_id=user.user_id)
+    return LoginResponse(username=user.username, user_id=user.user_id, ai_permission=user.ai_permission)
 
 
 @router.post("/auth/logout")
@@ -150,4 +150,4 @@ def me(user: User = Depends(current_user)) -> MeResponse:
     know whether it is signed in — which is a third state, distinct from "yes"
     and "no", and the one a naive implementation forgets.
     """
-    return MeResponse(username=user.username, user_id=user.user_id)
+    return MeResponse(username=user.username, user_id=user.user_id, ai_permission=user.ai_permission)

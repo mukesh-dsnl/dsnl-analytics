@@ -236,7 +236,7 @@ function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }
 
 export function Layout() {
   const { theme, toggleTheme } = useUIStore();
-  const { username, logout } = useAuthStore();
+  const { username, aiPermission, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -648,7 +648,8 @@ export function Layout() {
         <main
           ref={mainRef}
           className={clsx(
-            'flex-1 overflow-y-auto relative transition-opacity duration-300',
+            'flex-1 flex flex-col relative transition-opacity duration-300',
+            isAiChat ? 'overflow-hidden' : 'overflow-y-auto',
             isLoggingOut && 'opacity-0 pointer-events-none',
             reveal?.kind === 'in' && 'panel-reveal-in',
             reveal?.kind === 'out' && 'panel-reveal-out',
@@ -680,26 +681,28 @@ export function Layout() {
 
           Inside the panel wrapper's sibling, positioned against the viewport,
           and faded out during the logout collapse along with everything else. */}
-      <Link
-        ref={fabRef}
-        to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
-        onClick={handleFabClick}
-        title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
-        aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
-        className={clsx(
-          'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
-          'flex items-center justify-center',
-          'shadow-lg shadow-black/25 transition-all hover:scale-105',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
-          // One button, one appearance, in both directions — the corner always
-          // means "switch to the other side of the app", and giving the two
-          // directions different weight made it read as two different controls.
-          'bg-blue-600 hover:bg-blue-500 text-white',
-          isLoggingOut && 'opacity-0 pointer-events-none',
-        )}
-      >
-        {isAiChat ? <LayoutGrid className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
-      </Link>
+      {aiPermission && (
+        <Link
+          ref={fabRef}
+          to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
+          onClick={handleFabClick}
+          title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+          aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+          className={clsx(
+            'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
+            'flex items-center justify-center',
+            'shadow-lg shadow-black/25 transition-all hover:scale-105',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+            // One button, one appearance, in both directions — the corner always
+            // means "switch to the other side of the app", and giving the two
+            // directions different weight made it read as two different controls.
+            'bg-blue-600 hover:bg-blue-500 text-white',
+            isLoggingOut && 'opacity-0 pointer-events-none',
+          )}
+        >
+          {isAiChat ? <LayoutGrid className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+        </Link>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { RequireAuth } from './components/RequireAuth';
 import { Login } from './pages/Login';
+import { useAuthStore } from './store';
 
 // The analytics pages pull in the charting library, which is heavier than the
 // rest of the app put together. Loading it on demand keeps that weight off
@@ -40,6 +41,14 @@ function RouteFallback() {
       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
     </div>
   );
+}
+
+function RequireAiPermission({ children }: { children: React.ReactNode }) {
+  const { aiPermission } = useAuthStore();
+  if (!aiPermission) {
+    return <Navigate to={DEFAULT_VIEW} replace />;
+  }
+  return <>{children}</>;
 }
 
 const queryClient = new QueryClient({
@@ -125,17 +134,21 @@ function App() {
               <Route
                 path="assistant"
                 element={
-                  <Suspense fallback={<RouteFallback />}>
-                    <AiChatPage />
-                  </Suspense>
+                  <RequireAiPermission>
+                    <Suspense fallback={<RouteFallback />}>
+                      <AiChatPage />
+                    </Suspense>
+                  </RequireAiPermission>
                 }
               />
               <Route
                 path="assistant/:conversationId"
                 element={
-                  <Suspense fallback={<RouteFallback />}>
-                    <AiChatPage />
-                  </Suspense>
+                  <RequireAiPermission>
+                    <Suspense fallback={<RouteFallback />}>
+                      <AiChatPage />
+                    </Suspense>
+                  </RequireAiPermission>
                 }
               />
 
