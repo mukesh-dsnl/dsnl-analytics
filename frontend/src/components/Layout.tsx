@@ -648,8 +648,8 @@ export function Layout() {
         <main
           ref={mainRef}
           className={clsx(
-            'flex-1 flex flex-col relative transition-opacity duration-300',
-            isAiChat ? 'overflow-hidden' : 'overflow-y-auto',
+            'flex-1 relative transition-opacity duration-300',
+            isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
             isLoggingOut && 'opacity-0 pointer-events-none',
             reveal?.kind === 'in' && 'panel-reveal-in',
             reveal?.kind === 'out' && 'panel-reveal-out',
