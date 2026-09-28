@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     """Central configuration for the DSNL Analytics platform."""
 
     # Database
-    DATABASE_URL: str = "mysql+pymysql://root:REMOVED_PASSWORD@localhost:3306/reports"
+    DATABASE_URL: str = "mysql+pymysql://root@localhost:3306/reports"
 
     # Storage paths (relative to project root)
     STORAGE_PATH: str = "storage"
@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     # codr_YYYYMMDD.parquet. Queried in place with DuckDB — nothing is uploaded
     # and nothing is copied locally. Independent of DATABASE_URL; nothing here
     # touches MySQL.
-    CDR_LAKE_PATH: str = "Z:/cdr"
-    CODR_LAKE_PATH: str = "Z:/codr"
+    CDR_LAKE_PATH: str = "storage/cdr"
+    CODR_LAKE_PATH: str = "storage/codr"
     # The lake is a network share, so a query's cost is set by how many daily
     # files it opens. This caps the date range a single query may span.
     CDR_MAX_RANGE_DAYS: int = 31
