@@ -89,7 +89,7 @@ read from daily parquet exports with DuckDB.
     Joining on CRN alone fans out across unrelated rooms and inflates every count.
   - "Connected" means c.INCONF_DATETIME_EPOC <> 0. It is not a NULL check on a
     datetime column, and it is not INCONFERENCE.
-  - Durations come from the _EPOC columns: subtract, / 60, wrap in CEIL().
+  - Durations come from the _EPOC columns: subtract, / 60, wrap in CEIL(), then SUM().
     Never subtract the plain datetime columns.
   - Billable time = RELEASE_DATETIME_EPOC - INCONF_DATETIME_EPOC, for connected
     rows only. An unanswered blast bills nothing.

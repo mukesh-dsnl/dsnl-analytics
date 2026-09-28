@@ -362,7 +362,7 @@ _PANEL_SQL: dict[str, str] = {
     FROM slice
     UNION ALL
     SELECT 'summary', 'minutes_usage',
-           CAST(COALESCE(CEIL(SUM(CONNECTED_SECONDS) / 60.0), 0) AS DOUBLE)
+           CAST(COALESCE(SUM(CEIL(CONNECTED_SECONDS / 60.0)), 0) AS DOUBLE)
     FROM slice
     UNION ALL
     -- Per Business_Rule.md, CRN + CONF_NUM together uniquely identify one

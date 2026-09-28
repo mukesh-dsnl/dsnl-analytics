@@ -130,11 +130,11 @@ _METRIC_COLUMNS = """
        COUNT(DISTINCT (c.CRN, c.CONFEREE_SEQ_NO))                                 AS total_size,
        COUNT(DISTINCT (c.CRN, c.CONFEREE_SEQ_NO))
            FILTER (WHERE c.INCONFERENCE IS NOT NULL)                              AS connected_size,
-       CAST(COALESCE(CEIL(SUM(
+       CAST(COALESCE(SUM(CEIL((
            CASE WHEN c.INCONFERENCE IS NOT NULL
                 THEN c.RELEASE_DATETIME_EPOC - c.INCONF_DATETIME_EPOC
                 ELSE 0 END
-       ) / 60.0), 0) AS DOUBLE)                                                   AS total_minutes"""
+       ) / 60.0)), 0) AS DOUBLE)                                                   AS total_minutes"""
 
 
 def _with_derived(row: dict[str, Any]) -> dict[str, Any]:

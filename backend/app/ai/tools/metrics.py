@@ -91,8 +91,8 @@ MEASURES: dict[str, str] = {
     # Billable time: joining to release, connected rows only, rounded up — the
     # same formula as the dashboard's minutes_usage KPI.
     "minutes": (
-        "CAST(COALESCE(CEIL(SUM(CASE WHEN c.INCONF_DATETIME_EPOC <> 0 "
-        "THEN c.RELEASE_DATETIME_EPOC - c.INCONF_DATETIME_EPOC ELSE 0 END) / 60.0), 0) AS BIGINT)"
+        "CAST(COALESCE(SUM(CEIL((CASE WHEN c.INCONF_DATETIME_EPOC <> 0 "
+        "THEN c.RELEASE_DATETIME_EPOC - c.INCONF_DATETIME_EPOC ELSE 0 END) / 60.0)), 0) AS BIGINT)"
     ),
     # Distinct subscribers, trailing 10 digits so one number dialled with and
     # without a prefix counts once. Blanks are not a number.
