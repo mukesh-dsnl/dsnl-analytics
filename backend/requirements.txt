@@ -10,4 +10,15 @@ python-dotenv>=1.0.0
 httpx>=0.27.0
 pytest>=8.0.0
 # CDR analytics lake: DuckDB queries the parquet exports in place.
-duckdb>=1.0.0
+# 1.1+ for `SET disabled_filesystems`, which is the hard backstop behind the
+# AI module's ad-hoc SQL (app/ai/tools/ad_hoc_sql.py). Verified on 1.5.5.
+duckdb>=1.1.0
+
+# ── AI chat providers ─────────────────────────────────────────────────
+# All three are listed so the provider is a config change (AI_PROVIDER) rather
+# than a new install. Only the configured one is ever imported — the factory
+# imports lazily, so a missing package here cannot break the app.
+# Versions are the ones pip resolved at install time.
+google-genai>=2.20.0
+openai>=3.6.0
+anthropic>=1.2.0

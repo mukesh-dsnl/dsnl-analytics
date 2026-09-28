@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   PhoneCall,
   PhoneForwarded,
+  Sparkles,
   Sun,
   Users,
 } from 'lucide-react';
@@ -19,10 +20,12 @@ import type { LucideIcon } from 'lucide-react';
 import EqualizerIcon from '@mui/icons-material/Equalizer';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
 import { ContentPanelContext } from './ContentPanelSlot';
+import { ConversationList } from '../features/ai-chat/components/ConversationList';
 
 interface NavNode {
   label: string;
@@ -41,12 +44,12 @@ interface NavNode {
  * service name lands on that view rather than on nothing.
  */
 const serviceChildren = (service: 'voicedrop' | 'conference' | 'multicall'): NavNode[] => [
-  { label: 'Attempt Metrics', path: `/analytics/${service}`, icon: Activity },
-  { label: 'Campaign Metrics', path: `/campaign-metrics/${service}`, icon: Megaphone },
+  { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
+  { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
 ];
 
 const NAV: NavNode[] = [
-  { label: 'All', path: '/analytics/all', icon: LayoutGrid },
+  { label: 'All', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
   {
     label: 'Voicedrop',
     path: '/analytics/voicedrop',
@@ -66,6 +69,9 @@ const NAV: NavNode[] = [
     children: serviceChildren('multicall'),
   },
 ];
+// The assistant is deliberately not a nav entry: the floating button in the
+// corner is its way in, and two controls for one destination in the same
+// column is one too many.
 
 /**
  * How long the content panel takes to collapse back to the sign-in card, and
@@ -86,6 +92,37 @@ const COLLAPSE_PADDING = {
   open: 'lg:pl-[calc(40vw-256px)]',
   collapsed: 'lg:pl-[calc(40vw-80px)]',
 };
+
+/**
+ * The corner button's reveal. Each figure has to match its keyframe class in
+ * index.css: the inward one only decides when the class is taken off again,
+ * but the outward one gates the navigation itself, so if it runs short the
+ * route changes while the panel is still closing.
+ */
+const REVEAL_IN_MS = 420;
+const REVEAL_OUT_MS = 300;
+const REVEAL_SETTLE_MS = 240;
+
+/**
+ * A circle centred on the button, big enough to cover the panel.
+ *
+ * Measured rather than assumed: the button is positioned against the viewport
+ * and the panel is inset from it by a padding that itself changes with the
+ * sidebar, so the offset between the two is not a constant to hardcode. The
+ * radius reaches the furthest corner from that centre — anything less and the
+ * far edge of the page is still clipped when the animation ends.
+ */
+function revealGeometry(button: DOMRect, panel: DOMRect) {
+  const x = button.left + button.width / 2 - panel.left;
+  const y = button.top + button.height / 2 - panel.top;
+  return {
+    x,
+    y,
+    r: Math.hypot(Math.max(x, panel.width - x), Math.max(y, panel.height - y)),
+  };
+}
+
+type Reveal = { kind: 'in' | 'out' | 'settle'; x: number; y: number; r: number };
 
 /** Every path a node's own link should read as "current" for, itself included. */
 function collectPaths(node: NavNode, into: string[] = []): string[] {
@@ -199,7 +236,7 @@ function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }
 
 export function Layout() {
   const { theme, toggleTheme } = useUIStore();
-  const { username, logout } = useAuthStore();
+  const { username, aiPermission, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -214,20 +251,33 @@ export function Layout() {
   /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
+  /** The corner button's opening/closing circle — null when nothing is moving. */
+  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const fabRef = useRef<HTMLAnchorElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const revealTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
+  useEffect(() => () => window.clearTimeout(revealTimer.current), []);
 
-  // Ensure theme is applied to document
+  // The only thing that applies the theme once the app is mounted — the store
+  // sets the value, this puts it on the document. Runs on mount too, so the
+  // value restored from localStorage lands here without a toggle.
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
   const isActivePath = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`);
+
+  /** The chat route is the one page with no date control of its own. */
+  const isAiChat = location.pathname.startsWith('/assistant');
+
+  // Where "Analytics" goes back to. Remembering the page the chat was opened
+  // from means the round trip returns you to the dashboard you were reading,
+  // not to a default one you then have to navigate away from.
+  const lastAnalyticsPath = useRef('/analytics/all/attempt-metrics');
+  if (!isAiChat) lastAnalyticsPath.current = location.pathname;
 
   // Auto-expand whichever sections the current route is inside — landing
   // straight on /analytics/voicedrop/blast-details (a refresh, a bookmark)
@@ -267,13 +317,63 @@ export function Layout() {
    *
    * The store write waits for the same reason it does on the way in: clearing
    * auth now would send RequireAuth straight to /login and cut the animation.
+   * `logout` now also destroys the session server-side, so the delay is the
+   * animation's, not the request's — it is awaited inside the timeout rather
+   * than before it.
    */
   const handleLogout = () => {
     setIsLoggingOut(true);
     collapseTimer.current = window.setTimeout(() => {
-      logout();
-      navigate('/login', { replace: true });
+      void logout().finally(() => navigate('/login', { replace: true }));
     }, COLLAPSE_MS);
+  };
+
+  /**
+   * The corner button, in both directions.
+   *
+   * Going in, the Link navigates as it always did and the new page is revealed
+   * out of the button — the class is set in the same tick, so it is already on
+   * the element for the first frame the chat is mounted.
+   *
+   * Coming back, the movement has to finish *before* the route changes, or the
+   * chat is unmounted mid-collapse and there is nothing left to animate. So the
+   * Link's own navigation is cancelled and made here instead, once the panel is
+   * closed.
+   */
+  const handleFabClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    // Open-in-new-tab and friends belong to the browser. Intercepting them
+    // would animate a page the user is not going to look at.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    const button = fabRef.current?.getBoundingClientRect();
+    const panel = mainRef.current?.getBoundingClientRect();
+    // Nothing to measure from, or the movement is unwanted — either way the
+    // Link is left to navigate plainly. Checked here as well as in the CSS
+    // because the outward trip *delays* the route change, and that delay would
+    // otherwise become a dead pause for someone who asked for no animation.
+    if (!button || !panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    window.clearTimeout(revealTimer.current);
+    const geometry = revealGeometry(button, panel);
+
+    if (!isAiChat) {
+      setReveal({ kind: 'in', ...geometry });
+      revealTimer.current = window.setTimeout(() => setReveal(null), REVEAL_IN_MS);
+      return;
+    }
+
+    event.preventDefault();
+    const destination = lastAnalyticsPath.current;
+    setReveal({ kind: 'out', ...geometry });
+    revealTimer.current = window.setTimeout(() => {
+      navigate(destination);
+      // Straight from closed to a full page is a hard cut. The fade is what
+      // makes the analytics side arrive rather than appear.
+      setReveal({ kind: 'settle', ...geometry });
+      revealTimer.current = window.setTimeout(() => setReveal(null), REVEAL_SETTLE_MS);
+    }, REVEAL_OUT_MS);
   };
 
   return (
@@ -370,27 +470,50 @@ export function Layout() {
             <button> rather than a click handler on a div, so it is reachable by
             Tab and operable with Enter/Space; the hint only surfaces on
             hover/focus, which is what keeps the column clean. */}
-        <div className="flex-1 flex flex-col overflow-y-auto">
-          <nav className="py-6 px-3 space-y-1">
-            {NAV.map((node) => (
-              <NavRow
-                key={node.path}
-                node={node}
-                depth={0}
-                isCollapsed={isSidebarCollapsed}
-                openSections={openSections}
-                toggle={toggleSection}
-                isActivePath={isActivePath}
-              />
-            ))}
-          </nav>
+        <div
+          className={clsx(
+            'flex-1 flex flex-col min-h-0',
+            // In chat mode the list scrolls itself, so that "New chat" and the
+            // section heading stay put while the threads move under them.
+            // Scrolling here instead would carry the whole column away.
+            !isAiChat && 'overflow-y-auto',
+          )}
+        >
+          {/* Same column, same styling vocabulary — while the chat is open it
+              lists conversations instead of analytics destinations, which is
+              what that column is for on that screen. */}
+          {isAiChat ? (
+            <ConversationList isCollapsed={isSidebarCollapsed} />
+          ) : (
+            <nav className="py-6 px-3 space-y-1">
+              {NAV.map((node) => (
+                <NavRow
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  isCollapsed={isSidebarCollapsed}
+                  openSections={openSections}
+                  toggle={toggleSection}
+                  isActivePath={isActivePath}
+                />
+              ))}
+            </nav>
+          )}
 
+          {/* Only in analytics mode: there the nav leaves empty space below it,
+              which this turns into a collapse target. The conversation list
+              fills its column and leaves none, so this would be squeezed to
+              nothing — the explicit control beside the title still covers it. */}
           <button
             type="button"
+            hidden={isAiChat}
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none"
+            className={clsx(
+              'flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none',
+              isAiChat && 'hidden',
+            )}
           >
             <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-white/15 transition-all duration-200">
               {isSidebarCollapsed ? (
@@ -407,6 +530,9 @@ export function Layout() {
 
         {/* Footer: identity + sign out */}
         <div className="p-3 space-y-1 shrink-0">
+          {/* The way back out of the chat is the floating button in the corner
+              — one control, in the same place in both modes. A second one here
+              was the same trip by another route. */}
           {!isSidebarCollapsed && username && (
             <div className="px-3 pb-2 text-xs text-white/75 truncate">Signed in as <span className="font-medium text-white">{username}</span></div>
           )}
@@ -497,7 +623,14 @@ export function Layout() {
             ref={setHeaderSlot}
             className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
-          {location.pathname.startsWith('/campaign-metrics') ? <HeaderCampaignDate /> : <HeaderDateRange />}
+          {/* The AI chat carries no date control: the range is part of the
+              question, and the assistant names the one it used in its answer.
+              A picker here would imply it narrowed the query, which it did not. */}
+          {isAiChat ? null : location.pathname.endsWith('/campaign-metrics') ? (
+            <HeaderCampaignDate />
+          ) : (
+            <HeaderDateRange />
+          )}
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -508,11 +641,30 @@ export function Layout() {
         </header>
 
         {/* Main Content Area */}
+        {/* The outlet is what the corner button opens and closes, so the reveal
+            is applied here rather than to the panel around it: the header is
+            chrome that both modes share, and clipping it would make the whole
+            card look like it was being redrawn. */}
         <main
+          ref={mainRef}
           className={clsx(
-            'flex-1 overflow-y-auto relative transition-opacity duration-300',
+            'flex-1 relative transition-opacity duration-300',
+            isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
             isLoggingOut && 'opacity-0 pointer-events-none',
+            reveal?.kind === 'in' && 'panel-reveal-in',
+            reveal?.kind === 'out' && 'panel-reveal-out',
+            reveal?.kind === 'settle' && 'panel-settle',
           )}
+          // The keyframes describe the shape; these say where it is.
+          style={
+            reveal
+              ? ({
+                  '--reveal-x': `${reveal.x}px`,
+                  '--reveal-y': `${reveal.y}px`,
+                  '--reveal-r': `${reveal.r}px`,
+                } as CSSProperties)
+              : undefined
+          }
         >
           <HeaderSlotContext.Provider value={headerSlot}>
             <ContentPanelContext.Provider value={contentPanel}>
@@ -522,6 +674,35 @@ export function Layout() {
         </main>
       </div>
       </div>
+
+      {/* Floating action button — the way into the chat from anywhere in the
+          analytics pages. Hidden on the chat itself, where the sidebar's
+          "Analytics" control is the way back out.
+
+          Inside the panel wrapper's sibling, positioned against the viewport,
+          and faded out during the logout collapse along with everything else. */}
+      {aiPermission && (
+        <Link
+          ref={fabRef}
+          to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
+          onClick={handleFabClick}
+          title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+          aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
+          className={clsx(
+            'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
+            'flex items-center justify-center',
+            'shadow-lg shadow-black/25 transition-all hover:scale-105',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+            // One button, one appearance, in both directions — the corner always
+            // means "switch to the other side of the app", and giving the two
+            // directions different weight made it read as two different controls.
+            'bg-blue-600 hover:bg-blue-500 text-white',
+            isLoggingOut && 'opacity-0 pointer-events-none',
+          )}
+        >
+          {isAiChat ? <LayoutGrid className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
+        </Link>
+      )}
     </div>
   );
 }
