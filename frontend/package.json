@@ -1,7 +1,7 @@
 {
   "name": "dsnl-analytics-ui",
   "private": true,
-  "version": "1.0",
+  "version": "2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
