@@ -131,6 +131,9 @@ export const useCampaignDateStore = create<CampaignDateState>((set) => ({
 interface UIState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  /** The sidebar narrowed to an icon rail to give the page more width. */
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -139,6 +142,8 @@ export const useUIStore = create<UIState>()(
       theme: 'dark',
       toggleTheme: () =>
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
+      isSidebarCollapsed: false,
+      toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
     }),
     {
       // Namespaced for the same reason as the auth key above. Changing this
@@ -148,7 +153,7 @@ export const useUIStore = create<UIState>()(
       // Only the value is stored. Persisting the whole object would put the
       // action in localStorage too — dropped by JSON today, but a trap for the
       // first non-serializable field anyone adds here later.
-      partialize: (state) => ({ theme: state.theme }),
+      partialize: (state) => ({ theme: state.theme, isSidebarCollapsed: state.isSidebarCollapsed }),
     },
   ),
 );

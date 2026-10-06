@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "mysql+pymysql://root@localhost:3306/reports"
+    # Dedicated read-only connection to the production MultiCall source tables.
+    # Optional at app startup; required when the registration lookup is used.
+    MULTICALL_DATABASE_URL: Optional[str] = None
 
     # Storage paths (relative to project root)
     STORAGE_PATH: str = "storage"

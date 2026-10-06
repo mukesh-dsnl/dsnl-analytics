@@ -6,6 +6,8 @@
 
 DSNL Analytics is an analytics platform for large CDR and CODR call-record datasets. It serves read-only dashboards over daily Parquet exports and includes a natural-language AI assistant for analytical questions. FastAPI provides the API, session-based authentication, and permission checks; React provides the dashboard and chat interface.
 
+For the implementation architecture, data flows, and developer extension guide, see [DOCUMENT.md](DOCUMENT.md). For the AI assistant's tool loop, providers, safeguards, and chat lifecycle, see [agent_document.md](agent_document.md).
+
 ## Table of contents
 
 - [Features](#features)
@@ -24,6 +26,7 @@ DSNL Analytics is an analytics platform for large CDR and CODR call-record datas
 ## Features
 
 - **Read-only analytics:** CDR and CODR dashboards and campaign metrics query daily exports without importing them into MySQL.
+- **MultiCall registration lookup:** Search by exact phone, email, or chairperson PIN, then open a registration and its profiles in a focused detail view.
 - **Date-scoped queries:** The API selects the files that match the requested date range and limits query range and result size.
 - **Natural-language analysis:** The assistant can answer questions over the same lake using Anthropic, OpenAI, or Google Gemini. A provider key is optional if only the dashboards are needed.
 - **Session-based access:** Sign-in issues an HTTP-only session cookie. Dashboard endpoints require a signed-in user; AI endpoints also require the user's `ai_permission` flag. Conversations are scoped to their owner.
@@ -38,6 +41,7 @@ React / Vite UI
       v
 FastAPI backend --------> MySQL
       |                   users, sessions, conversations
+      +------------------> MultiCall source tables (same or separate MySQL database)
       |
       +----> DuckDB ----> CDR and CODR daily Parquet files
       |                   on a local path or mounted network share
@@ -62,6 +66,7 @@ The backend looks for `cdr_YYYYMMDD.parquet` and `codr_YYYYMMDD.parquet` in the 
 - Python 3.10 or newer and `pip`.
 - Node.js and npm compatible with the Vite version in [`frontend/package.json`](frontend/package.json).
 - A reachable MySQL server and credentials that can create the application's tables for initial setup.
+- Read access to `MultiCallRegistration` and `MultiCallProfile` for the MultiCall registration lookup page.
 - Read access to directories containing daily CDR and CODR Parquet exports. The filenames must follow `cdr_YYYYMMDD.parquet` and `codr_YYYYMMDD.parquet`.
 - An API key for Anthropic, OpenAI, or Google Gemini **only** if AI chat is required.
 
@@ -69,10 +74,8 @@ The backend looks for `cdr_YYYYMMDD.parquet` and `codr_YYYYMMDD.parquet` in the 
 
 ### 1. Clone the repository
 
-Replace `YOUR_ORG` with the repository owner:
-
 ```bash
-git clone https://github.com/{Name}/dsnl-analytics.git
+git clone https://github.com/mukesh-dsnl/dsnl-analytics.git
 cd dsnl-analytics
 ```
 
@@ -112,6 +115,8 @@ Create `backend/.env`. The following is a working template; replace the credenti
 
 ```dotenv
 DATABASE_URL=mysql+pymysql://dsnl_app:REPLACE_WITH_STRONG_PASSWORD@localhost:3306/dsnl_analytics
+# Required for Registration Lookup; use a SELECT-only account on the MultiCall source database.
+MULTICALL_DATABASE_URL=mysql+pymysql://multicall_reader:REPLACE_WITH_PASSWORD@localhost:3306/multicall
 CDR_LAKE_PATH=Z:/cdr
 CODR_LAKE_PATH=Z:/codr
 
@@ -169,6 +174,7 @@ All backend settings are read from environment variables or `backend/.env` when 
 | Variable                                                      | Purpose                                                                                                          |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                              | MySQL connection URL for users, sessions, and chat state.                                                        |
+| `MULTICALL_DATABASE_URL`                                    | MySQL connection URL with `SELECT` access to the MultiCall registration and profile tables; required for Registration Lookup. |
 | `CDR_LAKE_PATH`                                             | Directory containing`cdr_YYYYMMDD.parquet` files.                                                              |
 | `CODR_LAKE_PATH`                                            | Directory containing`codr_YYYYMMDD.parquet` files.                                                             |
 | `CDR_MAX_RANGE_DAYS`                                        | Maximum dashboard query span; default`31`.                                                                     |
@@ -180,6 +186,10 @@ All backend settings are read from environment variables or `backend/.env` when 
 | `SESSION_COOKIE_SECURE`                                     | Set to`true` when the site is served over HTTPS.                                                               |
 
 See [`backend/.env.example`](backend/.env.example) and [`backend/app/core/config.py`](backend/app/core/config.py) for the complete settings list. Keep `backend/.env` out of version control; it is ignored by the repository's `.gitignore`.
+
+The **Registration Lookup** view at `/analytics/multicall/registry` reads `MultiCallRegistration` and `MultiCallProfile` directly from MySQL. Set `MULTICALL_DATABASE_URL` in `backend/.env` to a dedicated URL for an account with `SELECT` access to those tables. Search runs only when the user presses **Search** and uses one exact-match query. Opening a registration runs one joined query for its details and up to 50 profiles; additional pages load only when requested. Selecting a profile uses the already fetched data and sends no SQL query. Search returns at most 25 registrations.
+
+The MultiCall queries are `SELECT`-only and do not create indexes, temporary tables, or source schema changes. MySQL may still use existing indexes or internal temporary work while executing a `SELECT`; those are optimizer choices, not objects created by this application.
 
 ## Verification
 

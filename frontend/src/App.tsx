@@ -19,6 +19,11 @@ const CampaignMetricsPage = lazy(() =>
     default: m.CampaignMetricsPage,
   })),
 );
+const MulticallRegistryPage = lazy(() =>
+  import('./features/multicall-registry/pages/MulticallRegistryPage').then((m) => ({
+    default: m.MulticallRegistryPage,
+  })),
+);
 // Lazy for the same reason as the pages above, though for the opposite one: it
 // is light, but most sessions never open it, so it stays out of the entry chunk.
 const AiChatPage = lazy(() =>
@@ -111,6 +116,15 @@ function App() {
                     }
                   />
                 ))}
+
+                <Route
+                  path="multicall/registry"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <MulticallRegistryPage />
+                    </Suspense>
+                  }
+                />
 
                 {/* A bare service is a section, not a page — but the collapsed
                     sidebar rail still navigates to it, so it has to land
