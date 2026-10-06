@@ -294,13 +294,13 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
   if (isCollapsed) {
     // The rail has no room for titles; only the "new chat" affordance survives.
     return (
-      <div className="px-3 py-6">
+      <div className="px-3 py-4">
         <button
           type="button"
           onClick={() => navigate('/assistant')}
           title="New chat"
           aria-label="New chat"
-          className="w-full flex items-center justify-center py-2.5 rounded-xl text-white/80 hover:text-white hover:bg-white/15 transition-colors"
+          className="w-full flex items-center justify-center py-2.5 rounded-xl text-white hover:bg-white/15 transition-colors"
         >
           <MessageSquarePlus className="w-5 h-5" />
         </button>

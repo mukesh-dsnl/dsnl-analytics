@@ -3,22 +3,16 @@ import { useUIStore, useAuthStore } from '../store';
 import {
   Activity,
   ContactRound,
-  ChevronLeft,
-  ChevronRight,
   LayoutGrid,
   LogOut,
   Megaphone,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  PhoneCall,
-  PhoneForwarded,
   Sparkles,
   Sun,
-  Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import EqualizerIcon from '@mui/icons-material/Equalizer';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
@@ -28,23 +22,23 @@ import { HeaderSlotContext } from './HeaderSlot';
 import { ContentPanelContext } from './ContentPanelSlot';
 import { ConversationList } from '../features/ai-chat/components/ConversationList';
 
-interface NavNode {
+interface NavItem {
   label: string;
   path: string;
-  icon?: LucideIcon;
-  children?: NavNode[];
+  icon: LucideIcon;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
 }
 
 /**
- * The two views every service offers, as its children.
- *
- * Attempt Metrics is the existing per-service analytics dashboard and Campaign
- * Metrics the single-day account/provider/location tables — the same two routes
- * as before, regrouped so a service is the thing you pick first and the view
- * second. A parent's own path is its Attempt Metrics child, so clicking the
- * service name lands on that view rather than on nothing.
+ * The two views every service offers: Attempt Metrics is the per-service
+ * analytics dashboard, Campaign Metrics the single-day account/provider/
+ * location tables. MultiCall adds its registration lookup.
  */
-const serviceChildren = (service: 'voicedrop' | 'conference' | 'multicall'): NavNode[] => [
+const serviceItems = (service: 'voicedrop' | 'conference' | 'multicall'): NavItem[] => [
   { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
   { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
   ...(service === 'multicall'
@@ -52,26 +46,15 @@ const serviceChildren = (service: 'voicedrop' | 'conference' | 'multicall'): Nav
     : []),
 ];
 
-const NAV: NavNode[] = [
-  { label: 'All', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
-  {
-    label: 'Voicedrop',
-    path: '/analytics/voicedrop',
-    icon: PhoneCall,
-    children: serviceChildren('voicedrop'),
-  },
-  {
-    label: 'Conference',
-    path: '/analytics/conference',
-    icon: Users,
-    children: serviceChildren('conference'),
-  },
-  {
-    label: 'Multicall',
-    path: '/analytics/multicall',
-    icon: PhoneForwarded,
-    children: serviceChildren('multicall'),
-  },
+/**
+ * Always-open, labelled groups: every destination is one click away and the
+ * service it belongs to is the heading above it, so nothing needs expanding.
+ */
+const NAV: NavSection[] = [
+  { title: 'Overview', items: [{ label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid }] },
+  { title: 'Voicedrop', items: serviceItems('voicedrop') },
+  { title: 'Conference', items: serviceItems('conference') },
+  { title: 'MultiCall', items: serviceItems('multicall') },
 ];
 // The assistant is deliberately not a nav entry: the floating button in the
 // corner is its way in, and two controls for one destination in the same
@@ -128,123 +111,47 @@ function revealGeometry(button: DOMRect, panel: DOMRect) {
 
 type Reveal = { kind: 'in' | 'out' | 'settle'; x: number; y: number; r: number };
 
-/** Every path a node's own link should read as "current" for, itself included. */
-function collectPaths(node: NavNode, into: string[] = []): string[] {
-  into.push(node.path);
-  for (const child of node.children ?? []) collectPaths(child, into);
-  return into;
-}
-
-interface NavRowProps {
-  node: NavNode;
-  depth: number;
-  isCollapsed: boolean;
-  openSections: Set<string>;
-  toggle: (label: string) => void;
-  isActivePath: (path: string) => boolean;
-}
-
-function NavRow({ node, depth, isCollapsed, openSections, toggle, isActivePath }: NavRowProps) {
-  const hasChildren = !!node.children?.length;
-  const isOpen = openSections.has(node.label);
-  const isChild = depth > 0;
-  // A parent reads as active whenever the current route is anywhere under it,
-  // not only on its own exact path — so Voicedrop stays lit while you are on
-  // either of its two views.
-  const isActive = collectPaths(node).some(isActivePath);
-
-  // A row with children is a section header, not a destination: it only opens
-  // and closes, and its views are reached through the children. The exception
-  // is the collapsed rail, where there is nowhere for children to appear — so
-  // there it falls back to navigating to the service's own page.
-  const isSectionToggle = hasChildren && !isCollapsed;
-
-  // Two levels, two ways of reading as active, so both can be lit at once
-  // without competing: a parent takes the filled pill, a child takes a bar down
-  // its left edge. If children wore the pill too, an open service would show
-  // two identical highlights and neither would say which level it meant.
-  const rowClass = clsx(
-    'relative w-full flex items-center gap-3 rounded-xl text-sm transition-colors min-w-0 text-left',
-    isCollapsed ? 'justify-center px-0' : 'px-3',
-    isChild ? 'py-2' : 'py-2.5',
-    isChild
-      ? isActive
-        ? 'text-white font-semibold bg-white/10'
-        : 'text-white/70 hover:text-white hover:bg-white/10 font-medium'
-      : isActive
-        ? 'bg-white/25 text-white border border-white/30 shadow-sm font-medium'
-        // Pure white, not a tint. White on the bare cyan ground is only 2.87:1;
-        // the sidebar's scrim (see .app-sidebar-scrim) lifts that to 4.54:1,
-        // which is the whole contrast budget — there is none spare to spend on
-        // softening the ink itself.
-        : 'text-white hover:bg-white/15 border border-transparent font-medium',
-  );
-
-  const rowInner = (
-    <>
-      {isChild && isActive && !isCollapsed && (
-        <span
-          aria-hidden="true"
-          className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-white"
-        />
-      )}
-      {node.icon ? (
-        <node.icon className={clsx('shrink-0', isChild ? 'w-4 h-4' : 'w-5 h-5')} />
-      ) : (
-        !isCollapsed && <span className="w-5 h-5 shrink-0" />
-      )}
-      {!isCollapsed && <span className="whitespace-nowrap truncate">{node.label}</span>}
-    </>
-  );
-
+function NavLink({ item, section, active, collapsed }: { item: NavItem; section: string; active: boolean; collapsed: boolean }) {
+  // Three services share "Attempt Metrics", so the rail names the service too.
+  const railLabel = `${section} · ${item.label}`;
   return (
-    <div>
-      {isSectionToggle ? (
-        <button
-          type="button"
-          onClick={() => toggle(node.label)}
-          aria-expanded={isOpen}
-          className={rowClass}
-        >
-          {rowInner}
-        </button>
-      ) : (
-        <Link to={node.path} title={isCollapsed ? node.label : undefined} className={rowClass}>
-          {rowInner}
-        </Link>
+    <Link
+      to={item.path}
+      aria-current={active ? 'page' : undefined}
+      // On the rail the label is gone, so it moves to the tooltip and the
+      // accessible name.
+      title={collapsed ? railLabel : undefined}
+      aria-label={collapsed ? railLabel : undefined}
+      className={clsx(
+        'relative flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors',
+        collapsed ? 'justify-center px-0' : 'px-3',
+        // Pure white ink either way: the sidebar scrim (see .app-sidebar-scrim)
+        // is what buys white its contrast on the cyan ground, with none to spare.
+        active ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-sm' : 'text-white hover:bg-white/15',
       )}
-
-      {/* The indent lives on this container, not as padding inside each child.
-          That way the child's whole box — its background wash and the active
-          bar down its left edge — starts inset from the parent's left edge, so
-          it reads as nested even before the indicator is lit. Padding inside
-          the row would have left the box full-width and only moved the text. */}
-      {hasChildren && !isCollapsed && isOpen && (
-        <div className="mt-1 space-y-1 ml-5">
-          {node.children!.map((child) => (
-            <NavRow
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              isCollapsed={isCollapsed}
-              openSections={openSections}
-              toggle={toggle}
-              isActivePath={isActivePath}
-            />
-          ))}
-        </div>
+    >
+      {/* The marker sits on the sidebar's own left edge, outside the pill. */}
+      {active && (
+        <span aria-hidden="true" className="absolute -left-3 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
       )}
-    </div>
+      <item.icon className="h-5 w-5 shrink-0" />
+      {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
+    </Link>
   );
+}
+
+/** "admin" -> "AD", "mukesh kumar" -> "MK". */
+function initials(name: string | null | undefined): string {
+  const parts = (name ?? '').trim().split(/[\s._-]+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2)).toUpperCase();
 }
 
 export function Layout() {
-  const { theme, toggleTheme } = useUIStore();
+  const { theme, toggleTheme, isSidebarCollapsed, toggleSidebar } = useUIStore();
   const { username, aiPermission, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
   // A callback ref rather than useRef: the outlet below needs this node as a
   // *value* to portal into, so it has to survive a render, and a plain ref
   // would still be null on the render the children mount in.
@@ -283,34 +190,6 @@ export function Layout() {
   // not to a default one you then have to navigate away from.
   const lastAnalyticsPath = useRef('/analytics/all/attempt-metrics');
   if (!isAiChat) lastAnalyticsPath.current = location.pathname;
-
-  // Auto-expand whichever sections the current route is inside — landing
-  // straight on /analytics/voicedrop/blast-details (a refresh, a bookmark)
-  // should open Analytics and Voicedrop without the user hunting for them.
-  // A union, not a replace, so a manual collapse elsewhere on the tree isn't
-  // fought on every navigation.
-  useEffect(() => {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      const visit = (node: NavNode) => {
-        if (node.children?.some((child) => collectPaths(child).some(isActivePath))) {
-          next.add(node.label);
-        }
-        node.children?.forEach(visit);
-      };
-      NAV.forEach(visit);
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
-  const toggleSection = (label: string) =>
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
 
   /**
    * Sign-in run backwards.
@@ -393,169 +272,108 @@ export function Layout() {
     // edge of the gutter, putting a seam exactly where the two are continuous.
     <div className="app-ground flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
 
-      {/* Left Sidebar — flush to the edge, full height, solid brand blue */}
-      <aside className={clsx(
-        // width-only transition: the content column beside this is a separate
-        // flex-1 sibling with no width transition of its own, so it never
-        // animates — it just occupies whatever space this leaves it, frame by
-        // frame, as this alone resizes.
-        // No fill of its own — it is the ground showing through, plus a scrim
-        // that fades out by its right edge to buy the nav text contrast
-        // without drawing a line between the sidebar and the gutter.
-        "app-sidebar-scrim flex flex-col shrink-0 z-20",
-        isSidebarCollapsed ? "w-20" : "w-64",
-        // Scrim and all on the way out, exactly as the sign-in page fades its
-        // own left region — what is left behind is the bare ground, which is
-        // the same field on both routes.
-        isLoggingOut && "opacity-0 pointer-events-none"
-      )}
-      // Two properties, two durations: the collapse toggle stays at 300ms while
-      // the logout fade runs at the 500ms the sign-in page uses for the same
-      // region. Written out rather than stacked as duration utilities, which
-      // would have left the winner to be decided by stylesheet order.
-      style={{ transitionProperty: 'width, opacity', transitionDuration: '300ms, 500ms' }}>
-        {/* Logo. No divider under it — the panel is one unbroken field of
-            brand blue, and spacing alone separates the regions. */}
-        <div className={clsx(
-          "h-16 flex items-center gap-2 shrink-0",
-          isSidebarCollapsed ? "justify-center px-3" : "px-4"
-        )}>
-          {/* Still always mounted, and still only its width and opacity
-              animate — collapsing the whole brand block rather than unmounting
-              it is what keeps the tile and the text shrinking together instead
-              of the text popping out a frame ahead of the panel. */}
-          <Link
-            to="/"
-            className={clsx(
-              "flex items-center gap-3 group overflow-hidden min-w-0 transition-[max-width,opacity] duration-300",
-              isSidebarCollapsed
-                ? "max-w-0 opacity-0 pointer-events-none"
-                : "max-w-[200px] opacity-100 flex-1",
-            )}
-          >
-            <div className="w-8 h-8 rounded-md bg-white/15 flex items-center justify-center border border-white/25 group-hover:bg-white/25 transition-colors shrink-0">
-              <EqualizerIcon className="text-white" sx={{ fontSize: 18 }} />
+      {/* Left Sidebar — flush to the edge, full height; w-64, or a w-20 icon
+          rail when collapsed. No fill
+          of its own: it is the ground showing through, plus a scrim that fades
+          out by its right edge to buy the nav text contrast without drawing a
+          line between the sidebar and the gutter. On logout it fades out the
+          way the sign-in page fades its own left region. */}
+      <aside
+        className={clsx(
+          'app-sidebar-scrim flex shrink-0 flex-col overflow-hidden z-20',
+          isSidebarCollapsed ? 'w-20' : 'w-64',
+          isLoggingOut && 'opacity-0 pointer-events-none',
+        )}
+        // Width for the collapse, opacity for the logout fade — each at its own
+        // speed, written out so neither is left to stylesheet order.
+        style={{ transitionProperty: 'width, opacity', transitionDuration: '300ms, 500ms' }}
+      >
+        {/* Logo, with the collapse control at the row's right end. Collapsed,
+            only the tile is left; the way back out is the expand button at the
+            top left of the header. */}
+        <div className={clsx('flex h-[72px] shrink-0 items-center', isSidebarCollapsed ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
+          <Link to="/" title={isSidebarCollapsed ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white transition-opacity group-hover:opacity-90">
+              <img src="/DSNL.png" alt="DSNL" className="h-full w-full object-cover" />
             </div>
-            {/* Always mounted — only its width/opacity animate. Conditionally
-                unmounting this on collapse made it vanish the instant state
-                flipped, a frame before the sidebar itself had even started
-                shrinking; this keeps the text and the box collapsing together
-                instead of the text popping out ahead of it. */}
-            <span
-              className={clsx(
-                "text-lg font-semibold tracking-tight text-white whitespace-nowrap overflow-hidden transition-[max-width,opacity] duration-300",
-                isSidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[160px] opacity-100",
-              )}
-            >
-              DSNL Analytics
-            </span>
-          </Link>
-
-          {/* The collapse control, beside the title. When collapsed the brand
-              block above has shrunk to zero width, so this is the only thing
-              left in the row and centres itself — which also guarantees the
-              control that expands the panel is always the visible one. */}
-          <button
-            type="button"
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-2 rounded-lg shrink-0 text-white/80 hover:text-white hover:bg-white/15 transition-colors"
-          >
-            {isSidebarCollapsed ? (
-              <PanelLeftOpen className="w-5 h-5" />
-            ) : (
-              <PanelLeftClose className="w-5 h-5" />
+            {!isSidebarCollapsed && (
+              <div className="flex min-w-0 flex-col whitespace-nowrap leading-tight">
+                <span className="text-base font-semibold tracking-tight text-white">DSNL Analytics</span>
+                <span className="text-[11px] font-medium text-white/70">by DSNL</span>
+              </div>
             )}
-          </button>
+          </Link>
+          {!isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+              className="ml-auto shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+            >
+              <PanelLeftClose className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
-        {/* Nav, then the empty space below it — which is itself a collapse
-            control, alongside the explicit icon beside the title. A real
-            <button> rather than a click handler on a div, so it is reachable by
-            Tab and operable with Enter/Space; the hint only surfaces on
-            hover/focus, which is what keeps the column clean. */}
-        <div
-          className={clsx(
-            'flex-1 flex flex-col min-h-0',
-            // In chat mode the list scrolls itself, so that "New chat" and the
-            // section heading stay put while the threads move under them.
-            // Scrolling here instead would carry the whole column away.
-            !isAiChat && 'overflow-y-auto',
-          )}
-        >
-          {/* Same column, same styling vocabulary — while the chat is open it
-              lists conversations instead of analytics destinations, which is
-              what that column is for on that screen. */}
+        {/* overflow-x-hidden: the labels come back before the width transition
+            finishes, which would otherwise flash a horizontal scrollbar. */}
+        <div className={clsx('flex min-h-0 flex-1 flex-col', !isAiChat && 'overflow-y-auto overflow-x-hidden [scrollbar-width:thin]')}>
+          {/* While the chat is open the same column lists conversations
+              instead of analytics destinations. The chat list scrolls itself so
+              "New chat" stays put while threads move under it. */}
           {isAiChat ? (
             <ConversationList isCollapsed={isSidebarCollapsed} />
           ) : (
-            <nav className="py-6 px-3 space-y-1">
-              {NAV.map((node) => (
-                <NavRow
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  isCollapsed={isSidebarCollapsed}
-                  openSections={openSections}
-                  toggle={toggleSection}
-                  isActivePath={isActivePath}
-                />
+            <nav className="space-y-5 px-3 py-4" aria-label="Analytics">
+              {NAV.map((section) => (
+                <div key={section.title} className="space-y-1">
+                  {/* On the rail a short rule stands in for the section name. */}
+                  {isSidebarCollapsed ? (
+                    <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
+                  ) : (
+                    <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+                      {section.title}
+                    </div>
+                  )}
+                  {section.items.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      item={item}
+                      section={section.title}
+                      active={isActivePath(item.path)}
+                      collapsed={isSidebarCollapsed}
+                    />
+                  ))}
+                </div>
               ))}
             </nav>
           )}
-
-          {/* Only in analytics mode: there the nav leaves empty space below it,
-              which this turns into a collapse target. The conversation list
-              fills its column and leaves none, so this would be squeezed to
-              nothing — the explicit control beside the title still covers it. */}
-          <button
-            type="button"
-            hidden={isAiChat}
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className={clsx(
-              'flex-1 min-h-[72px] w-full group flex items-start justify-center pt-2 cursor-pointer focus:outline-none',
-              isAiChat && 'hidden',
-            )}
-          >
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-white/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-hover:bg-white/15 transition-all duration-200">
-              {isSidebarCollapsed ? (
-                <ChevronRight className="w-3.5 h-3.5" />
-              ) : (
-                <>
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  Collapse
-                </>
-              )}
-            </span>
-          </button>
         </div>
 
-        {/* Footer: identity + sign out */}
-        <div className="p-3 space-y-1 shrink-0">
-          {/* The way back out of the chat is the floating button in the corner
-              — one control, in the same place in both modes. A second one here
-              was the same trip by another route. */}
-          {!isSidebarCollapsed && username && (
-            <div className="px-3 pb-2 text-xs text-white/75 truncate">Signed in as <span className="font-medium text-white">{username}</span></div>
+        {/* Footer: identity + sign out. Stacked on the rail. */}
+        <div className={clsx('flex shrink-0 items-center gap-3 border-t border-white/10 p-3', isSidebarCollapsed ? 'flex-col' : 'px-4')}>
+          <div
+            title={isSidebarCollapsed && username ? `Signed in as ${username}` : undefined}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white"
+          >
+            {initials(username)}
+          </div>
+          {!isSidebarCollapsed && (
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="truncate text-sm font-semibold text-white">{username}</div>
+              <div className="text-[11px] text-white/65">Signed in</div>
+            </div>
           )}
           <button
+            type="button"
             onClick={handleLogout}
             disabled={isLoggingOut}
-            title={isSidebarCollapsed ? "Logout" : undefined}
-            className={clsx(
-              // Red text on the brand blue. red-300 is the step that still
-              // reads clearly red rather than pink; it is only 1.45:1 by
-              // luminance, so the weight is bumped to semibold and the hover
-              // adds a red wash to give it more to sit on.
-              "w-full flex items-center gap-3 py-2.5 rounded-xl text-sm font-semibold text-red-300 hover:text-red-200 hover:bg-red-500/20 transition-colors",
-              isSidebarCollapsed ? "justify-center px-0" : "px-3"
-            )}
+            title="Logout"
+            aria-label="Logout"
+            className="shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
           >
-            <LogOut className="w-5 h-5 shrink-0" />
-            {!isSidebarCollapsed && <span className="whitespace-nowrap">Logout</span>}
+            <LogOut className="h-5 w-5" />
           </button>
         </div>
       </aside>
@@ -624,6 +442,19 @@ export function Layout() {
               focus ring — which paints outside the input's border box — was
               being sliced off top and bottom. The padding gives it somewhere to
               land inside the scroll box. */}
+          {/* Expand lives here, top left of the header: on the rail there is no
+              room for it beside the logo. Collapse is in the sidebar itself. */}
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              className="-ml-2 -mr-2 p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+            >
+              <PanelLeftOpen className="w-5 h-5" />
+            </button>
+          )}
           <div
             ref={setHeaderSlot}
             className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
