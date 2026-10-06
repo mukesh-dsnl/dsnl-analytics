@@ -58,12 +58,22 @@ _HAS_JSON_SCHEMA = "parameters_json_schema" in types.FunctionDeclaration.model_f
 class GeminiClient(LLMClient):
     provider = "gemini"
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
+    def __init__(
+        self, model: str | None = None, api_key: str | None = None, timeout: float | None = None
+    ):
         self.model = model or DEFAULT_MODEL
         # The SDK reads GOOGLE_API_KEY from the environment on its own, but the
         # key is passed explicitly so a value from .env (which the app loads
         # into Settings, not into os.environ) works the same way.
-        self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
+        options: dict = {"api_key": api_key} if api_key else {}
+        if timeout is not None:
+            # Milliseconds here, unlike the other two SDKs. One attempt only:
+            # failover.py moves on to the next candidate instead of retrying.
+            options["http_options"] = types.HttpOptions(
+                timeout=int(timeout * 1000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            )
+        self._client = genai.Client(**options)
 
     # ── Translation: neutral -> Gemini ─────────────────────────────────────
 

@@ -94,6 +94,20 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
 
+    # ── AI failover pool ─────────────────────────────────────────────────
+    # When this file exists, it replaces AI_PROVIDER / AI_MODEL: every listed
+    # key is tried with each of its models, in order, until one answers (see
+    # providers/failover.py). Relative to backend/. The file names the env var
+    # holding each key; the keys themselves stay here in .env. Set to an empty
+    # value to ignore the file and use the single provider above.
+    AI_POOL_FILE: Optional[str] = "ai_pool.json"
+    # One attempt's hard limit. Past it the call counts as "no response" and
+    # the next candidate is tried — SDK-side retries are off under failover.
+    AI_ATTEMPT_TIMEOUT_SECONDS: float = 30.0
+    # The whole rotation's limit for one model turn, so a full outage fails in
+    # bounded time instead of waiting out every key and model.
+    AI_FAILOVER_BUDGET_SECONDS: float = 90.0
+
     # ── AI cost display ──────────────────────────────────────────────────
     # Price per MILLION tokens, input and output separately — every provider
     # prices them separately, usually with output several times dearer.

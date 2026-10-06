@@ -46,13 +46,57 @@ def _detect(settings) -> str:
     )
 
 
-def get_llm_client() -> LLMClient:
-    """Construct the configured provider's client.
+def client_class(provider: str) -> type[LLMClient]:
+    """The adapter class for a provider, imported only when it is asked for.
 
-    Raises ProviderNotConfigured when no key is set, when AI_PROVIDER names a
-    provider with no key, or when that provider's SDK isn't installed.
+    Imported here, not at module scope: an uninstalled SDK for an unused
+    provider must not break the import of this module.
+    """
+    try:
+        if provider == "anthropic":
+            from app.ai.providers.anthropic_provider import AnthropicClient as Client
+        elif provider == "openai":
+            from app.ai.providers.openai_provider import OpenAIClient as Client
+        else:
+            from app.ai.providers.gemini_provider import GeminiClient as Client
+    except ImportError as exc:
+        raise ProviderNotConfigured(
+            f"The {provider} SDK is not installed: {exc}. "
+            f"Install it (see backend/requirements.txt) or set AI_PROVIDER to a "
+            f"provider whose SDK is present."
+        ) from exc
+    return Client
+
+
+def get_llm_client() -> LLMClient:
+    """Construct the client for one answer.
+
+    With a pool file (AI_POOL_FILE, default backend/ai_pool.json) this is a
+    FailoverClient that rotates across the listed keys and models; without one,
+    the single provider chosen by AI_PROVIDER / AI_MODEL, exactly as before.
+
+    A pool file whose entries all lack their keys falls through to the single
+    provider path, so an unconfigured backup list never blocks the chat.
+
+    Raises ProviderNotConfigured when nothing usable is configured — no key set,
+    AI_PROVIDER naming a provider with no key, a missing SDK, or an invalid
+    pool file.
     """
     settings = get_settings()
+
+    # Imported lazily for the same reason as the adapters: nothing here may
+    # fail at import time.
+    from app.ai.providers.failover import FailoverClient, load_pool
+
+    pool = load_pool()
+    if pool:
+        for provider in {entry.provider for entry in pool}:
+            client_class(provider)  # fail now, as a 503, if an SDK is missing
+        return FailoverClient(
+            pool,
+            attempt_timeout=settings.AI_ATTEMPT_TIMEOUT_SECONDS,
+            budget=settings.AI_FAILOVER_BUDGET_SECONDS,
+        )
 
     provider = (settings.AI_PROVIDER or "").strip().lower() or _detect(settings)
 
@@ -68,22 +112,6 @@ def get_llm_client() -> LLMClient:
             f"AI_PROVIDER is {provider!r} but {env_var} is not set."
         )
 
-    # Imported here, not at module scope: an uninstalled SDK for an unused
-    # provider must not break the import of this module.
-    try:
-        if provider == "anthropic":
-            from app.ai.providers.anthropic_provider import AnthropicClient as Client
-        elif provider == "openai":
-            from app.ai.providers.openai_provider import OpenAIClient as Client
-        else:
-            from app.ai.providers.gemini_provider import GeminiClient as Client
-    except ImportError as exc:
-        raise ProviderNotConfigured(
-            f"The {provider} SDK is not installed: {exc}. "
-            f"Install it (see backend/requirements.txt) or set AI_PROVIDER to a "
-            f"provider whose SDK is present."
-        ) from exc
-
-    client = Client(model=settings.AI_MODEL, api_key=getattr(settings, env_var))
+    client = client_class(provider)(model=settings.AI_MODEL, api_key=getattr(settings, env_var))
     logger.info(f"AI chat using provider={client.provider} model={client.model}")
     return client
