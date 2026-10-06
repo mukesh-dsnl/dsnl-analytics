@@ -31,7 +31,7 @@ from typing import Any, Callable, Iterator
 
 from app.ai.providers.base import LLMClient, NeutralMessage, ToolResult
 from app.ai.providers.factory import get_llm_client
-from app.ai.schema_prompt import SYSTEM_PROMPT
+from app.ai.schema_prompt import dated_system_prompt
 from app.ai.tools.ad_hoc_sql import RUN_QUERY_TOOL, run_cdr_query
 from app.ai.tools.metrics import QUERY_METRICS_TOOL, query_metrics
 from app.ai.tools.structured import GET_PANEL_TOOL, get_cdr_panel
@@ -98,6 +98,8 @@ def answer_events(
     """
     settings = get_settings()
     client = llm or get_llm_client()
+    # Once per answer, so every round of it reads dates against the same day.
+    system = dated_system_prompt()
 
     conversation: list[NeutralMessage] = [
         *(history or []),
@@ -117,7 +119,7 @@ def answer_events(
         yield {"type": "round_start", "round": round_index}
 
         started = perf_counter()
-        turn = client.send(SYSTEM_PROMPT, conversation, TOOLS)
+        turn = client.send(system, conversation, TOOLS)
         input_tokens += turn.input_tokens
         output_tokens += turn.output_tokens
 
