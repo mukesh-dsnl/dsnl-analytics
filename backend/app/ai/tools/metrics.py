@@ -30,12 +30,15 @@ from the fixed tables below — never anything the model sent.
 
 import json
 import logging
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import duckdb
 
 from app.ai.providers.base import ToolSpec
+from app.ai.tools.export_source import EXPORT_BATCH, ExportData, ExportUnavailable
 from app.cdr import lake, service
 from app.cdr.filters import SERVICE_TYPE_EXPR, build_where, needs_codr
 from app.core.config import get_settings
@@ -194,18 +197,36 @@ def _as_list(value: Any) -> list[str]:
     return []
 
 
-def query_metrics(
-    date_from: str | None = None,
-    date_to: str | None = None,
+@dataclass
+class _Plan:
+    """One validated query_metrics call, ready to run."""
+
+    sql: str  # ends in "LIMIT ?" — the row cap is the last parameter
+    params: list[Any]
+    filters: CdrFilter
+    measures: list[str]
+    dims: list[str]
+    # The model's own `limit`, when it asked for one ("top 10"). None means
+    # "every row", capped only by whoever runs the plan.
+    requested_limit: int | None
+
+
+def _plan(
+    date_from: Any = None,
+    date_to: Any = None,
     measures: Any = None,
     group_by: Any = None,
-    account_id: str | None = None,
-    crn: str | None = None,
-    order_by: str | None = None,
+    account_id: Any = None,
+    crn: Any = None,
+    order_by: Any = None,
     limit: Any = None,
     **extra: Any,
-) -> tuple[str, bool]:
-    """Aggregate measures over dimensions. Returns (content, is_error)."""
+) -> tuple[_Plan | None, str | None]:
+    """Validate a call and build its SQL. Returns (plan, None) or (None, error).
+
+    Shared by the tool (rows for the model, capped at MAX_ROWS) and by the file
+    export (every row), so the two can never disagree about what was asked.
+    """
     chosen_service = extra.pop("service", None)
     if extra:
         logger.info(f"query_metrics ignoring unknown arguments: {sorted(extra)}")
@@ -216,23 +237,16 @@ def query_metrics(
     wanted_measures = _as_list(measures) or list(DEFAULT_MEASURES)
     unknown = [m for m in wanted_measures if m not in MEASURES]
     if unknown:
-        return (
-            f"Unknown measure(s): {', '.join(unknown)}. Available: {', '.join(MEASURES)}.",
-            True,
-        )
+        return None, f"Unknown measure(s): {', '.join(unknown)}. Available: {', '.join(MEASURES)}."
 
     wanted_dims = _as_list(group_by)
     unknown = [d for d in wanted_dims if d not in DIMENSIONS]
     if unknown:
-        return (
-            f"Unknown dimension(s): {', '.join(unknown)}. Available: {', '.join(DIMENSIONS)}.",
-            True,
-        )
+        return None, f"Unknown dimension(s): {', '.join(unknown)}. Available: {', '.join(DIMENSIONS)}."
     if len(wanted_dims) > 2:
-        return (
+        return None, (
             f"group_by takes at most 2 dimensions; {len(wanted_dims)} were given. "
-            "Pick the two that answer the question.",
-            True,
+            "Pick the two that answer the question."
         )
 
     # ── The filter ─────────────────────────────────────────────────────────
@@ -251,7 +265,7 @@ def query_metrics(
         message = "; ".join(
             line.strip() for line in str(exc).splitlines() if "Value error" in line
         ) or str(exc)
-        return (f"Those filters are not valid — {message}", True)
+        return None, f"Those filters are not valid — {message}"
 
     # ── Assemble ───────────────────────────────────────────────────────────
     joined = needs_codr(filters, want_service_type="service_type" in wanted_dims)
@@ -259,13 +273,12 @@ def query_metrics(
     try:
         cdr_files = lake.files_for_range("cdr", filters.date_from, filters.date_to)
     except lake.LakeUnavailable as exc:
-        return (str(exc), True)
+        return None, str(exc)
 
     if not cdr_files:
-        return (
+        return None, (
             f"No CDR export files for {filters.date_from} to {filters.date_to} in "
-            f"{lake.root('cdr')}. Try a different date range.",
-            True,
+            f"{lake.root('cdr')}. Try a different date range."
         )
 
     from_clause = f"FROM read_parquet({_sql_list(cdr_files)}) c"
@@ -273,12 +286,11 @@ def query_metrics(
         try:
             codr_files = lake.files_for_range("codr", filters.date_from, filters.date_to)
         except lake.LakeUnavailable as exc:
-            return (str(exc), True)
+            return None, str(exc)
         if not codr_files:
-            return (
+            return None, (
                 f"That grouping or service filter needs CODR, but there are no CODR "
-                f"export files for {filters.date_from} to {filters.date_to}.",
-                True,
+                f"export files for {filters.date_from} to {filters.date_to}."
             )
         from_clause += (
             f"\n    LEFT JOIN read_parquet({_sql_list(codr_files)}) o"
@@ -304,10 +316,9 @@ def query_metrics(
         order_sql = None
 
     try:
-        row_limit = min(int(limit), MAX_ROWS) if limit is not None else MAX_ROWS
-        row_limit = max(row_limit, 1)
+        requested = max(int(limit), 1) if limit is not None else None
     except (TypeError, ValueError):
-        row_limit = MAX_ROWS
+        requested = None
 
     sql = f"SELECT {', '.join(select_parts)}\n    {from_clause}\n    {where.sql}"
     if wanted_dims:
@@ -316,26 +327,38 @@ def query_metrics(
         sql += f"\n    ORDER BY {order_sql}"
     sql += "\n    LIMIT ?"
 
+    return _Plan(sql, list(where.params), filters, wanted_measures, wanted_dims, requested), None
+
+
+def _label_row(plan: _Plan, row: dict[str, Any]) -> dict[str, Any]:
+    # Disconnect codes are meaningless as numbers; map them the way the
+    # dashboard does, so the model reports the same words a chart would.
+    if "disconnect_reason" in plan.dims:
+        row["disconnect_reason"] = _DISCONNECT_REASONS.get(str(row["disconnect_reason"]), "Unknown")
+    return row
+
+
+def query_metrics(**arguments: Any) -> tuple[str, bool]:
+    """Aggregate measures over dimensions. Returns (content, is_error)."""
+    plan, error = _plan(**arguments)
+    if error:
+        return (error, True)
+
+    row_limit = min(plan.requested_limit or MAX_ROWS, MAX_ROWS)
+
     # ── Execute ────────────────────────────────────────────────────────────
     try:
         with duckdb.connect() as con:
-            cursor = con.execute(sql, [*where.params, row_limit])
+            cursor = con.execute(plan.sql, [*plan.params, row_limit])
             columns = [d[0] for d in cursor.description]
-            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            rows = [_label_row(plan, dict(zip(columns, row))) for row in cursor.fetchall()]
     except duckdb.Error as exc:
         logger.error(f"query_metrics failed: {exc}")
         return (f"The query failed: {exc}", True)
 
-    # Disconnect codes are meaningless as numbers; map them the way the
-    # dashboard does, so the model reports the same words a chart would.
-    if "disconnect_reason" in wanted_dims:
-        for row in rows:
-            row["disconnect_reason"] = _DISCONNECT_REASONS.get(
-                str(row["disconnect_reason"]), "Unknown"
-            )
-
+    filters = plan.filters
     logger.info(
-        f"AI query_metrics measures={wanted_measures} group_by={wanted_dims or ['(total)']} "
+        f"AI query_metrics measures={plan.measures} group_by={plan.dims or ['(total)']} "
         f"range={filters.date_from}..{filters.date_to} service={filters.service or 'all'} "
         f"rows={len(rows)}"
     )
@@ -347,8 +370,8 @@ def query_metrics(
         "date_from": filters.date_from.isoformat(),
         "date_to": filters.date_to.isoformat(),
         "service": filters.service or "all",
-        "group_by": wanted_dims,
-        "measures": wanted_measures,
+        "group_by": plan.dims,
+        "measures": plan.measures,
         "row_count": len(rows),
         "rows": rows,
     }
@@ -360,3 +383,48 @@ def query_metrics(
         )
 
     return (json.dumps(payload, default=str), False)
+
+
+@contextmanager
+def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData]:
+    """The same query as the tool, streamed for a file instead of the model.
+
+    Not capped at MAX_ROWS — only at `max_rows`, and at the model's own `limit`
+    when it asked for one, since "top 10" means ten rows in the file too.
+    """
+    plan, error = _plan(**dict(arguments))
+    if error:
+        raise ExportUnavailable(error)
+
+    cap = min(plan.requested_limit or max_rows, max_rows)
+    with duckdb.connect() as con:
+        cursor = con.execute(plan.sql, [*plan.params, cap])
+        columns = [d[0] for d in cursor.description]
+
+        def batches() -> Iterator[list[tuple]]:
+            label = "disconnect_reason" in plan.dims
+            index = columns.index("disconnect_reason") if label else -1
+            while chunk := cursor.fetchmany(EXPORT_BATCH):
+                if label:
+                    chunk = [
+                        row[:index]
+                        + (_DISCONNECT_REASONS.get(str(row[index]), "Unknown"),)
+                        + row[index + 1:]
+                        for row in chunk
+                    ]
+                yield chunk
+
+        filters = plan.filters
+        yield ExportData(
+            columns=columns,
+            batches=batches(),
+            cap=cap,
+            description=(
+                f"query_metrics {', '.join(plan.measures)}"
+                + (f" by {', '.join(plan.dims)}" if plan.dims else "")
+                + f" | {filters.date_from} to {filters.date_to}"
+                + f" | service {filters.service or 'all'}"
+                + (f" | account {filters.account_id}" if filters.account_id else "")
+                + (f" | CRN {filters.crn}" if filters.crn else "")
+            ),
+        )

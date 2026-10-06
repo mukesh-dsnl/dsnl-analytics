@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { AnswerChart } from './AnswerChart';
 
 /**
  * Renders an assistant answer: prose, plus any markdown tables in it.
@@ -57,12 +59,67 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   );
 }
 
+/** A table as tab-separated text — what Excel and Sheets paste as cells. */
+function toTsv(header: string[], rows: string[][]): string {
+  const clean = (cell: string) => cell.replace(/\*\*/g, '').replace(/[\t\r\n]+/g, ' ').trim();
+  return [header, ...rows].map((row) => row.map(clean).join('\t')).join('\n');
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Clipboard API refused (insecure origin, permissions): the old way.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  }
+}
+
+function CopyTableButton({ header, rows }: { header: string[]; rows: string[][] }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        if (!(await copyText(toTsv(header, rows)))) return;
+        setCopied(true);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), 1500);
+      }}
+      title="Copy table — pastes into Excel or Sheets as cells"
+      aria-label={copied ? 'Table copied' : 'Copy table'}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
 function Table({ header, rows, tableKey }: { header: string[]; rows: string[][]; tableKey: string }) {
   const numeric = header.map((_, index) => isNumericColumn(rows, index));
 
   return (
     // Wide breakdowns scroll inside the bubble instead of stretching it.
-    <div className="my-2 -mx-1 overflow-x-auto">
+    <div className="group/table my-2 -mx-1">
+      <div className="flex items-center justify-end px-1">
+        <span className="mr-auto text-[11px] text-zinc-400 dark:text-zinc-500">
+          {rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'}
+        </span>
+        <CopyTableButton header={header} rows={rows} />
+      </div>
+      <div className="overflow-x-auto">
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr className="border-b border-zinc-200 dark:border-zinc-700">
@@ -101,6 +158,7 @@ function Table({ header, rows, tableKey }: { header: string[]; rows: string[][];
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -221,9 +279,11 @@ interface AnswerBodyProps {
   text: string;
   /** Type the answer in. False for history, which should just be there. */
   animate?: boolean;
+  /** The question asked for /chart: draw the first table above itself. */
+  chart?: boolean;
 }
 
-export function AnswerBody({ text, animate = false }: AnswerBodyProps) {
+export function AnswerBody({ text, animate = false, chart = false }: AnswerBodyProps) {
   const blocks = useMemo(() => parseBlocks(text), [text]);
   const total = useMemo(() => blocks.reduce((sum, b) => sum + b.length, 0), [blocks]);
 
@@ -244,6 +304,9 @@ export function AnswerBody({ text, animate = false }: AnswerBodyProps) {
     if (block.kind === 'table') {
       // Whole or not at all — a partial table is not a table. Reaching its
       // start is enough; the loop above already broke if we hadn't.
+      if (chart && blocks.findIndex((b) => b.kind === 'table') === index) {
+        rendered.push(<AnswerChart key={`c${index}`} header={block.header} rows={block.rows} />);
+      }
       rendered.push(
         <Table key={`t${index}`} tableKey={`t${index}`} header={block.header} rows={block.rows} />,
       );

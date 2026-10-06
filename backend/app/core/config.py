@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     # Tool-calling rounds per question before the loop gives up. Bounds both
     # latency and spend on a model that keeps refining instead of answering.
     AI_MAX_TOOL_ROUNDS: int = 5
+    # /csv and /excel exports: the full result of the answer's data queries,
+    # re-run without the model's row cap and written to a file. The cap here
+    # bounds one file; Excel itself holds at most 1,048,575 data rows a sheet.
+    AI_EXPORT_MAX_ROWS: int = 1_000_000
+    # Where export files are written. Relative to backend/. Holds production
+    # call data — keep it out of version control and off public paths.
+    AI_EXPORT_DIR: str = "storage/ai_exports"
 
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None

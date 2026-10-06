@@ -1,6 +1,6 @@
 """SQLAlchemy models — import all models here for Alembic auto-discovery."""
 
-from app.models.conversation import Conversation, DeletedConversation, Message
+from app.models.conversation import Conversation, DeletedConversation, Message, MessageExport
 from app.models.session import AuthSession
 from app.models.user import User
 
@@ -10,4 +10,5 @@ __all__ = [
     "Conversation",
     "Message",
     "DeletedConversation",
+    "MessageExport",
 ]

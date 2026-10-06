@@ -29,6 +29,7 @@ import traceback
 from time import perf_counter
 from typing import Any, Callable, Iterator
 
+from app.ai import commands as slash
 from app.ai.providers.base import LLMClient, NeutralMessage, ToolResult
 from app.ai.providers.factory import get_llm_client
 from app.ai.schema_prompt import dated_system_prompt
@@ -76,6 +77,7 @@ def answer_events(
     history: list[NeutralMessage] | None = None,
     question: str = "",
     llm: LLMClient | None = None,
+    commands: slash.Parsed | None = None,
 ) -> Iterator[dict[str, Any]]:
     """The loop, as a stream of events. `answer()` below is this, drained.
 
@@ -99,7 +101,9 @@ def answer_events(
     settings = get_settings()
     client = llm or get_llm_client()
     # Once per answer, so every round of it reads dates against the same day.
-    system = dated_system_prompt()
+    # The commands' section goes after the date, last, for the same reason the
+    # date does: the long fixed prompt stays an identical prefix.
+    system = dated_system_prompt() + slash.instructions(commands or slash.Parsed())
 
     conversation: list[NeutralMessage] = [
         *(history or []),
@@ -202,6 +206,7 @@ def answer(
     history: list[NeutralMessage] | None = None,
     question: str = "",
     llm: LLMClient | None = None,
+    commands: slash.Parsed | None = None,
 ) -> dict[str, Any]:
     """Answer one question, running tools as the model asks for them.
 
@@ -217,7 +222,7 @@ def answer(
     that produced it.
     """
     final: dict[str, Any] = {}
-    for event in answer_events(history=history, question=question, llm=llm):
+    for event in answer_events(history=history, question=question, llm=llm, commands=commands):
         if event["type"] == "done":
             final = {k: v for k, v in event.items() if k != "type"}
     return final

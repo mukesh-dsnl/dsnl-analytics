@@ -52,3 +52,6 @@ DOCUMENT_1.md
 prompt2.md
 prompt3.md
 bugs.md
+# AI chat exports (CSV/Excel of production call data) — never commit
+storage/
+backend/storage/

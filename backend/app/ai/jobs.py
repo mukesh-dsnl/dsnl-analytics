@@ -51,7 +51,9 @@ from typing import Any, Iterator
 
 from sqlalchemy.orm import Session
 
+from app.ai import commands as slash
 from app.ai import conversations as store
+from app.ai import exports as export_files
 from app.ai import orchestrator
 from app.ai.providers.base import LLMClient, NeutralMessage
 from app.core.database import SessionLocal
@@ -105,6 +107,8 @@ def _worker(
     history: list[NeutralMessage],
     question: str,
     llm: LLMClient,
+    commands: slash.Parsed | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Run the loop to completion and record the result. Never raises.
 
@@ -120,7 +124,7 @@ def _worker(
     spent_out = 0
     try:
         for event in orchestrator.answer_events(
-            history=history, question=question, llm=llm
+            history=history, question=question, llm=llm, commands=commands
         ):
             if event["type"] == "round_thinking":
                 spent_in += int(event.get("input_tokens") or 0)
@@ -173,20 +177,39 @@ def _worker(
                 break
 
             store.complete_interaction(db, conversation, interaction, event, ok=True)
+            # Requested files are recorded as pending in the same commit as the
+            # answer, so a page that reloads from here on knows they are coming.
+            formats = [slash.EXPORT_FORMATS[e] for e in (commands.exports if commands else [])]
+            pending = export_files.create_pending(db, interaction, formats, user_id) if formats else []
             db.commit()
 
             events.put(
                 {
                     **event,
                     "conversation_id": conversation_id,
+                    "interaction_id": interaction_id,
                     "interaction": {
                         "input_tokens": interaction.input_token,
                         "output_tokens": interaction.output_tokens,
                         "total_tokens": interaction.total_tokens,
                     },
                     "usage": store.usage(conversation),
+                    "exports": [export_files.serialize(e) for e in pending],
                 }
             )
+
+            # The answer is already on screen; the files follow. Re-running the
+            # queries in full can take a while on a large range, which is why
+            # this happens after `done` rather than before it.
+            if pending:
+                export_files.build(db, interaction, pending, question)
+                events.put(
+                    {
+                        "type": "exports",
+                        "interaction_id": interaction_id,
+                        "exports": [export_files.serialize(e) for e in pending],
+                    }
+                )
 
     except Exception as exc:  # noqa: BLE001 — a worker must not die silently
         logger.exception(f"AI answer failed for conversation {conversation_id}")
@@ -244,6 +267,8 @@ def run(
     history: list[NeutralMessage],
     question: str,
     llm: LLMClient,
+    commands: slash.Parsed | None = None,
+    user_id: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Start the answer and yield its events as they happen.
 
@@ -255,7 +280,7 @@ def run(
 
     thread = threading.Thread(
         target=_worker,
-        args=(events, conversation_id, interaction_id, history, question, llm),
+        args=(events, conversation_id, interaction_id, history, question, llm, commands, user_id),
         name=f"ai-answer-{conversation_id[:8]}",
         daemon=False,
     )

@@ -46,6 +46,23 @@ export interface InteractionUsage {
   total_tokens: number;
 }
 
+/** A /csv or /excel file attached to an answer — the full data, not the preview. */
+export interface ExportInfo {
+  id: number;
+  format: 'csv' | 'xlsx';
+  /** `pending` while the server is still writing it. */
+  status: 'pending' | 'ready' | 'failed';
+  file_name?: string | null;
+  row_count: number;
+  sheet_count: number;
+  size_bytes: number;
+  /** A query reached the export row limit, so the file may be incomplete. */
+  truncated: boolean;
+  error?: string | null;
+  /** Set once ready; a plain authenticated GET. */
+  download_url?: string | null;
+}
+
 export interface ChatResponse {
   answer: string;
   conversation_id: string;
@@ -61,6 +78,10 @@ export interface ChatResponse {
   interaction: InteractionUsage;
   /** The whole thread, including this exchange — shown on the cost card. */
   usage: TokenUsage;
+  /** Files asked for with /csv or /excel. Usually still pending at `done`. */
+  exports?: ExportInfo[];
+  /** The stored row this answer belongs to. */
+  interaction_id?: number;
 }
 
 export interface ChatRequest {
@@ -88,6 +109,7 @@ export interface StoredInteraction {
   output_tokens: number;
   total_tokens: number;
   created_at?: string;
+  exports?: ExportInfo[];
 }
 
 export interface ConversationSummary {
@@ -124,6 +146,11 @@ export type ChatEvent =
   | { type: 'tool_start'; round: number; index: number; tool: string; input: Record<string, unknown> }
   | { type: 'tool_end'; round: number; index: number; tool: string; ok: boolean; seconds: number }
   | ({ type: 'done' } & ChatResponse)
+  /**
+   * The /csv or /excel files, finished. Arrives after `done` — the answer is
+   * shown first, and the files follow once the full queries have run.
+   */
+  | { type: 'exports'; interaction_id: number; exports: ExportInfo[] }
   /** The server gave up because it was asked to. Terminal, like `done`. */
   | { type: 'stopped' }
   | { type: 'error'; detail: string };

@@ -9,6 +9,8 @@ import type { ChatMessage } from '../hooks';
 import { AnswerBody } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
 import { RoundSteps } from '../components/RoundSteps';
+import { ExportFiles } from '../components/ExportFiles';
+import { parseCommands } from '../commands';
 
 /**
  * Natural-language questions over the CDR/CODR lake.
@@ -70,10 +72,29 @@ function EmptyState({ onPick }: { onPick: (question: string) => void }) {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
+    // Commands are shown as tags, apart from the question, so "/voicedrop
+    // /excel top accounts" reads as a scope and a file and then a question.
+    const { commands, text } = parseCommands(message.text);
     return (
       <li className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm text-white whitespace-pre-wrap break-words shadow-sm">
-          {message.text}
+          {commands.length > 0 && (
+            <span className={clsx('flex flex-wrap gap-1', text && 'mb-1.5')}>
+              {commands.map((command) => {
+                const Icon = command.icon;
+                return (
+                  <span
+                    key={command.name}
+                    className="inline-flex items-center gap-1 rounded-md bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold"
+                  >
+                    <Icon className="h-3 w-3" />
+                    {command.label}
+                  </span>
+                );
+              })}
+            </span>
+          )}
+          {text || (commands.length ? null : message.text)}
         </div>
       </li>
     );
@@ -121,7 +142,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               </div>
             </div>
           ) : (
-            <AnswerBody text={message.text} animate={message.animate} />
+            <>
+              <AnswerBody text={message.text} animate={message.animate} chart={message.chart} />
+              {!!message.exports?.length && <ExportFiles exports={message.exports} />}
+            </>
           ))}
       </div>
     </li>
@@ -233,6 +257,7 @@ export function AiChatPage() {
           onStop={stop}
           isPending={isPending}
           cost={{ amount: usage.cost, currency: usage.currency }}
+          threadId={conversationId ?? null}
         />
       </div>
 

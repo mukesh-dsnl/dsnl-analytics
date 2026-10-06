@@ -26,6 +26,7 @@ import uuid
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -153,6 +154,12 @@ class Message(Base):
     )
 
     conversation = relationship("Conversation", back_populates="messages")
+    exports = relationship(
+        "MessageExport",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="MessageExport.id",
+    )
 
     @property
     def total_tokens(self) -> int:
@@ -167,6 +174,64 @@ class Message(Base):
             f"<Message id={self.id!r} conv={self.conversation_id!r} "
             f"status={self.status!r}>"
         )
+
+
+# MessageExport.status
+EXPORT_PENDING = "pending"
+EXPORT_READY = "ready"
+EXPORT_FAILED = "failed"
+
+
+class MessageExport(Base):
+    """A file of an answer's full data — /csv or /excel — and where it is stored.
+
+    Its own table rather than columns on `messages`: the schema is created with
+    `create_all`, which adds new tables but never alters existing ones, so this
+    needs no migration. One row per file, so an answer asked for both /csv and
+    /excel has two.
+
+    The file itself lives under AI_EXPORT_DIR; `file_path` is relative to it,
+    so the directory can move without rewriting rows.
+    """
+
+    __tablename__ = "ai_exports"
+
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    message_id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Denormalised from the message so a download can be authorised with one
+    # read, without joining back through messages to conversations.
+    conversation_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True)
+
+    format = Column(String(8), nullable=False)  # "csv" | "xlsx"
+    status = Column(String(8), nullable=False, default=EXPORT_PENDING)
+
+    file_name = Column(String(255), nullable=True)  # what the browser saves it as
+    file_path = Column(String(500), nullable=True)  # relative to AI_EXPORT_DIR
+
+    row_count = Column(Integer, nullable=False, default=0)
+    sheet_count = Column(Integer, nullable=False, default=0)
+    size_bytes = Column(BigInteger, nullable=False, default=0)
+    # True when a source hit the export row cap, so the file may be incomplete.
+    truncated = Column(Boolean, nullable=False, default=False)
+    error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    message = relationship("Message", back_populates="exports")
+
+    def __repr__(self) -> str:
+        return f"<MessageExport id={self.id!r} message={self.message_id!r} {self.format} {self.status}>"
 
 
 class DeletedConversation(Base):

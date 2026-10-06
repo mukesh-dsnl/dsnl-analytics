@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Square, Mic } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUp, Square, Mic, X } from 'lucide-react';
 import clsx from 'clsx';
+import { COMMANDS, partialCommand } from '../commands';
+import type { ChatCommand } from '../commands';
 
 interface ChatComposerProps {
   onSend: (question: string) => void;
@@ -9,14 +11,32 @@ interface ChatComposerProps {
   isPending: boolean;
   /** The conversation's running cost, shown above the send button. */
   cost?: { amount: number; currency: string };
+  /**
+   * The open thread. Scope chips belong to a thread: moving to a different one
+   * clears them, but a new thread learning its id mid-answer does not.
+   */
+  threadId?: string | null;
 }
 
 /** Grow with the text, then scroll — past this the box would eat the transcript. */
 const MAX_HEIGHT = 160;
 
-export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerProps) {
+export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null }: ChatComposerProps) {
   const [value, setValue] = useState('');
+  const [chips, setChips] = useState<ChatCommand[]>([]);
+  const [caret, setCaret] = useState(0);
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastThread = useRef<string | null>(threadId);
+
+  // Scope is sticky within a thread — "and yesterday?" stays a Voicedrop
+  // question — but must not leak into a different conversation.
+  useEffect(() => {
+    const previous = lastThread.current;
+    lastThread.current = threadId;
+    if (previous !== null && previous !== threadId) setChips([]);
+  }, [threadId]);
 
   // Autosize: reset to auto first so the box can shrink again on delete, not
   // only grow. scrollHeight is only meaningful once the height constraint is
@@ -28,10 +48,49 @@ export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerPr
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
   }, [value]);
 
+  const partial = partialCommand(value, caret);
+  const options = useMemo(
+    () =>
+      partial
+        ? COMMANDS.filter(
+            (c) =>
+              !chips.some((chip) => chip.name === c.name) &&
+              (c.name.startsWith(partial.query) || c.label.toLowerCase().startsWith(partial.query)),
+          )
+        : [],
+    [partial, chips],
+  );
+  const menuOpen = !!partial && !menuDismissed && options.length > 0;
+
+  const pick = (command: ChatCommand) => {
+    if (!partial) return;
+    // The typed "/exc" is replaced by the chip, not left behind as text.
+    const next = value.slice(0, partial.start) + value.slice(caret).replace(/^\s*/, '');
+    setValue(next);
+    setChips((current) => [...current, command]);
+    setMenuIndex(0);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(partial.start, partial.start);
+      setCaret(partial.start);
+    });
+  };
+
+  const removeChip = (name: ChatCommand['name']) => {
+    setChips((current) => current.filter((c) => c.name !== name));
+    textareaRef.current?.focus();
+  };
+
+  const canSend = value.trim().length > 0 || chips.length > 0;
+
   const submit = () => {
-    if (!value.trim() || isPending) return;
-    onSend(value);
+    if (!canSend || isPending) return;
+    const question = [...chips.map((c) => `/${c.name}`), value.trim()].join(' ').trim();
+    onSend(question);
     setValue('');
+    // Scope carries on to the next question; a file or a chart was asked for
+    // this one only.
+    setChips((current) => current.filter((c) => c.kind === 'scope'));
   };
 
   return (
@@ -46,10 +105,50 @@ export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerPr
         {/* Soft ambient glow surrounding the input */}
         <div className="absolute -inset-16 -z-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-100 via-blue-50/50 to-transparent blur-2xl pointer-events-none dark:from-blue-900/30 dark:via-blue-900/10" />
 
+        {menuOpen && (
+          <div
+            role="listbox"
+            aria-label="Commands"
+            className="absolute bottom-full left-0 mb-2 z-20 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              Commands
+            </p>
+            {options.map((command, index) => {
+              const Icon = command.icon;
+              const active = index === Math.min(menuIndex, options.length - 1);
+              return (
+                <button
+                  key={command.name}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  // mousedown, not click: a click would blur the textarea first.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    pick(command);
+                  }}
+                  onMouseEnter={() => setMenuIndex(index)}
+                  className={clsx(
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left',
+                    active ? 'bg-blue-50 dark:bg-blue-500/10' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800',
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">/{command.name}</span>
+                    <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{command.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div
           className={clsx(
-            "relative z-10 flex items-end gap-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow shadow-sm",
-            "bg-white dark:bg-zinc-900 pl-4 pr-3 py-2.5"
+            'relative z-10 flex items-end gap-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow shadow-sm',
+            'bg-white dark:bg-zinc-900 pl-4 pr-3 py-2.5',
           )}
         >
           <button
@@ -61,24 +160,81 @@ export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerPr
             <Mic className="w-5 h-5" />
           </button>
 
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            // Enter sends, Shift+Enter breaks the line — the convention for a
-            // chat box. Without this the form would only submit from the button,
-            // which is the wrong default for something typed into repeatedly.
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-            placeholder="Ask about the call data"
-            aria-label="Ask a question"
-            className="flex-1 min-w-0 resize-none bg-transparent text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:outline-none leading-6 max-h-40 py-1"
-          />
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {chips.map((chip) => {
+              const Icon = chip.icon;
+              return (
+                <span
+                  key={chip.name}
+                  className={clsx(
+                    'inline-flex items-center gap-1 rounded-md py-0.5 pl-1.5 pr-0.5 text-xs font-medium',
+                    chip.kind === 'scope'
+                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {chip.label}
+                  <button
+                    type="button"
+                    onClick={() => removeChip(chip.name)}
+                    aria-label={`Remove ${chip.label}`}
+                    className="rounded p-0.5 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              );
+            })}
+
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setCaret(event.target.selectionStart ?? event.target.value.length);
+                setMenuDismissed(false);
+                setMenuIndex(0);
+              }}
+              onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+              onKeyDown={(event) => {
+                if (menuOpen) {
+                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    setMenuIndex((i) => (Math.min(i, options.length - 1) + step + options.length) % options.length);
+                    return;
+                  }
+                  if (event.key === 'Enter' || event.key === 'Tab') {
+                    event.preventDefault();
+                    pick(options[Math.min(menuIndex, options.length - 1)]);
+                    return;
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setMenuDismissed(true);
+                    return;
+                  }
+                }
+                // Backspace in an empty box takes the last chip back off.
+                if (event.key === 'Backspace' && !value && chips.length) {
+                  event.preventDefault();
+                  setChips((current) => current.slice(0, -1));
+                  return;
+                }
+                // Enter sends, Shift+Enter breaks the line — the convention for
+                // a chat box.
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder={chips.length ? 'Ask your question' : 'Ask about the call data — type / for commands'}
+              aria-label="Ask a question"
+              className="flex-1 min-w-[12rem] resize-none bg-transparent text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:outline-none leading-6 max-h-40 py-1"
+            />
+          </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
             {cost && cost.amount > 0 && (
@@ -89,27 +245,19 @@ export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerPr
                 ${cost.amount}
               </span>
             )}
-            {/* One button, two jobs. While an answer is being worked out this is
-            the way to abandon it — where a spinner used to sit, which showed
-            that something was happening but offered no way to end it.
-
-            `type` switches with the mode: left as "submit" it would post the
-            form on click, which the guard in `submit()` turns into nothing at
-            all rather than into a stop. And the disabled rule inverts — an
-            empty box disables sending, but must never disable stopping, which
-            is exactly when the box is most likely to be empty. */}
-            {(isPending || value.trim().length > 0) && (
+            {/* One button, two jobs: send, or stop the answer in progress.
+                `type` switches with the mode — left as "submit" it would post
+                the form on click — and stopping is never disabled, since the
+                box is most likely to be empty exactly then. */}
+            {(isPending || canSend) && (
               <button
                 type={isPending ? 'button' : 'submit'}
                 onClick={isPending ? onStop : undefined}
-                disabled={isPending ? false : !value.trim()}
+                disabled={isPending ? false : !canSend}
                 aria-label={isPending ? 'Stop generating' : 'Send question'}
                 title={isPending ? 'Stop generating' : 'Send'}
                 className={clsx(
                   'shrink-0 h-8 w-8 rounded-full flex items-center justify-center transition-colors',
-                  // Not the accent while stopping: the accent means "send", and a
-                  // stop control wearing it reads as the thing you just pressed
-                  // rather than as its opposite.
                   isPending
                     ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-100 hover:bg-zinc-300 dark:hover:bg-zinc-600'
                     : 'bg-blue-600 text-white hover:bg-blue-500',
@@ -117,8 +265,6 @@ export function ChatComposer({ onSend, onStop, isPending, cost }: ChatComposerPr
                 )}
               >
                 {isPending ? (
-                  // Filled, so it reads as a solid stop marker at 14px rather than
-                  // as an empty outlined box.
                   <Square className="w-3.5 h-3.5 fill-current" />
                 ) : (
                   <ArrowUp className="w-4 h-4" strokeWidth={2.5} />

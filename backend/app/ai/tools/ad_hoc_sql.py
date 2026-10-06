@@ -28,14 +28,16 @@ same audit trail as any other.
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any
+from typing import Any, Iterator
 
 import duckdb
 
 from app.ai import sql_guard
 from app.ai.providers.base import ToolSpec
+from app.ai.tools.export_source import EXPORT_BATCH, ExportData, ExportUnavailable
 from app.cdr import lake, service
 from app.core.config import get_settings
 
@@ -168,6 +170,23 @@ def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> 
         )
 
 
+def _checked_range(date_from: Any, date_to: Any) -> tuple[date, date]:
+    """The inclusive range, validated. Raises ValueError with a message for the model."""
+    start = _parse_day(date_from, "date_from")
+    end = _parse_day(date_to, "date_to")
+    if end < start:
+        raise ValueError(f"date_to ({end}) is before date_from ({start}).")
+    span = (end - start).days + 1
+    limit = get_settings().AI_MAX_RANGE_DAYS
+    if span > limit:
+        raise ValueError(
+            f"That range spans {span} days; ad-hoc queries are limited to "
+            f"{limit}. Narrow the range, or use get_cdr_panel, "
+            "which can cover a longer one."
+        )
+    return start, end
+
+
 def run_cdr_query(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -183,22 +202,9 @@ def run_cdr_query(
 
     # ── 1. The range ───────────────────────────────────────────────────────
     try:
-        start = _parse_day(date_from, "date_from")
-        end = _parse_day(date_to, "date_to")
+        start, end = _checked_range(date_from, date_to)
     except ValueError as exc:
         return (str(exc), True)
-
-    if end < start:
-        return (f"date_to ({end}) is before date_from ({start}).", True)
-
-    span = (end - start).days + 1
-    if span > settings.AI_MAX_RANGE_DAYS:
-        return (
-            f"That range spans {span} days; ad-hoc queries are limited to "
-            f"{settings.AI_MAX_RANGE_DAYS}. Narrow the range, or use get_cdr_panel, "
-            "which can cover a longer one.",
-            True,
-        )
 
     # ── 2. The statement ───────────────────────────────────────────────────
     try:
@@ -253,3 +259,40 @@ def run_cdr_query(
         )
 
     return (json.dumps(payload, default=str), False)
+
+
+@contextmanager
+def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData]:
+    """The same statement as the tool ran, streamed for a file.
+
+    The same two defence layers apply — the guard, then the locked filesystem —
+    with only the outer row cap raised. The model's own LIMIT, if it wrote one,
+    is inside the wrapped statement and still holds.
+    """
+    try:
+        start, end = _checked_range(arguments.get("date_from"), arguments.get("date_to"))
+        guarded = sql_guard.validate(arguments.get("sql") or "", limit=max_rows)
+    except (ValueError, sql_guard.SqlNotAllowed) as exc:
+        raise ExportUnavailable(str(exc)) from exc
+
+    with duckdb.connect() as con:
+        try:
+            _prepare(con, start, end)
+            cursor = con.execute(guarded)
+        except (service.DatasetNotReady, duckdb.Error) as exc:
+            raise ExportUnavailable(str(exc)) from exc
+        columns = [d[0] for d in cursor.description]
+
+        def batches() -> Iterator[list[tuple]]:
+            while chunk := cursor.fetchmany(EXPORT_BATCH):
+                yield chunk
+
+        purpose = str(arguments.get("purpose") or "").strip()
+        logger.info(f"AI SQL export | {start}..{end} | cap={max_rows} | purpose={purpose!r}")
+        yield ExportData(
+            columns=columns,
+            batches=batches(),
+            cap=max_rows,
+            description=f"run_cdr_query | {start} to {end}" + (f" | {purpose}" if purpose else ""),
+            notes=[f"SQL: {' '.join(str(arguments.get('sql') or '').split())}"],
+        )

@@ -22,11 +22,13 @@ will wait out on a panel.
 
 import json
 import logging
-from typing import Any, Callable
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 
 from pydantic import ValidationError
 
 from app.ai.providers.base import ToolSpec
+from app.ai.tools.export_source import ExportData, ExportUnavailable
 from app.cdr import service
 from app.core.config import get_settings
 from app.schemas.cdr import CdrFilter
@@ -160,3 +162,36 @@ def get_cdr_panel(
         f"service={filters.service or 'all'} rows={result.get('row_count', 0)}"
     )
     return (json.dumps(result, default=str), False)
+
+
+@contextmanager
+def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData]:
+    """A panel, for a file. Panels are already complete, aggregated results —
+    the dashboard computes them whole — so this re-runs the same call and hands
+    its rows over as they are rather than streaming."""
+    content, is_error = get_cdr_panel(**dict(arguments))
+    if is_error:
+        raise ExportUnavailable(content)
+    try:
+        result = json.loads(content)
+    except ValueError as exc:
+        raise ExportUnavailable("The panel returned no rows.") from exc
+
+    rows = [row for row in result.get("rows", []) if isinstance(row, dict)][:max_rows]
+    columns: list[str] = []
+    for row in rows:
+        columns += [key for key in row if key not in columns]
+
+    panel = arguments.get("panel")
+    notes = ["The panel was capped by the dashboard's row limit."] if result.get("truncated") else []
+    yield ExportData(
+        columns=columns,
+        batches=iter([[tuple(row.get(c) for c in columns) for row in rows]] if rows else []),
+        # A panel is only "at its cap" when the dashboard says it truncated.
+        cap=len(rows) if result.get("truncated") else max_rows,
+        description=(
+            f"get_cdr_panel {panel} | {arguments.get('date_from')} to {arguments.get('date_to')}"
+            + f" | service {arguments.get('service') or 'all'}"
+        ),
+        notes=notes,
+    )
