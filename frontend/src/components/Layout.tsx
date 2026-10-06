@@ -2,6 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
   Activity,
+  ContactRound,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
@@ -46,6 +47,9 @@ interface NavNode {
 const serviceChildren = (service: 'voicedrop' | 'conference' | 'multicall'): NavNode[] => [
   { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
   { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
+  ...(service === 'multicall'
+    ? [{ label: 'Registration Lookup', path: '/analytics/multicall/registry', icon: ContactRound }]
+    : []),
 ];
 
 const NAV: NavNode[] = [
@@ -272,6 +276,7 @@ export function Layout() {
 
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/assistant');
+  const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
@@ -626,7 +631,7 @@ export function Layout() {
           {/* The AI chat carries no date control: the range is part of the
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
-          {isAiChat ? null : location.pathname.endsWith('/campaign-metrics') ? (
+          {isAiChat || isMulticallRegistry ? null : location.pathname.endsWith('/campaign-metrics') ? (
             <HeaderCampaignDate />
           ) : (
             <HeaderDateRange />

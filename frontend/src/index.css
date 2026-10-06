@@ -334,3 +334,15 @@ body {
     animation: none;
   }
 }
+/* MultiCall registration lookup: panels rise into place as the search docks
+   and results arrive. */
+@keyframes mc-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.mc-rise {
+  animation: mc-rise 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-rise { animation: none; }
+}
