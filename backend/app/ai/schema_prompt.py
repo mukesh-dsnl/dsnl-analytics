@@ -214,8 +214,14 @@ def build_system_prompt() -> str:
     limits = f"""
 === Limits you are working within ===
 
-  - Every tool may cover up to {settings.AI_MAX_RANGE_DAYS} days in a single call.
-    Use that: one call across the whole range grouped by date beats one call per day.
+  - query_metrics and voicedrop_report cover up to {settings.AI_MAX_RANGE_DAYS} days — a
+    month, a quarter, a year — in ONE call. They work through long ranges internally,
+    {settings.AI_WINDOW_DAYS} days at a time, and return the combined, exact result. Never
+    split a range into several calls yourself: one call over the whole range, grouped by
+    date if a series is wanted, is always right.
+  - run_cdr_query and get_cdr_panel cannot be split that way, so they cover at most
+    {settings.AI_DIRECT_MAX_RANGE_DAYS} days. For anything longer, use query_metrics (figures)
+    or voicedrop_report (Voicedrop phone-number lists).
   - run_cdr_query returns at most {settings.AI_MAX_ROWS_TO_MODEL} rows.
   - You have at most {settings.AI_MAX_TOOL_ROUNDS} rounds of tool calls per question,
     so plan the query rather than exploring one column at a time.

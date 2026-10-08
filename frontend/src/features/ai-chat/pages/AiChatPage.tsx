@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
@@ -70,7 +70,7 @@ function EmptyState({ onPick }: { onPick: (question: string) => void }) {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, minHeight }: { message: ChatMessage; minHeight?: number }) {
   if (message.role === 'user') {
     // Commands are shown as tags, apart from the question, so "/voicedrop
     // /excel top accounts" reads as a scope and a file and then a question.
@@ -106,7 +106,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   // An error is the exception: it needs to read as a thing that went wrong,
   // so it keeps a tinted panel.
   return (
-    <li className="flex justify-start">
+    // scroll-mt: when an answer lands it is scrolled to the top of the panel,
+    // and this keeps a little air above its first line.
+    <li data-message-id={message.id} className="flex justify-start" style={minHeight ? { minHeight } : undefined}>
       <div className="w-full min-w-0 text-sm text-zinc-800 dark:text-zinc-200">
         {/* The steps stay at the top through both phases: they are written
             there while the answer is being worked out, and they stay there
@@ -163,16 +165,71 @@ export function AiChatPage() {
   const { messages, send, stop, isPending, isRestoring, usage, loadError } = useChat(
     conversationId ?? null,
   );
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
 
   // Follow the newest turn as it grows. Counting the steps too, not just the
   // messages: during a long answer the message count doesn't change, but the
   // bubble gets taller with every round and would otherwise grow off-screen.
   const stepCount = messages.reduce((total, m) => total + (m.steps?.length ?? 0), 0);
 
+  // Which turns were still being worked on at the last scroll — so the moment
+  // one of them finishes can be told apart from any other update.
+  const streamingIds = useRef<Set<string>>(new Set());
+
+  /**
+   * The answer that just arrived, held at least one panel tall.
+   *
+   * It lands nearly empty — it types itself in from its first line — so on its
+   * own there is not enough page below it to scroll its top up to the top of
+   * the panel; the browser clamps the scroll and the answer is left starting
+   * near the bottom, which is exactly the problem being fixed. The minimum
+   * height is that room. It lasts until the next question, so no gap is ever
+   * left behind in the history.
+   */
+  const [pinned, setPinned] = useState<{ id: string; height: number } | null>(null);
+
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const landed = messages.find(
+      (m) => m.role === 'assistant' && !m.isStreaming && streamingIds.current.has(m.id),
+    );
+    streamingIds.current = new Set(messages.filter((m) => m.isStreaming).map((m) => m.id));
+
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    if (landed) {
+      // Scrolled once the room exists — see the layout effect below.
+      setPinned({ id: landed.id, height: scroller.clientHeight - 32 });
+      return;
+    }
+
+    // Anything else — a question sent, a step reported, a thread opened —
+    // follows the bottom. A newer turn than the pinned answer ends its pin.
+    if (pinned && messages[messages.length - 1]?.id !== pinned.id) setPinned(null);
+    // Instant, by position. A smooth scroll is cancelled by the browser when
+    // the content under it changes, and here it always does: the steps tick
+    // while an answer is worked out. Smooth scrolls stopped hundreds of
+    // pixels short of the bottom.
+    scroller.scrollTop = scroller.scrollHeight;
+    // `messages` is read for the transition, not tracked: re-running on every
+    // patch (a file finishing after the answer, say) would yank the reader
+    // back to the bottom of something they are reading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, stepCount, isPending]);
+
+  // An answer has just arrived: bring its start — its steps, then its first
+  // lines — to the top of the panel, to be read downward. Following the bottom
+  // here is what used to strand the reader at the answer's first line with the
+  // rest of it typing in below the fold. A layout effect, so it runs after the
+  // pin's height is in the DOM and before the frame is painted.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!pinned || !scroller) return;
+    const element = scroller.querySelector(`[data-message-id="${pinned.id}"]`);
+    if (!element) return;
+    const offset = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTop += offset - 16;
+  }, [pinned]);
 
   const headerSlot = useHeaderSlot();
   const isLoading = isRestoring && messages.length === 0;
@@ -210,7 +267,7 @@ export function AiChatPage() {
       {title}
 
       {/* The transcript scrolls; the composer below it does not. */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 pb-4">
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 pb-4">
         {isLoading ? (
           // The previous thread is being fetched. Showing the empty state here
           // would flash "Ask about the call data" over a conversation that is
@@ -241,12 +298,15 @@ export function AiChatPage() {
         ) : (
           <ul className="space-y-5 max-w-4xl mx-auto">
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                minHeight={pinned?.id === message.id ? pinned.height : undefined}
+              />
             ))}
 
             {/* No separate spinner row: the in-flight assistant message is
                 already on screen, reporting each step as it happens. */}
-            <div ref={endRef} />
           </ul>
         )}
       </div>

@@ -135,17 +135,15 @@ def test_the_file_holds_every_row_not_just_what_the_model_saw(export_env):
     assert len(rows) == 7
 
     book = load_workbook(exports.resolve(xlsx), read_only=True)
-    assert book.sheetnames[0] == "About"
-    sheet = book[book.sheetnames[1]]
+    # Only the data that was asked for — no notes sheet, nothing else.
+    assert book.sheetnames == ["Data"]
+    sheet = book.worksheets[0]
     values = list(sheet.iter_rows(values_only=True))
     assert values[0] == ("CRN", "Phone (Dial Out)", "Account ID", "Start Time")
     assert len(values) == 7
     # Identifiers are text, so Excel keeps every digit.
     assert all(isinstance(row[1], str) for row in values[1:])
     assert all(isinstance(row[0], str) for row in values[1:])
-    about = {row[0]: row[1] for row in book["About"].iter_rows(values_only=True) if row[0]}
-    assert about["Question"] == "calls by phone"
-    assert "run_cdr_query" in about["Sheet 1"]
 
 
 def test_metrics_exports_ignore_the_model_cap_but_keep_numbers_numeric(export_env):
@@ -162,28 +160,42 @@ def test_metrics_exports_ignore_the_model_cap_but_keep_numbers_numeric(export_en
     db.commit()
     exports.build(db, message, [xlsx], "calls by conference")
 
-    sheet_rows = list(load_workbook(exports.resolve(xlsx), read_only=True).worksheets[1].iter_rows(values_only=True))
+    sheet_rows = list(load_workbook(exports.resolve(xlsx), read_only=True).worksheets[0].iter_rows(values_only=True))
     assert sheet_rows[0] == ("Conference", "Calls", "Minutes")
     assert all(isinstance(row[1], int) for row in sheet_rows[1:])
     assert xlsx.row_count == len(sheet_rows) - 1
 
 
-def test_one_sheet_per_query_and_csv_takes_the_last(export_env):
+def test_both_files_hold_only_the_final_query(export_env):
+    """Exploratory calls the model made on the way are not the data asked for."""
     day, db = export_env
-    first = _sql_call(day, "SELECT CRN FROM cdr")
-    last = {"tool": "query_metrics", "error": False,
-            "input": {"date_from": str(day), "date_to": str(day), "measures": ["calls"]}}
+    exploring = _sql_call(day, "SELECT CRN FROM cdr")
+    final = {"tool": "query_metrics", "error": False,
+             "input": {"date_from": str(day), "date_to": str(day), "measures": ["calls"]}}
     failed = {"tool": "query_metrics", "error": True, "input": {}}
-    repeat = dict(first)
 
-    message = _message(db, [first, failed, repeat, last])
+    message = _message(db, [exploring, final, failed])
     xlsx, csv_export = exports.create_pending(db, message, ["xlsx", "csv"], "u1")
     db.commit()
-    exports.build(db, message, [xlsx, csv_export], "two queries")
+    exports.build(db, message, [xlsx, csv_export], "total calls")
 
-    assert xlsx.sheet_count == 2  # the failed call and the exact repeat are skipped
+    book = load_workbook(exports.resolve(xlsx), read_only=True)
+    assert book.sheetnames == ["Data"] and xlsx.sheet_count == 1
+    assert next(book["Data"].iter_rows(values_only=True)) == ("Calls",)
     with exports.resolve(csv_export).open(encoding="utf-8-sig") as handle:
         assert next(csv.reader(handle)) == ["Calls"]
+
+
+def test_the_previous_query_is_used_when_the_final_one_cannot_be_rerun(export_env):
+    day, db = export_env
+    good = _sql_call(day, "SELECT CRN FROM cdr")
+    broken = _sql_call(day, "DROP TABLE cdr")
+    message = _message(db, [good, broken])
+    (csv_export,) = exports.create_pending(db, message, ["csv"], "u1")
+    db.commit()
+    exports.build(db, message, [csv_export], "crns")
+
+    assert csv_export.status == EXPORT_READY and csv_export.row_count == 6
 
 
 def test_an_answer_without_data_queries_has_nothing_to_export(export_env):
@@ -302,3 +314,59 @@ def test_someone_elses_export_is_a_404(api):
 
     assert login("other").get(url).status_code == 404
     assert login("owner").get("/api/ai/exports/999999/download").status_code == 404
+
+
+# ── Preview limits are not data limits ─────────────────────────────────────
+
+
+def test_a_preview_limit_the_user_did_not_ask_for_is_removed(export_env):
+    """The reported bug: asked for /excel, the model wrote LIMIT 20 to keep its
+    preview short, and the file held 20 rows instead of every call."""
+    day, db = export_env
+    call = _sql_call(day, "SELECT CRN, TEL_DIGIT FROM cdr ORDER BY TEL_DIGIT LIMIT 2")
+    message = _message(db, [call], question="give me the connected list")
+    (xlsx,) = exports.create_pending(db, message, ["xlsx"], "u1")
+    db.commit()
+    exports.build(db, message, [xlsx], "give me the connected list")
+
+    assert xlsx.row_count == 6
+    assert load_workbook(exports.resolve(xlsx), read_only=True).sheetnames == ["Data"]
+
+
+def test_a_limit_the_question_names_is_kept(export_env):
+    day, db = export_env
+    call = _sql_call(day, "SELECT CRN FROM cdr ORDER BY CRN LIMIT 3")
+    message = _message(db, [call], question="top 3 conferences")
+    (csv_export,) = exports.create_pending(db, message, ["csv"], "u1")
+    db.commit()
+    exports.build(db, message, [csv_export], "top 3 conferences")
+    assert csv_export.row_count == 3
+
+
+@pytest.mark.parametrize(
+    ("sql", "question", "kept"),
+    [
+        # The exact statement from the reported conversation (message 186).
+        ("SELECT c.CALL_DATE AS Date, c.CRN FROM cdr c JOIN codr o ON o.CRN = c.CRN "
+         "WHERE c.INCONF_DATETIME_EPOC <> 0 ORDER BY c.START_DATETIME_EPOC LIMIT 20",
+         "give me the oct 1 connected list of their Date, CRN, Phone Number, Duration", False),
+        ("SELECT ACCOUNTID, COUNT(*) FROM cdr GROUP BY 1 ORDER BY 2 DESC LIMIT 10", "top 10 accounts", True),
+        ("SELECT * FROM (SELECT CRN FROM cdr LIMIT 5) t", "list crns", True),  # inner limit untouched
+        ("SELECT CRN FROM cdr LIMIT 20;", "oct 1 2026 list", False),  # "1" and "2026" are not 20
+        # A day of the month is not a row count.
+        ("SELECT CRN FROM cdr LIMIT 10", "oct 10 connected list", False),
+        ("SELECT CRN FROM cdr LIMIT 10", "calls on 10th and 12th", False),
+        ("SELECT CRN FROM cdr LIMIT 3", "oct 1 to 3 calls", False),
+        ("SELECT CRN FROM cdr LIMIT 5", "first 5 calls on 2026-10-05", True),
+    ],
+)
+def test_which_limits_count_as_preview_limits(sql, question, kept):
+    arguments, note = exports.full_arguments({"tool": "run_cdr_query", "input": {"sql": sql}}, question)
+    assert (arguments["sql"] == sql) is kept
+    assert (note is None) is kept
+
+
+def test_a_metrics_limit_is_treated_the_same_way():
+    call = {"tool": "query_metrics", "input": {"measures": ["calls"], "limit": 20}}
+    assert "limit" not in exports.full_arguments(call, "calls by account")[0]
+    assert exports.full_arguments(call, "top 20 accounts by calls")[0]["limit"] == 20

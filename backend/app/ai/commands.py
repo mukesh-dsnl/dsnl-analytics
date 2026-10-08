@@ -1,5 +1,6 @@
 """
-Slash commands in a chat question: /voicedrop /conference /multicall /csv /excel /chart.
+Slash commands in a chat question: /voicedrop /conference /multicall
+/voicedrop-report /csv /excel /chart.
 
 They travel inside the question text ("/voicedrop /excel top accounts last
 week"), so the stored question shows exactly what was asked — commands and
@@ -7,6 +8,7 @@ all — and the request format did not need to change. The server is what
 decides what they mean:
 
   scope    /voicedrop /conference /multicall — narrow the question to services
+  report   /voicedrop-report — answer with the phone-number list (voicedrop_report)
   export   /csv /excel — attach the full result rows as a file (see exports.py)
   display  /chart — ask for one chartable table; the browser draws the chart
 
@@ -20,12 +22,18 @@ from dataclasses import dataclass, field
 SCOPES = ("voicedrop", "conference", "multicall")
 EXPORTS = ("csv", "excel")
 DISPLAYS = ("chart",)
-ALL = SCOPES + EXPORTS + DISPLAYS
+REPORTS = ("voicedrop-report",)
+ALL = SCOPES + EXPORTS + DISPLAYS + REPORTS
 
 # File extension per export command.
 EXPORT_FORMATS = {"csv": "csv", "excel": "xlsx"}
 
-_TOKEN = re.compile(r"(?<![\w/])/(" + "|".join(ALL) + r")\b", re.IGNORECASE)
+# Longest names first, and a command may not run on into more letters or a
+# hyphen: otherwise "/voicedrop-report" would be read as "/voicedrop".
+_TOKEN = re.compile(
+    r"(?<![\w/])/(" + "|".join(sorted(ALL, key=len, reverse=True)) + r")(?![\w-])",
+    re.IGNORECASE,
+)
 
 _SERVICE_LABEL = {"voicedrop": "Voicedrop", "conference": "Conference", "multicall": "MultiCall"}
 
@@ -39,6 +47,10 @@ class Parsed:
     @property
     def scopes(self) -> list[str]:
         return [c for c in self.commands if c in SCOPES]
+
+    @property
+    def wants_report(self) -> bool:
+        return "voicedrop-report" in self.commands
 
     @property
     def exports(self) -> list[str]:
@@ -99,8 +111,24 @@ def instructions(parsed: Parsed) -> str:
             "the limit of what the tools show you. So when a result says it was "
             "truncated, that is only your preview: do not report its row count as the "
             "total, and do not re-query to fetch the rest. Do not add a row limit the "
-            "question did not ask for. In the answer, summarise and show at most 20 "
-            "rows as a preview, and say the complete data is in the attached file."
+            "question did not ask for — no LIMIT in SQL and no `limit` argument just "
+            "to keep the answer short; the tools already cap what you are shown. "
+            "Answer the way a file attachment is described, not with the data: do "
+            "NOT include a table in your reply unless the question explicitly asks to "
+            "see rows in the chat. Instead, in a few short lines, say what the file "
+            "contains — what each row is, its columns, the date range and filters "
+            "applied — and the headline totals from the tool result (rows, connected, "
+            "minutes or whatever the question is about). The download card under your "
+            "reply shows the file's name, size and row count, so do not repeat those."
+        )
+
+    if parsed.wants_report:
+        lines.append(
+            "  - Report: this is a Voicedrop phone-number question. Answer it with the "
+            "voicedrop_report tool — one row per number dialled per campaign per day, with "
+            "its status, total duration and attempts across retries. Pass the account, "
+            "CRNs, phone numbers and status the question names, and the whole date range "
+            "in one call."
         )
 
     if parsed.wants_chart:

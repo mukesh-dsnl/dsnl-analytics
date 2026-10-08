@@ -398,7 +398,8 @@ def test_the_filesystem_is_disabled_before_generated_sql_runs(fixture_lake, monk
 def test_rejects_a_range_wider_than_the_ai_limit(fixture_lake):
     from app.ai.tools.ad_hoc_sql import run_cdr_query
 
-    limit = get_settings().AI_MAX_RANGE_DAYS
+    # Free-form SQL cannot be windowed, so it keeps the direct limit.
+    limit = get_settings().AI_DIRECT_MAX_RANGE_DAYS
     start = fixture_lake
     content, is_error = run_cdr_query(
         date_from=start.isoformat(),

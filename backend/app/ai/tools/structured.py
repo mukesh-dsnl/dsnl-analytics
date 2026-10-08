@@ -13,7 +13,7 @@ cover comes back as `is_error=True` with the message the model needs to try
 again. Turning those into a 500 would end the conversation over something the
 model could have fixed itself on the next round.
 
-Both tiers are bounded by AI_MAX_RANGE_DAYS, not by the dashboard's
+Both tiers are bounded by AI_DIRECT_MAX_RANGE_DAYS, not by the dashboard's
 CDR_MAX_RANGE_DAYS: the filter model's ceiling is overridden through validation
 context below. One ceiling for both tools means one number to tell the model
 about, and it is set for the questions asked here rather than for what a person
@@ -135,7 +135,7 @@ def get_cdr_panel(
                 "account_id": account_id,
                 "crn": crn,
             },
-            context={"max_range_days": get_settings().AI_MAX_RANGE_DAYS},
+            context={"max_range_days": get_settings().AI_DIRECT_MAX_RANGE_DAYS},
         )
     except ValidationError as exc:
         # The model reads this to correct itself, so it gets the readable form

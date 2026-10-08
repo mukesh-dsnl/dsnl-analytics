@@ -36,17 +36,19 @@ from app.ai.schema_prompt import dated_system_prompt
 from app.ai.tools.ad_hoc_sql import RUN_QUERY_TOOL, run_cdr_query
 from app.ai.tools.metrics import QUERY_METRICS_TOOL, query_metrics
 from app.ai.tools.structured import GET_PANEL_TOOL, get_cdr_panel
+from app.ai.tools.voicedrop_report import VOICEDROP_REPORT_TOOL, voicedrop_report
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 # Order matters: the model reads these as a list, and the one that answers most
 # questions is offered first.
-TOOLS = [QUERY_METRICS_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
+TOOLS = [QUERY_METRICS_TOOL, VOICEDROP_REPORT_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
 
 DISPATCH: dict[str, Callable[..., tuple[str, bool]]] = {
     "query_metrics": query_metrics,
     "get_cdr_panel": get_cdr_panel,
+    "voicedrop_report": voicedrop_report,
     "run_cdr_query": run_cdr_query,
 }
 

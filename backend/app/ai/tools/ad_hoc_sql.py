@@ -28,6 +28,7 @@ same audit trail as any other.
 
 import json
 import logging
+import re
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -37,7 +38,7 @@ import duckdb
 
 from app.ai import sql_guard
 from app.ai.providers.base import ToolSpec
-from app.ai.tools.export_source import EXPORT_BATCH, ExportData, ExportUnavailable
+from app.ai.tools.export_source import EXPORT_BATCH, ExportData, ExportUnavailable, connect
 from app.cdr import lake, service
 from app.core.config import get_settings
 
@@ -119,7 +120,34 @@ def _sql_list(paths) -> str:
     return "[" + ", ".join("'" + str(p).replace("'", "''") + "'" for p in paths) + "]"
 
 
-def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> None:
+# `SELECT *`, `c.*` — a statement that takes every column. `COUNT(*)` does not.
+_STAR = re.compile(r"(?:\bselect|,)\s*(?:distinct\s+)?(?:\w+\.)?\*", re.IGNORECASE)
+# Always kept: the date filter below needs these, and the join needs the keys.
+_CDR_ALWAYS = {"CALL_DATE", "START_DATETIME", "CRN", "CONF_NUM"}
+_CODR_ALWAYS = {"CRN", "CONF_NUM"}
+
+
+def _columns_for(con: duckdb.DuckDBPyConnection, files: list, sql: str | None, always: set[str]) -> str:
+    """The projection to materialise: only the columns the statement mentions.
+
+    A day of CDR has 42 columns, and copying every one of them for every day of
+    the range is what exhausted memory on long ranges. A column the SQL never
+    names cannot change its result, so it is left on disk. Anything that asks
+    for every column (`SELECT *`, `c.*`) gets every column.
+    """
+    if not sql or _STAR.search(sql):
+        return "*"
+    available = [row[0] for row in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet({_sql_list(files)}, union_by_name = true)"
+    ).fetchall()]
+    mentioned = {word.upper() for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", sql)}
+    keep = [c for c in available if c.upper() in mentioned or c.upper() in always]
+    return ", ".join(f'"{c}"' for c in keep) if keep else "*"
+
+
+def _prepare(
+    con: duckdb.DuckDBPyConnection, date_from: date, date_to: date, sql: str | None = None
+) -> None:
     """Materialise `cdr` and `codr` for the range, then lock the filesystem.
 
     Raises DatasetNotReady when the CDR side has nothing for the range — an
@@ -141,13 +169,17 @@ def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> 
     # named for a day, but nothing guarantees every row inside it falls on that
     # day, and the range endpoints have to be exact. Same rule as filters.py.
     con.execute(
-        f"CREATE TEMP TABLE cdr AS SELECT * FROM read_parquet({_sql_list(cdr_files)}) "
+        f"CREATE TEMP TABLE cdr AS SELECT {_columns_for(con, cdr_files, sql, _CDR_ALWAYS)} "
+        f"FROM read_parquet({_sql_list(cdr_files)}, union_by_name = true) "
         "WHERE COALESCE(CALL_DATE, CAST(START_DATETIME AS DATE)) BETWEEN ? AND ?",
         [date_from, date_to],
     )
 
     if codr_files:
-        con.execute(f"CREATE TEMP TABLE codr AS SELECT * FROM read_parquet({_sql_list(codr_files)})")
+        con.execute(
+            f"CREATE TEMP TABLE codr AS SELECT {_columns_for(con, codr_files, sql, _CODR_ALWAYS)} "
+            f"FROM read_parquet({_sql_list(codr_files)}, union_by_name = true)"
+        )
     else:
         # An empty table of the right shape, not a missing one: a join against
         # it returns no CODR-side rows, which is the truth. A missing table
@@ -177,7 +209,7 @@ def _checked_range(date_from: Any, date_to: Any) -> tuple[date, date]:
     if end < start:
         raise ValueError(f"date_to ({end}) is before date_from ({start}).")
     span = (end - start).days + 1
-    limit = get_settings().AI_MAX_RANGE_DAYS
+    limit = get_settings().AI_DIRECT_MAX_RANGE_DAYS
     if span > limit:
         raise ValueError(
             f"That range spans {span} days; ad-hoc queries are limited to "
@@ -215,8 +247,8 @@ def run_cdr_query(
 
     # ── 3-5. Execute ───────────────────────────────────────────────────────
     try:
-        with duckdb.connect() as con:
-            _prepare(con, start, end)
+        with connect() as con:
+            _prepare(con, start, end, sql)
             cursor = con.execute(guarded)
             columns = [d[0] for d in cursor.description]
             rows = [
@@ -275,9 +307,9 @@ def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData
     except (ValueError, sql_guard.SqlNotAllowed) as exc:
         raise ExportUnavailable(str(exc)) from exc
 
-    with duckdb.connect() as con:
+    with connect() as con:
         try:
-            _prepare(con, start, end)
+            _prepare(con, start, end, arguments.get("sql"))
             cursor = con.execute(guarded)
         except (service.DatasetNotReady, duckdb.Error) as exc:
             raise ExportUnavailable(str(exc)) from exc

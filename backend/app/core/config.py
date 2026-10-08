@@ -81,7 +81,21 @@ class Settings(BaseSettings):
     # run_cdr_query are checked against, so it is the one number the model is
     # told about, and the one that bounds how many daily files a single tool
     # call can open.
-    AI_MAX_RANGE_DAYS: int = 31
+    AI_MAX_RANGE_DAYS: int = 366
+    # The windowed tools (query_metrics, voicedrop_report) cover any range up to
+    # AI_MAX_RANGE_DAYS in one call by working through it AI_WINDOW_DAYS at a
+    # time and combining the results — so a year costs one model round, and
+    # memory is bounded by one window's data, not the whole range's.
+    AI_WINDOW_DAYS: int = 5
+    # The tools that cannot be split into windows — free-form SQL, whose result
+    # cannot be merged in general, and the dashboard panels — keep a direct
+    # limit; the model is pointed at the windowed tools for anything longer.
+    AI_DIRECT_MAX_RANGE_DAYS: int = 31
+    # A ceiling on what one AI query may hold in memory. Past it DuckDB spills
+    # to AI_DUCKDB_TEMP_DIR (relative to backend/) instead of exhausting the
+    # machine, and fails cleanly if even that is not enough.
+    AI_DUCKDB_MEMORY_LIMIT: str = "2GB"
+    AI_DUCKDB_TEMP_DIR: str = "storage/duckdb_tmp"
     # How many result rows may go back to the model. This is a context budget,
     # not a safety limit — it is applied as a structural LIMIT wrapper the
     # model's own SQL cannot widen.

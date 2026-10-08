@@ -3,23 +3,20 @@
 
 The model only ever reads a capped slice of a result (AI_MAX_ROWS_TO_MODEL),
 and the chat shows less still. The file is for the rest of it: after the answer
-is saved, every data tool call the model made successfully is run again
-without that cap (up to AI_EXPORT_MAX_ROWS) and streamed straight to disk. The
-rows never pass through the model, so the file is exact and costs no tokens.
+is saved, the answer's final data query is run again without that cap (up to
+AI_EXPORT_MAX_ROWS) and streamed straight to disk. The rows never pass through
+the model, so the file is exact and costs no tokens.
 
-What goes in each format:
+The file holds only the data that was asked for: one table, readable column
+headers, nothing else — no notes sheet, no sheets for the exploratory calls
+the model made on the way. In Excel that is a single "Data" sheet with the
+header row bold and frozen, numbers as numbers, and identifiers (phones, CRNs,
+account ids) as text so Excel neither drops leading zeros nor shows them as
+9.84E+11. The CSV holds the same rows.
 
-  Excel   an "About" sheet (the question, when, and what each sheet holds),
-          then one sheet per data query — header row bold and frozen, numbers
-          as numbers, identifiers (phones, CRNs, account ids) as text so Excel
-          neither drops leading zeros nor shows them as 9.84E+11.
-  CSV     one table can only hold one result, so it is the answer's *last*
-          successful data query — the one the answer is built on.
-
-Both formats are written in a single pass over the queries, so asking for
-/csv /excel together runs each query once. Files are written under a temporary
-name and renamed into place when complete, so a crash leaves no half file a
-download could serve.
+Both formats are written in one pass, so /csv /excel together run the query
+once. Files are written under a temporary name and renamed into place when
+complete, so a crash leaves no half file a download could serve.
 """
 
 from __future__ import annotations
@@ -37,7 +34,7 @@ from typing import Any, Callable, Iterator
 
 from sqlalchemy.orm import Session
 
-from app.ai.tools import ad_hoc_sql, metrics, structured
+from app.ai.tools import ad_hoc_sql, metrics, structured, voicedrop_report
 from app.ai.tools.export_source import ExportData, ExportUnavailable
 from app.core.config import get_settings
 from app.models.conversation import (
@@ -59,6 +56,7 @@ EXPORTERS: dict[str, Callable[[dict[str, Any], int], Any]] = {
     "query_metrics": metrics.export_rows,
     "run_cdr_query": ad_hoc_sql.export_rows,
     "get_cdr_panel": structured.export_rows,
+    "voicedrop_report": voicedrop_report.export_rows,
 }
 
 # Columns that hold identifiers, not quantities: written as text in Excel.
@@ -196,6 +194,63 @@ def _sheet_title(text: str, used: set[str]) -> str:
 
 # ── Which tool calls to export ──────────────────────────────────────────
 
+# A LIMIT at the very end of a statement is the outermost one: anything inside
+# a subquery or CTE is followed by its closing parenthesis.
+_TRAILING_LIMIT = re.compile(r"\s+limit\s+(\d+)\s*;?\s*$", re.IGNORECASE)
+
+
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
+# Dates in a question — "oct 10", "10th", "10 october", "2026-10-10", "10/10" —
+# whose numbers are days, not row counts.
+_DATES = re.compile(
+    rf"{_MONTH}\s*\d{{1,2}}(?:\s*(?:,|-|to|and|&)\s*\d{{1,2}})*|\d{{1,2}}\s*{_MONTH}"
+    r"|\d{1,2}(?:st|nd|rd|th)\b|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?",
+    re.IGNORECASE,
+)
+
+
+def _asked_for(count: int, question: str) -> bool:
+    """Whether the question itself names this many rows ("top 10", "first 50").
+
+    Dates are taken out first, so "oct 10" does not read as asking for ten.
+    """
+    text = _DATES.sub(" ", question or "")
+    return bool(re.search(rf"(?<![\d.]){count}(?![\d.])", text))
+
+
+def full_arguments(call: dict[str, Any], question: str) -> tuple[dict[str, Any], str | None]:
+    """The call's arguments for the file, with any row limit the user did not ask for removed.
+
+    The model sometimes caps a query to keep its own chat preview short — a
+    `LIMIT 20` it then shows as twenty rows. That cap belongs to the preview,
+    not to the data: a file limited to it is exactly the partial result the
+    export exists to avoid. A limit the question names ("top 10 accounts")
+    is the answer itself and is kept.
+
+    Returns (arguments, note) — the note says what was removed, for the file.
+    """
+    arguments = dict(call.get("input") or {})
+    tool = call.get("tool")
+
+    if tool == "run_cdr_query":
+        sql = str(arguments.get("sql") or "")
+        match = _TRAILING_LIMIT.search(sql)
+        if match and not _asked_for(int(match.group(1)), question):
+            arguments["sql"] = sql[: match.start()]
+            return arguments, f"The query's LIMIT {match.group(1)} was a chat preview limit and was removed, so every row is included."
+
+    if tool == "query_metrics" and arguments.get("limit") is not None:
+        try:
+            limit = int(arguments["limit"])
+        except (TypeError, ValueError):
+            limit = None
+        if limit is not None and not _asked_for(limit, question):
+            arguments.pop("limit")
+            return arguments, f"The limit of {limit} rows was a chat preview limit and was removed, so every row is included."
+
+    return arguments, None
+
+
 
 def sources(queries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """The answer's successful data calls, in order, without exact repeats."""
@@ -251,79 +306,44 @@ def serialize(export: MessageExport) -> dict[str, Any]:
 # ── Writing ─────────────────────────────────────────────────────────────
 
 
-class _Workbook:
-    """A streaming (write-only) workbook: rows go to disk as they arrive."""
+class _Sheet:
+    """One streaming (write-only) worksheet: rows go to disk as they arrive."""
 
-    def __init__(self) -> None:
+    def __init__(self, data: ExportData, sample: list[tuple]) -> None:
         from openpyxl import Workbook
-
-        self.book = Workbook(write_only=True)
-        self.about = self.book.create_sheet("About")
-        self.used_titles = {"about"}
-        self.rows_written = 0
-        self.sheets = 0
-
-    def _header_cells(self, sheet, names: list[str]):
         from openpyxl.cell import WriteOnlyCell
-        from openpyxl.styles import Alignment, Font, PatternFill
-
-        cells = []
-        for name in names:
-            cell = WriteOnlyCell(sheet, value=name)
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="1F4E79")
-            cell.alignment = Alignment(vertical="center")
-            cells.append(cell)
-        return cells
-
-    def write_source(
-        self, title: str, data: ExportData, sample: list[tuple], batches: Iterator[list[tuple]]
-    ) -> tuple[int, bool]:
-        """One query's rows as a sheet. Returns (rows written, hit a cap).
-
-        `sample` is the first batch, for sizing columns; `batches` is every
-        batch including that one.
-        """
+        from openpyxl.styles import Font
         from openpyxl.utils import get_column_letter
 
-        sheet = self.book.create_sheet(_sheet_title(title, self.used_titles))
-        self.sheets += 1
-        names = [header(c) for c in data.columns]
-        as_text = [_is_id(c) for c in data.columns]
+        self.book = Workbook(write_only=True)
+        self.sheet = self.book.create_sheet("Data")
+        self.as_text = [_is_id(c) for c in data.columns]
+        self.rows = 0
+        self.capped = False
 
+        names = [header(c) for c in data.columns]
         # Widths from the header and the first batch — a write-only sheet has
         # to be told before its first row, and the first batch is a fair sample.
         for index, name in enumerate(names):
             lengths = [len(str(row[index])) for row in sample[:500] if row[index] is not None]
             width = min(max([len(name), *lengths]) + 2, 60)
-            sheet.column_dimensions[get_column_letter(index + 1)].width = width
-        sheet.freeze_panes = "A2"
-        sheet.append(self._header_cells(sheet, names))
+            self.sheet.column_dimensions[get_column_letter(index + 1)].width = width
+        self.sheet.freeze_panes = "A2"
 
-        written = 0
-        capped = False
-        for batch in batches:
-            for row in batch:
-                if written >= EXCEL_MAX_ROWS:
-                    capped = True
-                    break
-                sheet.append([_excel_value(v, t) for v, t in zip(row, as_text)])
-                written += 1
-            if capped:
-                break
-        self.rows_written += written
-        return written, capped or written >= data.cap
-
-    def write_about(self, lines: list[tuple[str, Any]]) -> None:
-        from openpyxl.cell import WriteOnlyCell
-        from openpyxl.styles import Font
-
-        self.about.column_dimensions["A"].width = 22
-        self.about.column_dimensions["B"].width = 110
-        for label, value in lines:
-            cell = WriteOnlyCell(self.about, value=label)
+        cells = []
+        for name in names:
+            cell = WriteOnlyCell(self.sheet, value=name)
             cell.font = Font(bold=True)
-            self.about.append([cell, value])
+            cells.append(cell)
+        self.sheet.append(cells)
+
+    def write(self, batch: list[tuple]) -> None:
+        for row in batch:
+            if self.rows >= EXCEL_MAX_ROWS:
+                self.capped = True
+                return
+            self.sheet.append([_excel_value(v, t) for v, t in zip(row, self.as_text)])
+            self.rows += 1
 
     def save(self, path: Path) -> None:
         self.book.save(path)
@@ -335,30 +355,58 @@ def _chain(first: list[tuple], rest: Iterator[list[tuple]]) -> Iterator[list[tup
     yield from rest
 
 
-def _write_csv(path: Path, data: ExportData, first: list[tuple], rest: Iterator[list[tuple]]) -> int:
-    written = 0
-    # utf-8-sig: the byte-order mark is what makes Excel open UTF-8 correctly.
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow([header(c) for c in data.columns])
-        for batch in _chain(first, rest):
-            writer.writerows([_csv_value(v) for v in row] for row in batch)
-            written += len(batch)
+def _write(data: ExportData, parts: dict[str, Path]) -> dict[str, tuple[int, bool]]:
+    """Stream one result into every requested format at once.
+
+    Returns {format: (rows written, may be incomplete)}. One pass over the
+    rows, so /csv /excel together still run the query only once.
+    """
+    batches = iter(data.batches)
+    first = next(batches, [])
+    sheet = _Sheet(data, first) if "xlsx" in parts else None
+    csv_rows = 0
+
+    handle = parts["csv"].open("w", encoding="utf-8-sig", newline="") if "csv" in parts else None
+    try:
+        # utf-8-sig: the byte-order mark is what makes Excel open UTF-8 correctly.
+        writer = csv.writer(handle) if handle else None
+        if writer:
+            writer.writerow([header(c) for c in data.columns])
+        for batch in _chain(first, batches):
+            if writer:
+                writer.writerows([_csv_value(v) for v in row] for row in batch)
+                csv_rows += len(batch)
+            if sheet:
+                sheet.write(batch)
+    finally:
+        if handle:
+            handle.close()
+
+    written: dict[str, tuple[int, bool]] = {}
+    if sheet:
+        sheet.save(parts["xlsx"])
+        written["xlsx"] = (sheet.rows, sheet.capped or sheet.rows >= data.cap)
+    if handle:
+        written["csv"] = (csv_rows, csv_rows >= data.cap)
     return written
 
 
 def build(db: Session, message: Message, exports: list[MessageExport], question: str) -> None:
     """Produce every pending file for one answer, then record the outcome.
 
+    The file holds the data the question asked for and nothing else: one
+    table — the answer's final data query, which is the result the answer is
+    built on — under readable column headers. Earlier calls in the same answer
+    are the model finding its way there and are left out; one of them is used
+    only if the final query can no longer be re-run.
+
     Never raises: a failed export is a row marked `failed` with a reason the
     page can show, not an error that undoes the answer it belongs to.
     """
     if not exports:
         return
-    settings = get_settings()
-    cap = settings.AI_EXPORT_MAX_ROWS
-    want_csv = any(e.format == "csv" for e in exports)
-    want_xlsx = any(e.format == "xlsx" for e in exports)
+    cap = get_settings().AI_EXPORT_MAX_ROWS
+    formats = {e.format for e in exports}
 
     calls = sources(message.queries)
     if not calls:
@@ -368,96 +416,32 @@ def build(db: Session, message: Message, exports: list[MessageExport], question:
     stamp = datetime.now(timezone.utc)
     folder = export_dir() / f"{stamp:%Y}" / f"{stamp:%m}"
     folder.mkdir(parents=True, exist_ok=True)
-    token = uuid.uuid4().hex[:8]
-    base = f"{message.conversation_id[:8]}-{message.id}-{token}"
+    base = f"{message.conversation_id[:8]}-{message.id}-{uuid.uuid4().hex[:8]}"
     label = _slug(question)
-
-    workbook = _Workbook() if want_xlsx else None
-    csv_tmp: Path | None = None
-    csv_rows = 0
-    csv_truncated = False
-    about: list[tuple[str, Any]] = []
-    problems: list[str] = []
-    any_truncated = False
+    parts = {fmt: folder / f".{base}.{fmt}.part" for fmt in formats}
 
     try:
-        for index, call in enumerate(calls, start=1):
-            exporter = EXPORTERS[call["tool"]]
+        problems: list[str] = []
+        written: dict[str, tuple[int, bool]] = {}
+        for call in reversed(calls):
+            arguments, _ = full_arguments(call, question)
             try:
-                with exporter(dict(call.get("input") or {}), cap) as data:
-                    batches = iter(data.batches)
-                    first = next(batches, [])
-                    this_csv = folder / f".{base}-{index}.csv.part" if want_csv else None
-
-                    if workbook is not None and this_csv is not None:
-                        # One query, two writers: tee each batch to both.
-                        rows_seen = [0]
-
-                        def tee(source=batches, out=this_csv) -> Iterator[list[tuple]]:
-                            with out.open("w", encoding="utf-8-sig", newline="") as handle:
-                                writer = csv.writer(handle)
-                                writer.writerow([header(c) for c in data.columns])
-                                for chunk in _chain(first, source):
-                                    writer.writerows([_csv_value(v) for v in row] for row in chunk)
-                                    rows_seen[0] += len(chunk)
-                                    yield chunk
-
-                        written, capped = workbook.write_source(
-                            f"{index}. {call['tool']}", data, first, tee()
-                        )
-                        file_rows = rows_seen[0]
-                    elif workbook is not None:
-                        written, capped = workbook.write_source(
-                            f"{index}. {call['tool']}", data, first, _chain(first, batches)
-                        )
-                        file_rows = written
-                    else:
-                        file_rows = _write_csv(this_csv, data, first, batches)
-                        written, capped = file_rows, file_rows >= data.cap
-
-                    if this_csv is not None:
-                        # The CSV is the last query that exported cleanly.
-                        if csv_tmp is not None:
-                            csv_tmp.unlink(missing_ok=True)
-                        csv_tmp, csv_rows, csv_truncated = this_csv, file_rows, file_rows >= data.cap
-
-                    any_truncated |= capped
-                    about.append((f"Sheet {index}", data.description))
-                    about.append(("", f"{written:,} rows" + (" — reached the export limit; the data may be incomplete" if capped else "")))
-                    for note in data.notes:
-                        about.append(("", note))
+                with EXPORTERS[call["tool"]](arguments, cap) as data:
+                    written = _write(data, parts)
+                break
             except ExportUnavailable as exc:
-                problems.append(f"Query {index} ({call['tool']}) could not be exported: {exc}")
-                logger.warning(f"AI export {message.id}: query {index} skipped: {exc}")
+                problems.append(f"{call['tool']}: {exc}")
+                logger.warning(f"AI export {message.id}: {call['tool']} could not be re-run: {exc}")
 
-        if (workbook is None or workbook.sheets == 0) and csv_tmp is None:
-            _fail(db, exports, "; ".join(problems) or "No query could be exported.")
+        if not written:
+            _fail(db, exports, "The data could not be exported. " + "; ".join(problems))
             return
 
         for export in exports:
-            if export.format == "xlsx" and workbook is not None and workbook.sheets:
-                lines = [
-                    ("Question", question),
-                    ("Generated", f"{stamp:%Y-%m-%d %H:%M} UTC"),
-                    ("Rows", f"{workbook.rows_written:,} across {workbook.sheets} sheet(s)"),
-                    ("", ""),
-                    *about,
-                    *([("", ""), ("Skipped", "")] + [("", p) for p in problems] if problems else []),
-                ]
-                workbook.write_about(lines)
-                final = folder / f"{base}.xlsx"
-                part = folder / f".{base}.xlsx.part"
-                workbook.save(part)
-                os.replace(part, final)
-                _ready(export, final, f"{label}-{stamp:%Y-%m-%d}.xlsx", workbook.rows_written, workbook.sheets, any_truncated)
-            elif export.format == "csv" and csv_tmp is not None:
-                final = folder / f"{base}.csv"
-                os.replace(csv_tmp, final)
-                csv_tmp = None
-                _ready(export, final, f"{label}-{stamp:%Y-%m-%d}.csv", csv_rows, 1, csv_truncated)
-            else:
-                export.status = EXPORT_FAILED
-                export.error = "; ".join(problems) or "No query could be exported."
+            rows, incomplete = written[export.format]
+            final = folder / f"{base}.{export.format}"
+            os.replace(parts[export.format], final)
+            _ready(export, final, f"{label}-{stamp:%Y-%m-%d}.{export.format}", rows, 1, incomplete)
         db.commit()
         logger.info(
             f"AI export {message.id}: "
@@ -468,8 +452,8 @@ def build(db: Session, message: Message, exports: list[MessageExport], question:
         db.rollback()
         _fail(db, exports, f"The file could not be generated: {type(exc).__name__}.")
     finally:
-        for leftover in folder.glob(f".{base}*.part"):
-            leftover.unlink(missing_ok=True)
+        for part in parts.values():
+            part.unlink(missing_ok=True)
 
 
 def _ready(export: MessageExport, path: Path, file_name: str, rows: int, sheets: int, truncated: bool) -> None:

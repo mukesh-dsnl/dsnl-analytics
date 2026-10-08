@@ -29,6 +29,8 @@ export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null 
   const [menuDismissed, setMenuDismissed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastThread = useRef<string | null>(threadId);
+  // When Stop was last pressed — see `submit`.
+  const stoppedAt = useRef(0);
 
   // Scope is sticky within a thread — "and yesterday?" stays a Voicedrop
   // question — but must not leak into a different conversation.
@@ -81,10 +83,19 @@ export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null 
     textareaRef.current?.focus();
   };
 
-  const canSend = value.trim().length > 0 || chips.length > 0;
+  // A scope chip is a setting, not a question: it stays in the box after a
+  // send, so letting it send on its own meant an empty Enter — or a click that
+  // landed on the button just as it turned from Stop back into Send — asked
+  // "/voicedrop" and nothing else. Only a file or a chart may go without text,
+  // as "do that to the previous answer".
+  const canSend = value.trim().length > 0 || chips.some((c) => c.kind !== 'scope');
 
   const submit = () => {
     if (!canSend || isPending) return;
+    // The same button stops and sends. If the answer finishes as Stop is
+    // being pressed, the next click lands on Send — which the user did not
+    // mean. A beat after a stop, the button does nothing.
+    if (Date.now() - stoppedAt.current < 1000) return;
     const question = [...chips.map((c) => `/${c.name}`), value.trim()].join(' ').trim();
     onSend(question);
     setValue('');
@@ -252,7 +263,14 @@ export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null 
             {(isPending || canSend) && (
               <button
                 type={isPending ? 'button' : 'submit'}
-                onClick={isPending ? onStop : undefined}
+                onClick={
+                  isPending
+                    ? () => {
+                        stoppedAt.current = Date.now();
+                        onStop();
+                      }
+                    : undefined
+                }
                 disabled={isPending ? false : !canSend}
                 aria-label={isPending ? 'Stop generating' : 'Send question'}
                 title={isPending ? 'Stop generating' : 'Send'}
