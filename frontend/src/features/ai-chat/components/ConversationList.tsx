@@ -209,7 +209,7 @@ function ConversationRow({
           ) : (
             <div className="px-3 py-2">
               <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2">
-                Delete this chat? It is archived, not erased.
+                Delete this chat?
               </p>
               <div className="flex gap-1.5">
                 <button

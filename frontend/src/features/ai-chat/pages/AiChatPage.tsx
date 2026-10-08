@@ -162,7 +162,7 @@ export function AiChatPage() {
   // precondition and the URL oscillated. There is nothing to keep in step now.
   const { conversationId } = useParams();
 
-  const { messages, send, stop, isPending, isRestoring, usage, loadError } = useChat(
+  const { messages, send, stop, isPending, isRestoring, loadError } = useChat(
     conversationId ?? null,
   );
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -316,7 +316,6 @@ export function AiChatPage() {
           onSend={send}
           onStop={stop}
           isPending={isPending}
-          cost={{ amount: usage.cost, currency: usage.currency }}
           threadId={conversationId ?? null}
         />
       </div>

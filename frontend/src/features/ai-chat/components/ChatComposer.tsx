@@ -9,8 +9,6 @@ interface ChatComposerProps {
   /** Abandon the answer in progress. The same button that sent it stops it. */
   onStop: () => void;
   isPending: boolean;
-  /** The conversation's running cost, shown above the send button. */
-  cost?: { amount: number; currency: string };
   /**
    * The open thread. Scope chips belong to a thread: moving to a different one
    * clears them, but a new thread learning its id mid-answer does not.
@@ -21,7 +19,7 @@ interface ChatComposerProps {
 /** Grow with the text, then scroll — past this the box would eat the transcript. */
 const MAX_HEIGHT = 160;
 
-export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null }: ChatComposerProps) {
+export function ChatComposer({ onSend, onStop, isPending, threadId = null }: ChatComposerProps) {
   const [value, setValue] = useState('');
   const [chips, setChips] = useState<ChatCommand[]>([]);
   const [caret, setCaret] = useState(0);
@@ -248,14 +246,6 @@ export function ChatComposer({ onSend, onStop, isPending, cost, threadId = null 
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {cost && cost.amount > 0 && (
-              <span
-                title="Estimated from token counts"
-                className="text-xs font-semibold tabular-nums text-zinc-500 dark:text-zinc-400 px-1 py-0.5"
-              >
-                ${cost.amount}
-              </span>
-            )}
             {/* One button, two jobs: send, or stop the answer in progress.
                 `type` switches with the mode — left as "submit" it would post
                 the form on click — and stopping is never disabled, since the
