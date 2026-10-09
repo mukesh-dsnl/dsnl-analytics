@@ -14,6 +14,14 @@
    mode is a deep navy rather than a true black.
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
+  /* Shared with RunDesk's sign-in page: the hero ink on the brand ground, and
+     the action button, whose colours flip with the theme (see --action below). */
+  --color-hero: #00a3e0;
+  --color-indigo-deep: #171b57;
+  --color-cyan-light: #74cef3;
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-on-action: var(--on-action);
   /* Brand blue. Generates bg-primary / text-primary / border-primary. */
   --color-primary: #00a3e0;
   --color-primary-hover: #0089bf;
@@ -280,60 +288,6 @@ body {
   }
 }
 
-/* ── Panel reveal ──────────────────────────────────────────────────────────
-   The assistant opens out of the floating button in the corner and collapses
-   back into it, so the button reads as the thing the page came from rather
-   than as a link that happened to change the screen.
-
-   A circular clip rather than a scale: the content is laid out at its final
-   size for the whole animation, so text is never caught mid-transform and
-   blurred, and nothing reflows as it grows. The circle's centre and radius are
-   measured from the button at click time and arrive as custom properties —
-   these keyframes only describe the shape, never where it is.
-
-   `both` fill-mode is load-bearing on the outward one: it has to hold the
-   panel closed after the animation ends, because the route change happens on
-   the far side of it. */
-@keyframes panel-reveal-in {
-  from { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
-  to   { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
-}
-
-@keyframes panel-reveal-out {
-  from { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
-  to   { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
-}
-
-/* What the analytics page arrives on after the chat has closed. Without it the
-   collapse ends on a hard cut to a full page, which reads as a glitch rather
-   than as the end of the movement. */
-@keyframes panel-settle {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-.panel-reveal-in {
-  animation: panel-reveal-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.panel-reveal-out {
-  animation: panel-reveal-out 300ms cubic-bezier(0.55, 0, 1, 0.45) both;
-}
-
-.panel-settle {
-  animation: panel-settle 240ms ease-out both;
-}
-
-/* The navigation still happens; only the movement is dropped. Layout.tsx makes
-   the same check before it schedules anything, so the route change is not left
-   waiting behind an animation that never runs. */
-@media (prefers-reduced-motion: reduce) {
-  .panel-reveal-in,
-  .panel-reveal-out,
-  .panel-settle {
-    animation: none;
-  }
-}
 /* MultiCall registration lookup: panels rise into place as the search docks
    and results arrive. */
 @keyframes mc-rise {
@@ -345,4 +299,16 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .mc-rise { animation: none; }
+}
+
+/* The action button's colours, light and dark — as on RunDesk. */
+:root {
+  --action: #0089bf;
+  --action-hover: #00a3e0;
+  --on-action: #ffffff;
+}
+.dark {
+  --action: #00a3e0;
+  --action-hover: #33b8ed;
+  --on-action: #10152a;
 }

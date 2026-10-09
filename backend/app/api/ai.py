@@ -30,16 +30,18 @@ import logging
 from typing import Any, Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.ai import commands as slash
 from app.ai import conversations as store
+from app.ai import exports as export_files
 from app.ai import jobs, orchestrator
 from app.ai.providers.factory import ProviderNotConfigured, get_llm_client
 from app.api.deps import current_user
 from app.core.database import SessionLocal, get_db
-from app.models.conversation import STATUS_PENDING, Conversation, Message
+from app.models.conversation import EXPORT_READY, STATUS_PENDING, Conversation, Message, MessageExport
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -110,6 +112,24 @@ class InteractionUsage(BaseModel):
     total_tokens: int = 0
 
 
+class ExportInfo(BaseModel):
+    """A /csv or /excel file attached to an answer."""
+
+    id: int
+    format: str  # "csv" | "xlsx"
+    # "pending" while it is being written, then "ready" or "failed".
+    status: str
+    file_name: Optional[str] = None
+    row_count: int = 0
+    sheet_count: int = 0
+    size_bytes: int = 0
+    # A source reached the export row limit, so the file may be incomplete.
+    truncated: bool = False
+    error: Optional[str] = None
+    # Set once ready. Authenticated like every other route here.
+    download_url: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
     answer: str
     # Always present: a client that sent none gets the id of the thread it just
@@ -123,6 +143,9 @@ class ChatResponse(BaseModel):
     interaction: InteractionUsage = Field(default_factory=InteractionUsage)
     # The whole thread, including this exchange.
     usage: TokenUsage = Field(default_factory=TokenUsage)
+    # Files requested with /csv or /excel, already written by the time this
+    # returns (the streaming route reports them as they finish instead).
+    exports: list[ExportInfo] = Field(default_factory=list)
 
 
 class ConversationSummary(BaseModel):
@@ -148,6 +171,7 @@ class StoredInteraction(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     created_at: Optional[str] = None
+    exports: list[ExportInfo] = Field(default_factory=list)
 
 
 class ConversationDetail(ConversationSummary):
@@ -174,6 +198,19 @@ def _summary(conversation: Conversation, message_count: int) -> ConversationSumm
 # ── Asking ─────────────────────────────────────────────────────────────────
 
 
+def _model_question(parsed: slash.Parsed, raw: str) -> str:
+    """What the model is asked: the question without its command tokens.
+
+    A message that is *only* commands ("/excel") refers to the question before
+    it, so it is spelled out as such rather than sent as an empty string.
+    """
+    if parsed.text:
+        return parsed.text
+    if parsed.commands:
+        return "Apply this to my previous question and run it again."
+    return raw
+
+
 def _answer(db: Session, body: ChatRequest, llm, user: User) -> dict[str, Any]:
     """Load, open the row, run, close the row — the flow both endpoints share.
 
@@ -181,20 +218,27 @@ def _answer(db: Session, body: ChatRequest, llm, user: User) -> dict[str, Any]:
     `fail`; it is promoted to `pass` once an answer exists. A request that dies
     mid-flight therefore leaves an honest record rather than an optimistic one.
     """
-    conversation = store.get_or_create(db, body.conversation_id, body.question, user)
+    parsed = slash.parse(body.question)
+    question = _model_question(parsed, body.question)
+    conversation = store.get_or_create(db, body.conversation_id, parsed.text or body.question, user)
     history = store.load_history(db, conversation.id)
+    # Stored as typed, commands included, so the transcript shows what was asked.
     interaction = store.start_interaction(db, conversation, body.question)
     db.commit()
 
     try:
-        result = orchestrator.answer(history=history, question=body.question, llm=llm)
+        result = orchestrator.answer(history=history, question=question, llm=llm, commands=parsed)
     except Exception:
         # The row stays `fail` with its question intact; the caller gets a 502.
         db.commit()
         raise
 
     store.complete_interaction(db, conversation, interaction, result, ok=True)
+    formats = [slash.EXPORT_FORMATS[e] for e in parsed.exports]
+    pending = export_files.create_pending(db, interaction, formats, user.user_id) if formats else []
     db.commit()
+    # The blocking route waits for its files; the streaming one does not.
+    export_files.build(db, interaction, pending, question)
 
     return {
         **result,
@@ -205,6 +249,7 @@ def _answer(db: Session, body: ChatRequest, llm, user: User) -> dict[str, Any]:
             "total_tokens": interaction.total_tokens,
         },
         "usage": store.usage(conversation),
+        "exports": [export_files.serialize(e) for e in pending],
     }
 
 
@@ -247,6 +292,7 @@ def chat(
         queries=result.get("queries", []),
         interaction=InteractionUsage(**result["interaction"]),
         usage=TokenUsage(**result["usage"]),
+        exports=[ExportInfo(**e) for e in result.get("exports", [])],
     )
 
 
@@ -284,9 +330,12 @@ def chat_stream(
     # Opened and closed here, before any streaming: the row has to exist (and
     # be committed) before the worker starts, and this session must not still
     # be open while the worker holds its own.
+    parsed = slash.parse(body.question)
+    question = _model_question(parsed, body.question)
+
     db = SessionLocal()
     try:
-        conversation = store.get_or_create(db, body.conversation_id, body.question, user)
+        conversation = store.get_or_create(db, body.conversation_id, parsed.text or body.question, user)
         history = store.load_history(db, conversation.id)
         interaction = store.start_interaction(db, conversation, body.question)
         db.commit()
@@ -312,8 +361,10 @@ def chat_stream(
             conversation_id=conversation_id,
             interaction_id=interaction_id,
             history=history,
-            question=body.question,
+            question=question,
             llm=client,
+            commands=parsed,
+            user_id=user.user_id,
         ):
             yield f"data: {json.dumps(event, default=str)}\n\n"
 
@@ -439,6 +490,7 @@ def get_conversation(
             output_tokens=row.output_tokens or 0,
             total_tokens=row.total_tokens,
             created_at=_iso(row.created_at),
+            exports=[ExportInfo(**export_files.serialize(e)) for e in row.exports],
         )
         for row in rows
     ]
@@ -506,3 +558,42 @@ def delete_conversation(
         )
 
     return {"deleted": conversation_id, "archived": True}
+
+
+_MEDIA_TYPES = {
+    "csv": "text/csv; charset=utf-8",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+@router.get("/ai/exports/{export_id}/download")
+def download_export(
+    export_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+) -> FileResponse:
+    """The file behind a /csv or /excel answer.
+
+    Scoped exactly like the conversation it belongs to: someone else's export
+    is a 404, the same as one that does not exist.
+    """
+    export = db.get(MessageExport, export_id)
+    if export is None:
+        raise HTTPException(status_code=404, detail="No such export.")
+    try:
+        _owned_or_404(db, export.conversation_id, user)
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="No such export.") from None
+
+    if export.status != EXPORT_READY:
+        raise HTTPException(status_code=409, detail="That file is not ready yet.")
+
+    path = export_files.resolve(export)
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=410, detail="That file is no longer available.")
+
+    return FileResponse(
+        path,
+        media_type=_MEDIA_TYPES.get(export.format, "application/octet-stream"),
+        filename=export.file_name or path.name,
+    )

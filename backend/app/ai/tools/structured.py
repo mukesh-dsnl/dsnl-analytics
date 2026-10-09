@@ -13,7 +13,7 @@ cover comes back as `is_error=True` with the message the model needs to try
 again. Turning those into a 500 would end the conversation over something the
 model could have fixed itself on the next round.
 
-Both tiers are bounded by AI_MAX_RANGE_DAYS, not by the dashboard's
+Both tiers are bounded by AI_DIRECT_MAX_RANGE_DAYS, not by the dashboard's
 CDR_MAX_RANGE_DAYS: the filter model's ceiling is overridden through validation
 context below. One ceiling for both tools means one number to tell the model
 about, and it is set for the questions asked here rather than for what a person
@@ -22,11 +22,13 @@ will wait out on a panel.
 
 import json
 import logging
-from typing import Any, Callable
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 
 from pydantic import ValidationError
 
 from app.ai.providers.base import ToolSpec
+from app.ai.tools.export_source import ExportData, ExportUnavailable
 from app.cdr import service
 from app.core.config import get_settings
 from app.schemas.cdr import CdrFilter
@@ -133,7 +135,7 @@ def get_cdr_panel(
                 "account_id": account_id,
                 "crn": crn,
             },
-            context={"max_range_days": get_settings().AI_MAX_RANGE_DAYS},
+            context={"max_range_days": get_settings().AI_DIRECT_MAX_RANGE_DAYS},
         )
     except ValidationError as exc:
         # The model reads this to correct itself, so it gets the readable form
@@ -160,3 +162,36 @@ def get_cdr_panel(
         f"service={filters.service or 'all'} rows={result.get('row_count', 0)}"
     )
     return (json.dumps(result, default=str), False)
+
+
+@contextmanager
+def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData]:
+    """A panel, for a file. Panels are already complete, aggregated results —
+    the dashboard computes them whole — so this re-runs the same call and hands
+    its rows over as they are rather than streaming."""
+    content, is_error = get_cdr_panel(**dict(arguments))
+    if is_error:
+        raise ExportUnavailable(content)
+    try:
+        result = json.loads(content)
+    except ValueError as exc:
+        raise ExportUnavailable("The panel returned no rows.") from exc
+
+    rows = [row for row in result.get("rows", []) if isinstance(row, dict)][:max_rows]
+    columns: list[str] = []
+    for row in rows:
+        columns += [key for key in row if key not in columns]
+
+    panel = arguments.get("panel")
+    notes = ["The panel was capped by the dashboard's row limit."] if result.get("truncated") else []
+    yield ExportData(
+        columns=columns,
+        batches=iter([[tuple(row.get(c) for c in columns) for row in rows]] if rows else []),
+        # A panel is only "at its cap" when the dashboard says it truncated.
+        cap=len(rows) if result.get("truncated") else max_rows,
+        description=(
+            f"get_cdr_panel {panel} | {arguments.get('date_from')} to {arguments.get('date_to')}"
+            + f" | service {arguments.get('service') or 'all'}"
+        ),
+        notes=notes,
+    )

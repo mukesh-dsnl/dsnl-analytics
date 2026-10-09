@@ -15,7 +15,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
@@ -80,37 +79,6 @@ const COLLAPSE_PADDING = {
   collapsed: 'lg:pl-[calc(40vw-80px)]',
 };
 
-/**
- * The corner button's reveal. Each figure has to match its keyframe class in
- * index.css: the inward one only decides when the class is taken off again,
- * but the outward one gates the navigation itself, so if it runs short the
- * route changes while the panel is still closing.
- */
-const REVEAL_IN_MS = 420;
-const REVEAL_OUT_MS = 300;
-const REVEAL_SETTLE_MS = 240;
-
-/**
- * A circle centred on the button, big enough to cover the panel.
- *
- * Measured rather than assumed: the button is positioned against the viewport
- * and the panel is inset from it by a padding that itself changes with the
- * sidebar, so the offset between the two is not a constant to hardcode. The
- * radius reaches the furthest corner from that centre — anything less and the
- * far edge of the page is still clipped when the animation ends.
- */
-function revealGeometry(button: DOMRect, panel: DOMRect) {
-  const x = button.left + button.width / 2 - panel.left;
-  const y = button.top + button.height / 2 - panel.top;
-  return {
-    x,
-    y,
-    r: Math.hypot(Math.max(x, panel.width - x), Math.max(y, panel.height - y)),
-  };
-}
-
-type Reveal = { kind: 'in' | 'out' | 'settle'; x: number; y: number; r: number };
-
 function NavLink({ item, section, active, collapsed }: { item: NavItem; section: string; active: boolean; collapsed: boolean }) {
   // Three services share "Attempt Metrics", so the rail names the service too.
   const railLabel = `${section} · ${item.label}`;
@@ -163,13 +131,8 @@ export function Layout() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
   /** The corner button's opening/closing circle — null when nothing is moving. */
-  const [reveal, setReveal] = useState<Reveal | null>(null);
-  const fabRef = useRef<HTMLAnchorElement>(null);
-  const mainRef = useRef<HTMLElement>(null);
-  const revealTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
-  useEffect(() => () => window.clearTimeout(revealTimer.current), []);
 
   // The only thing that applies the theme once the app is mounted — the store
   // sets the value, this puts it on the document. Runs on mount too, so the
@@ -210,54 +173,6 @@ export function Layout() {
     collapseTimer.current = window.setTimeout(() => {
       void logout().finally(() => navigate('/login', { replace: true }));
     }, COLLAPSE_MS);
-  };
-
-  /**
-   * The corner button, in both directions.
-   *
-   * Going in, the Link navigates as it always did and the new page is revealed
-   * out of the button — the class is set in the same tick, so it is already on
-   * the element for the first frame the chat is mounted.
-   *
-   * Coming back, the movement has to finish *before* the route changes, or the
-   * chat is unmounted mid-collapse and there is nothing left to animate. So the
-   * Link's own navigation is cancelled and made here instead, once the panel is
-   * closed.
-   */
-  const handleFabClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    // Open-in-new-tab and friends belong to the browser. Intercepting them
-    // would animate a page the user is not going to look at.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-
-    const button = fabRef.current?.getBoundingClientRect();
-    const panel = mainRef.current?.getBoundingClientRect();
-    // Nothing to measure from, or the movement is unwanted — either way the
-    // Link is left to navigate plainly. Checked here as well as in the CSS
-    // because the outward trip *delays* the route change, and that delay would
-    // otherwise become a dead pause for someone who asked for no animation.
-    if (!button || !panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return;
-    }
-
-    window.clearTimeout(revealTimer.current);
-    const geometry = revealGeometry(button, panel);
-
-    if (!isAiChat) {
-      setReveal({ kind: 'in', ...geometry });
-      revealTimer.current = window.setTimeout(() => setReveal(null), REVEAL_IN_MS);
-      return;
-    }
-
-    event.preventDefault();
-    const destination = lastAnalyticsPath.current;
-    setReveal({ kind: 'out', ...geometry });
-    revealTimer.current = window.setTimeout(() => {
-      navigate(destination);
-      // Straight from closed to a full page is a hard cut. The fade is what
-      // makes the analytics side arrive rather than appear.
-      setReveal({ kind: 'settle', ...geometry });
-      revealTimer.current = window.setTimeout(() => setReveal(null), REVEAL_SETTLE_MS);
-    }, REVEAL_OUT_MS);
   };
 
   return (
@@ -315,6 +230,42 @@ export function Layout() {
             </button>
           )}
         </div>
+
+        {/* Analytics | Chat — which side of the app is open. It replaces the
+            floating corner button: a switch you can see, where navigation
+            already lives, rather than a round icon that had to be learned. */}
+        {aiPermission && (
+          isSidebarCollapsed ? (
+            <Link
+              to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
+              title={isAiChat ? 'Analytics' : 'Chat'}
+              aria-label={isAiChat ? 'Switch to Analytics' : 'Switch to Chat'}
+              className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 text-white transition-colors hover:bg-white/25"
+            >
+              {isAiChat ? <LayoutGrid className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+            </Link>
+          ) : (
+            <div className="mx-3 mb-2 flex shrink-0 rounded-xl bg-white/15 p-1" role="tablist" aria-label="Analytics or Chat">
+              {[
+                { label: 'Analytics', to: lastAnalyticsPath.current, active: !isAiChat },
+                { label: 'Chat', to: '/assistant', active: isAiChat },
+              ].map((tab) => (
+                <Link
+                  key={tab.label}
+                  to={tab.to}
+                  role="tab"
+                  aria-selected={tab.active}
+                  className={clsx(
+                    'flex-1 rounded-lg py-1.5 text-center text-sm font-medium transition-colors',
+                    tab.active ? 'bg-white text-zinc-900 shadow-sm' : 'text-white/85 hover:text-white',
+                  )}
+                >
+                  {tab.label}
+                </Link>
+              ))}
+            </div>
+          )
+        )}
 
         {/* overflow-x-hidden: the labels come back before the width transition
             finishes, which would otherwise flash a horizontal scrollbar. */}
@@ -477,30 +428,12 @@ export function Layout() {
         </header>
 
         {/* Main Content Area */}
-        {/* The outlet is what the corner button opens and closes, so the reveal
-            is applied here rather than to the panel around it: the header is
-            chrome that both modes share, and clipping it would make the whole
-            card look like it was being redrawn. */}
         <main
-          ref={mainRef}
           className={clsx(
             'flex-1 relative transition-opacity duration-300',
             isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
             isLoggingOut && 'opacity-0 pointer-events-none',
-            reveal?.kind === 'in' && 'panel-reveal-in',
-            reveal?.kind === 'out' && 'panel-reveal-out',
-            reveal?.kind === 'settle' && 'panel-settle',
           )}
-          // The keyframes describe the shape; these say where it is.
-          style={
-            reveal
-              ? ({
-                  '--reveal-x': `${reveal.x}px`,
-                  '--reveal-y': `${reveal.y}px`,
-                  '--reveal-r': `${reveal.r}px`,
-                } as CSSProperties)
-              : undefined
-          }
         >
           <HeaderSlotContext.Provider value={headerSlot}>
             <ContentPanelContext.Provider value={contentPanel}>
@@ -511,34 +444,6 @@ export function Layout() {
       </div>
       </div>
 
-      {/* Floating action button — the way into the chat from anywhere in the
-          analytics pages. Hidden on the chat itself, where the sidebar's
-          "Analytics" control is the way back out.
-
-          Inside the panel wrapper's sibling, positioned against the viewport,
-          and faded out during the logout collapse along with everything else. */}
-      {aiPermission && (
-        <Link
-          ref={fabRef}
-          to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
-          onClick={handleFabClick}
-          title={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
-          aria-label={isAiChat ? 'Back to analytics' : 'Ask the AI assistant'}
-          className={clsx(
-            'fixed bottom-6 right-6 z-30 h-14 w-14 rounded-full',
-            'flex items-center justify-center',
-            'shadow-lg shadow-black/25 transition-all hover:scale-105',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
-            // One button, one appearance, in both directions — the corner always
-            // means "switch to the other side of the app", and giving the two
-            // directions different weight made it read as two different controls.
-            'bg-blue-600 hover:bg-blue-500 text-white',
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          {isAiChat ? <LayoutGrid className="w-6 h-6" /> : <Sparkles className="w-6 h-6" />}
-        </Link>
-      )}
     </div>
   );
 }

@@ -36,6 +36,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.ai import commands as slash
 from app.ai.providers.base import NeutralMessage
 from app.core.config import get_settings
 from app.models.conversation import (
@@ -126,7 +127,9 @@ def load_history(db: Session, conversation_id: str) -> list[NeutralMessage]:
     history: list[NeutralMessage] = []
     for row in reversed(recent):
         if row.query:
-            history.append(NeutralMessage(role="user", text=row.query))
+            # Commands stay visible as a short tag, so a follow-up like "and
+            # yesterday?" still reads as being about the scope it was asked in.
+            history.append(NeutralMessage(role="user", text=slash.strip(row.query)))
         # A failed interaction contributes its question but no answer: there is
         # nothing to replay, and inventing one would put words in the
         # assistant's mouth.
@@ -261,6 +264,18 @@ def archive(db: Session, conversation: Conversation) -> DeletedConversation:
             "input_token": row.input_token or 0,
             "output_tokens": row.output_tokens or 0,
             "queries": row.queries or [],
+            # The files stay on disk; the archive keeps where they are.
+            "exports": [
+                {
+                    "id": e.id,
+                    "format": e.format,
+                    "status": e.status,
+                    "file_name": e.file_name,
+                    "file_path": e.file_path,
+                    "row_count": e.row_count or 0,
+                }
+                for e in row.exports
+            ],
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
         for row in rows

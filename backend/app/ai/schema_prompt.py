@@ -16,7 +16,12 @@ named, not left as a schema line to infer from.
 The prompt is one constant string, deliberately: it is byte-identical on every
 round of the tool loop, which is what makes Anthropic's prompt caching work and
 keeps the other two providers' costs flat across a multi-round conversation.
+The only part that varies is today's date, appended last by
+`dated_system_prompt` once per answer, so it changes once a day.
 """
+
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import get_settings
 
@@ -209,8 +214,14 @@ def build_system_prompt() -> str:
     limits = f"""
 === Limits you are working within ===
 
-  - Every tool may cover up to {settings.AI_MAX_RANGE_DAYS} days in a single call.
-    Use that: one call across the whole range grouped by date beats one call per day.
+  - query_metrics and voicedrop_report cover up to {settings.AI_MAX_RANGE_DAYS} days — a
+    month, a quarter, a year — in ONE call. They work through long ranges internally,
+    {settings.AI_WINDOW_DAYS} days at a time, and return the combined, exact result. Never
+    split a range into several calls yourself: one call over the whole range, grouped by
+    date if a series is wanted, is always right.
+  - run_cdr_query and get_cdr_panel cannot be split that way, so they cover at most
+    {settings.AI_DIRECT_MAX_RANGE_DAYS} days. For anything longer, use query_metrics (figures)
+    or voicedrop_report (Voicedrop phone-number lists).
   - run_cdr_query returns at most {settings.AI_MAX_ROWS_TO_MODEL} rows.
   - You have at most {settings.AI_MAX_TOOL_ROUNDS} rounds of tool calls per question,
     so plan the query rather than exploring one column at a time.
@@ -222,3 +233,46 @@ def build_system_prompt() -> str:
 # singleton, and holding it constant is what lets Anthropic cache it across the
 # rounds of a single conversation.
 SYSTEM_PROMPT = build_system_prompt()
+
+
+def today_local() -> date:
+    """Today in the business timezone (TIMEZONE), not the server's clock —
+    "yesterday" asked at 00:30 in Kolkata is still the Kolkata yesterday."""
+    try:
+        return datetime.now(ZoneInfo(get_settings().TIMEZONE)).date()
+    except (ZoneInfoNotFoundError, ValueError):
+        return date.today()
+
+
+def dated_system_prompt(today: date | None = None) -> str:
+    """The system prompt plus today's date and how to read dates against it.
+
+    The model has no clock: without this it resolves "yesterday" to nothing in
+    particular and guesses the year of "Oct 1 to 3" from its training data. The
+    date goes last so the long, fixed part of the prompt stays an identical
+    prefix; it changes once a day, and is computed once per answer so every
+    round of one answer sees the same day.
+    """
+    today = today or today_local()
+    yesterday = today - timedelta(days=1)
+    month_start = today.replace(day=1)
+    last_month_end = month_start - timedelta(days=1)
+    return SYSTEM_PROMPT + f"""
+=== Today ===
+
+Today is {today:%A, %d %B %Y} ({today.isoformat()}), {get_settings().TIMEZONE} time.
+Read every date in a question against it:
+
+  - Relative dates count from today: "yesterday" is {yesterday.isoformat()}; "this month"
+    is {month_start.isoformat()} to {today.isoformat()}; "last month" is
+    {last_month_end:%B %Y} ({last_month_end.replace(day=1).isoformat()} to {last_month_end.isoformat()}).
+  - A date or range written without a year — "Oct 1 to 3", "5 March",
+    "the 14th to the 20th of June" — is in the current year, {today.year}. Use a different year only when the
+    question names one ("Oct 1 to 3 2025"). A missing year is not ambiguous:
+    do not ask which year is meant.
+  - When an earlier turn in this conversation named a year, keep using that
+    year for follow-ups that do not name one.
+  - Call records arrive a day in arrears, so today usually has no data yet. If
+    today is asked about and nothing comes back, say that rather than reporting
+    zero.
+"""

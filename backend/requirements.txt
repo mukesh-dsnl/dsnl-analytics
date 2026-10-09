@@ -13,6 +13,8 @@ pytest>=8.0.0
 # 1.1+ for `SET disabled_filesystems`, which is the hard backstop behind the
 # AI module's ad-hoc SQL (app/ai/tools/ad_hoc_sql.py). Verified on 1.5.5.
 duckdb>=1.1.0
+# AI chat /excel exports (streamed, write-only workbooks)
+openpyxl>=3.1,<4
 
 # ── AI chat providers ─────────────────────────────────────────────────
 # All three are listed so the provider is a config change (AI_PROVIDER) rather

@@ -28,14 +28,17 @@ same audit trail as any other.
 
 import json
 import logging
+import re
+from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any
+from typing import Any, Iterator
 
 import duckdb
 
 from app.ai import sql_guard
 from app.ai.providers.base import ToolSpec
+from app.ai.tools.export_source import EXPORT_BATCH, ExportData, ExportUnavailable, connect
 from app.cdr import lake, service
 from app.core.config import get_settings
 
@@ -117,7 +120,34 @@ def _sql_list(paths) -> str:
     return "[" + ", ".join("'" + str(p).replace("'", "''") + "'" for p in paths) + "]"
 
 
-def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> None:
+# `SELECT *`, `c.*` — a statement that takes every column. `COUNT(*)` does not.
+_STAR = re.compile(r"(?:\bselect|,)\s*(?:distinct\s+)?(?:\w+\.)?\*", re.IGNORECASE)
+# Always kept: the date filter below needs these, and the join needs the keys.
+_CDR_ALWAYS = {"CALL_DATE", "START_DATETIME", "CRN", "CONF_NUM"}
+_CODR_ALWAYS = {"CRN", "CONF_NUM"}
+
+
+def _columns_for(con: duckdb.DuckDBPyConnection, files: list, sql: str | None, always: set[str]) -> str:
+    """The projection to materialise: only the columns the statement mentions.
+
+    A day of CDR has 42 columns, and copying every one of them for every day of
+    the range is what exhausted memory on long ranges. A column the SQL never
+    names cannot change its result, so it is left on disk. Anything that asks
+    for every column (`SELECT *`, `c.*`) gets every column.
+    """
+    if not sql or _STAR.search(sql):
+        return "*"
+    available = [row[0] for row in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet({_sql_list(files)}, union_by_name = true)"
+    ).fetchall()]
+    mentioned = {word.upper() for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", sql)}
+    keep = [c for c in available if c.upper() in mentioned or c.upper() in always]
+    return ", ".join(f'"{c}"' for c in keep) if keep else "*"
+
+
+def _prepare(
+    con: duckdb.DuckDBPyConnection, date_from: date, date_to: date, sql: str | None = None
+) -> None:
     """Materialise `cdr` and `codr` for the range, then lock the filesystem.
 
     Raises DatasetNotReady when the CDR side has nothing for the range — an
@@ -139,13 +169,17 @@ def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> 
     # named for a day, but nothing guarantees every row inside it falls on that
     # day, and the range endpoints have to be exact. Same rule as filters.py.
     con.execute(
-        f"CREATE TEMP TABLE cdr AS SELECT * FROM read_parquet({_sql_list(cdr_files)}) "
+        f"CREATE TEMP TABLE cdr AS SELECT {_columns_for(con, cdr_files, sql, _CDR_ALWAYS)} "
+        f"FROM read_parquet({_sql_list(cdr_files)}, union_by_name = true) "
         "WHERE COALESCE(CALL_DATE, CAST(START_DATETIME AS DATE)) BETWEEN ? AND ?",
         [date_from, date_to],
     )
 
     if codr_files:
-        con.execute(f"CREATE TEMP TABLE codr AS SELECT * FROM read_parquet({_sql_list(codr_files)})")
+        con.execute(
+            f"CREATE TEMP TABLE codr AS SELECT {_columns_for(con, codr_files, sql, _CODR_ALWAYS)} "
+            f"FROM read_parquet({_sql_list(codr_files)}, union_by_name = true)"
+        )
     else:
         # An empty table of the right shape, not a missing one: a join against
         # it returns no CODR-side rows, which is the truth. A missing table
@@ -168,6 +202,23 @@ def _prepare(con: duckdb.DuckDBPyConnection, date_from: date, date_to: date) -> 
         )
 
 
+def _checked_range(date_from: Any, date_to: Any) -> tuple[date, date]:
+    """The inclusive range, validated. Raises ValueError with a message for the model."""
+    start = _parse_day(date_from, "date_from")
+    end = _parse_day(date_to, "date_to")
+    if end < start:
+        raise ValueError(f"date_to ({end}) is before date_from ({start}).")
+    span = (end - start).days + 1
+    limit = get_settings().AI_DIRECT_MAX_RANGE_DAYS
+    if span > limit:
+        raise ValueError(
+            f"That range spans {span} days; ad-hoc queries are limited to "
+            f"{limit}. Narrow the range, or use get_cdr_panel, "
+            "which can cover a longer one."
+        )
+    return start, end
+
+
 def run_cdr_query(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -183,22 +234,9 @@ def run_cdr_query(
 
     # ── 1. The range ───────────────────────────────────────────────────────
     try:
-        start = _parse_day(date_from, "date_from")
-        end = _parse_day(date_to, "date_to")
+        start, end = _checked_range(date_from, date_to)
     except ValueError as exc:
         return (str(exc), True)
-
-    if end < start:
-        return (f"date_to ({end}) is before date_from ({start}).", True)
-
-    span = (end - start).days + 1
-    if span > settings.AI_MAX_RANGE_DAYS:
-        return (
-            f"That range spans {span} days; ad-hoc queries are limited to "
-            f"{settings.AI_MAX_RANGE_DAYS}. Narrow the range, or use get_cdr_panel, "
-            "which can cover a longer one.",
-            True,
-        )
 
     # ── 2. The statement ───────────────────────────────────────────────────
     try:
@@ -209,8 +247,8 @@ def run_cdr_query(
 
     # ── 3-5. Execute ───────────────────────────────────────────────────────
     try:
-        with duckdb.connect() as con:
-            _prepare(con, start, end)
+        with connect() as con:
+            _prepare(con, start, end, sql)
             cursor = con.execute(guarded)
             columns = [d[0] for d in cursor.description]
             rows = [
@@ -253,3 +291,40 @@ def run_cdr_query(
         )
 
     return (json.dumps(payload, default=str), False)
+
+
+@contextmanager
+def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData]:
+    """The same statement as the tool ran, streamed for a file.
+
+    The same two defence layers apply — the guard, then the locked filesystem —
+    with only the outer row cap raised. The model's own LIMIT, if it wrote one,
+    is inside the wrapped statement and still holds.
+    """
+    try:
+        start, end = _checked_range(arguments.get("date_from"), arguments.get("date_to"))
+        guarded = sql_guard.validate(arguments.get("sql") or "", limit=max_rows)
+    except (ValueError, sql_guard.SqlNotAllowed) as exc:
+        raise ExportUnavailable(str(exc)) from exc
+
+    with connect() as con:
+        try:
+            _prepare(con, start, end, arguments.get("sql"))
+            cursor = con.execute(guarded)
+        except (service.DatasetNotReady, duckdb.Error) as exc:
+            raise ExportUnavailable(str(exc)) from exc
+        columns = [d[0] for d in cursor.description]
+
+        def batches() -> Iterator[list[tuple]]:
+            while chunk := cursor.fetchmany(EXPORT_BATCH):
+                yield chunk
+
+        purpose = str(arguments.get("purpose") or "").strip()
+        logger.info(f"AI SQL export | {start}..{end} | cap={max_rows} | purpose={purpose!r}")
+        yield ExportData(
+            columns=columns,
+            batches=batches(),
+            cap=max_rows,
+            description=f"run_cdr_query | {start} to {end}" + (f" | {purpose}" if purpose else ""),
+            notes=[f"SQL: {' '.join(str(arguments.get('sql') or '').split())}"],
+        )

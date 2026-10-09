@@ -39,11 +39,17 @@ MAX_TOKENS = 4096
 class AnthropicClient(LLMClient):
     provider = "anthropic"
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
+    def __init__(
+        self, model: str | None = None, api_key: str | None = None, timeout: float | None = None
+    ):
         self.model = model or DEFAULT_MODEL
-        self._client = (
-            anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-        )
+        options: dict = {"api_key": api_key} if api_key else {}
+        if timeout is not None:
+            # Under failover (see failover.py) the pool is the retry policy:
+            # one bounded attempt, then the next candidate. The SDK's own
+            # retries would hold a dead key for several timeouts first.
+            options.update(timeout=timeout, max_retries=0)
+        self._client = anthropic.Anthropic(**options)
 
     # ── Translation: neutral -> Anthropic ──────────────────────────────────
 

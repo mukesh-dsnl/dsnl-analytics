@@ -81,7 +81,21 @@ class Settings(BaseSettings):
     # run_cdr_query are checked against, so it is the one number the model is
     # told about, and the one that bounds how many daily files a single tool
     # call can open.
-    AI_MAX_RANGE_DAYS: int = 31
+    AI_MAX_RANGE_DAYS: int = 366
+    # The windowed tools (query_metrics, voicedrop_report) cover any range up to
+    # AI_MAX_RANGE_DAYS in one call by working through it AI_WINDOW_DAYS at a
+    # time and combining the results — so a year costs one model round, and
+    # memory is bounded by one window's data, not the whole range's.
+    AI_WINDOW_DAYS: int = 5
+    # The tools that cannot be split into windows — free-form SQL, whose result
+    # cannot be merged in general, and the dashboard panels — keep a direct
+    # limit; the model is pointed at the windowed tools for anything longer.
+    AI_DIRECT_MAX_RANGE_DAYS: int = 31
+    # A ceiling on what one AI query may hold in memory. Past it DuckDB spills
+    # to AI_DUCKDB_TEMP_DIR (relative to backend/) instead of exhausting the
+    # machine, and fails cleanly if even that is not enough.
+    AI_DUCKDB_MEMORY_LIMIT: str = "2GB"
+    AI_DUCKDB_TEMP_DIR: str = "storage/duckdb_tmp"
     # How many result rows may go back to the model. This is a context budget,
     # not a safety limit — it is applied as a structural LIMIT wrapper the
     # model's own SQL cannot widen.
@@ -89,10 +103,31 @@ class Settings(BaseSettings):
     # Tool-calling rounds per question before the loop gives up. Bounds both
     # latency and spend on a model that keeps refining instead of answering.
     AI_MAX_TOOL_ROUNDS: int = 5
+    # /csv and /excel exports: the full result of the answer's data queries,
+    # re-run without the model's row cap and written to a file. The cap here
+    # bounds one file; Excel itself holds at most 1,048,575 data rows a sheet.
+    AI_EXPORT_MAX_ROWS: int = 1_000_000
+    # Where export files are written. Relative to backend/. Holds production
+    # call data — keep it out of version control and off public paths.
+    AI_EXPORT_DIR: str = "storage/ai_exports"
 
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
+
+    # ── AI failover pool ─────────────────────────────────────────────────
+    # When this file exists, it replaces AI_PROVIDER / AI_MODEL: every listed
+    # key is tried with each of its models, in order, until one answers (see
+    # providers/failover.py). Relative to backend/. The file names the env var
+    # holding each key; the keys themselves stay here in .env. Set to an empty
+    # value to ignore the file and use the single provider above.
+    AI_POOL_FILE: Optional[str] = "ai_pool.json"
+    # One attempt's hard limit. Past it the call counts as "no response" and
+    # the next candidate is tried — SDK-side retries are off under failover.
+    AI_ATTEMPT_TIMEOUT_SECONDS: float = 30.0
+    # The whole rotation's limit for one model turn, so a full outage fails in
+    # bounded time instead of waiting out every key and model.
+    AI_FAILOVER_BUDGET_SECONDS: float = 90.0
 
     # ── AI cost display ──────────────────────────────────────────────────
     # Price per MILLION tokens, input and output separately — every provider

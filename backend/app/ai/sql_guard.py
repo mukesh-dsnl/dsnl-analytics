@@ -120,12 +120,16 @@ def _check_tables(scrubbed: str) -> None:
             )
 
 
-def validate(sql: str) -> str:
+def validate(sql: str, limit: int | None = None) -> str:
     """Check one statement and return it wrapped in a row cap.
 
     The wrapper is structural, not advisory: whatever LIMIT the model wrote (or
     omitted) is inside a subquery, so the outer cap holds regardless. Returns
     the SQL to execute; raises SqlNotAllowed with a self-correcting message.
+
+    `limit` defaults to what the model may read (AI_MAX_ROWS_TO_MODEL). Only
+    the file export passes a larger one — those rows go to a file, never back
+    into the model's context.
     """
     if sql is None or not sql.strip():
         raise SqlNotAllowed("No SQL was provided. Send one DuckDB SELECT over cdr/codr.")
@@ -151,5 +155,5 @@ def validate(sql: str) -> str:
     _check_substrings(scrubbed)
     _check_tables(scrubbed)
 
-    limit = get_settings().AI_MAX_ROWS_TO_MODEL
-    return f"SELECT * FROM (\n{statement}\n) AS ai_result LIMIT {limit}"
+    cap = int(limit) if limit is not None else get_settings().AI_MAX_ROWS_TO_MODEL
+    return f"SELECT * FROM (\n{statement}\n) AS ai_result LIMIT {cap}"

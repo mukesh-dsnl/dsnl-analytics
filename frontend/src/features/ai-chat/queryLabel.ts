@@ -154,6 +154,19 @@ export function summarizeQuery(query: ChatQuery): QuerySummary {
     return { title, detail: parts.join(' · ') };
   }
 
+  if (query.tool === 'voicedrop_report') {
+    const crns = asStringList(input.crns);
+    if (crns.length) parts.push(crns.length === 1 ? `CRN ${crns[0]}` : `${crns.length} CRNs`);
+    const status = asText(input.status);
+    const title =
+      status === 'connected'
+        ? 'Voicedrop report: connected numbers'
+        : status === 'not_connected'
+          ? 'Voicedrop report: not-connected numbers'
+          : 'Voicedrop report: numbers dialled';
+    return { title, detail: parts.join(' · ') };
+  }
+
   // Tier B already carries a one-line description of its own intent — that is
   // exactly this line, written by the model at the time it ran the query, so
   // it is used verbatim rather than reconstructed from the SQL.

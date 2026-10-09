@@ -41,9 +41,15 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 class OpenAIClient(LLMClient):
     provider = "openai"
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
+    def __init__(
+        self, model: str | None = None, api_key: str | None = None, timeout: float | None = None
+    ):
         self.model = model or DEFAULT_MODEL
-        self._client = OpenAI(api_key=api_key) if api_key else OpenAI()
+        options: dict = {"api_key": api_key} if api_key else {}
+        if timeout is not None:
+            # One bounded attempt; failover.py moves on to the next candidate.
+            options.update(timeout=timeout, max_retries=0)
+        self._client = OpenAI(**options)
 
     # ── Translation: neutral -> OpenAI ─────────────────────────────────────
 

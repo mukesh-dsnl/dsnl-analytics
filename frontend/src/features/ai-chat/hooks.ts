@@ -24,7 +24,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { aiApi } from './api';
 import { CONVERSATIONS_KEY } from './components/ConversationList';
-import type { ChatEvent, ChatQuery, InteractionUsage, TokenUsage } from './api';
+import type { ChatEvent, ChatQuery, ExportInfo, InteractionUsage, TokenUsage } from './api';
+import { parseCommands } from './commands';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store';
 import { ApiError } from '../../services/api';
@@ -69,7 +70,16 @@ export interface ChatMessage {
   model?: string;
   /** True while this turn is still being worked on. */
   isStreaming?: boolean;
+  /** Assistant turns only — the /csv and /excel files, as they become ready. */
+  exports?: ExportInfo[];
+  /** Assistant turns only — the stored row, which `exports` events name. */
+  interactionId?: number;
+  /** Assistant turns only — the question asked for /chart. */
+  chart?: boolean;
 }
+
+/** Still being written on the server — worth polling for. */
+const hasPendingExports = (exports?: ExportInfo[]) => !!exports?.some((e) => e.status === 'pending');
 
 const EMPTY_USAGE: TokenUsage = {
   input_tokens: 0,
@@ -204,6 +214,9 @@ export function useChat(conversationId: string | null) {
                 role: 'assistant',
                 text: item.response,
                 queries: item.queries,
+                exports: item.exports ?? [],
+                interactionId: item.id,
+                chart: parseCommands(item.query).commands.some((c) => c.name === 'chart'),
                 interaction: {
                   input_tokens: item.input_token,
                   output_tokens: item.output_tokens,
@@ -232,7 +245,11 @@ export function useChat(conversationId: string | null) {
         // Something is still being worked on server-side. Watch for it to
         // land — the alternative is a question sitting on screen with nothing
         // after it and no indication that an answer is on its way.
-        if (detail.interactions.some((item) => item.status === 'pending')) {
+        if (
+          detail.interactions.some(
+            (item) => item.status === 'pending' || hasPendingExports(item.exports),
+          )
+        ) {
           setPollFor(detail.id);
         } else {
           setPollFor(null);
@@ -300,7 +317,13 @@ export function useChat(conversationId: string | null) {
       try {
         const detail = await aiApi.getConversation(pollFor);
         if (cancelled) return;
-        if (detail.interactions.some((item) => item.status === 'pending')) return;
+        if (
+          detail.interactions.some(
+            (item) => item.status === 'pending' || hasPendingExports(item.exports),
+          )
+        ) {
+          return;
+        }
 
         // Landed. Reload the thread through the normal path so the finished
         // answer renders exactly as any other stored one.
@@ -337,7 +360,14 @@ export function useChat(conversationId: string | null) {
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: 'user', text: trimmed },
-        { id: liveId, role: 'assistant', text: '', steps: [], isStreaming: true },
+        {
+          id: liveId,
+          role: 'assistant',
+          text: '',
+          steps: [],
+          isStreaming: true,
+          chart: parseCommands(trimmed).commands.some((c) => c.name === 'chart'),
+        },
       ]);
       setIsPending(true);
 
@@ -417,12 +447,23 @@ export function useChat(conversationId: string | null) {
               interaction: event.interaction,
               provider: event.provider,
               model: event.model,
+              exports: event.exports ?? [],
+              interactionId: event.interaction_id,
               animate: true,
               isStreaming: false,
               // Any step still open never reported an end — mark them closed
               // so nothing spins forever after the answer has arrived.
               steps: (m.steps ?? []).map((s) => (s.done ? s : { ...s, done: true })),
             }));
+            // The answer is in. Any files are still being written on the
+            // server, and the stream stays open for them — but that must not
+            // hold the composer, so the next question can be asked now.
+            if (abortRef.current === controller) abortRef.current = null;
+            setIsPending(false);
+            break;
+
+          case 'exports':
+            patchLive(liveId, (m) => ({ ...m, exports: event.exports }));
             break;
 
           case 'stopped':
@@ -487,8 +528,15 @@ export function useChat(conversationId: string | null) {
           }
         }
       } finally {
-        abortRef.current = null;
-        setIsPending(false);
+        // Only if this request still owns them: a stream kept open for its
+        // files can end after the *next* question has started, and must not
+        // clear that one's controller or its pending state.
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setIsPending(false);
+        } else if (abortRef.current === null) {
+          setIsPending(false);
+        }
       }
     },
     [isPending, navigate, patchLive, queryClient, username],

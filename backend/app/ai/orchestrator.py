@@ -29,23 +29,26 @@ import traceback
 from time import perf_counter
 from typing import Any, Callable, Iterator
 
+from app.ai import commands as slash
 from app.ai.providers.base import LLMClient, NeutralMessage, ToolResult
 from app.ai.providers.factory import get_llm_client
-from app.ai.schema_prompt import SYSTEM_PROMPT
+from app.ai.schema_prompt import dated_system_prompt
 from app.ai.tools.ad_hoc_sql import RUN_QUERY_TOOL, run_cdr_query
 from app.ai.tools.metrics import QUERY_METRICS_TOOL, query_metrics
 from app.ai.tools.structured import GET_PANEL_TOOL, get_cdr_panel
+from app.ai.tools.voicedrop_report import VOICEDROP_REPORT_TOOL, voicedrop_report
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 # Order matters: the model reads these as a list, and the one that answers most
 # questions is offered first.
-TOOLS = [QUERY_METRICS_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
+TOOLS = [QUERY_METRICS_TOOL, VOICEDROP_REPORT_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
 
 DISPATCH: dict[str, Callable[..., tuple[str, bool]]] = {
     "query_metrics": query_metrics,
     "get_cdr_panel": get_cdr_panel,
+    "voicedrop_report": voicedrop_report,
     "run_cdr_query": run_cdr_query,
 }
 
@@ -76,6 +79,7 @@ def answer_events(
     history: list[NeutralMessage] | None = None,
     question: str = "",
     llm: LLMClient | None = None,
+    commands: slash.Parsed | None = None,
 ) -> Iterator[dict[str, Any]]:
     """The loop, as a stream of events. `answer()` below is this, drained.
 
@@ -98,6 +102,10 @@ def answer_events(
     """
     settings = get_settings()
     client = llm or get_llm_client()
+    # Once per answer, so every round of it reads dates against the same day.
+    # The commands' section goes after the date, last, for the same reason the
+    # date does: the long fixed prompt stays an identical prefix.
+    system = dated_system_prompt() + slash.instructions(commands or slash.Parsed())
 
     conversation: list[NeutralMessage] = [
         *(history or []),
@@ -117,7 +125,7 @@ def answer_events(
         yield {"type": "round_start", "round": round_index}
 
         started = perf_counter()
-        turn = client.send(SYSTEM_PROMPT, conversation, TOOLS)
+        turn = client.send(system, conversation, TOOLS)
         input_tokens += turn.input_tokens
         output_tokens += turn.output_tokens
 
@@ -200,6 +208,7 @@ def answer(
     history: list[NeutralMessage] | None = None,
     question: str = "",
     llm: LLMClient | None = None,
+    commands: slash.Parsed | None = None,
 ) -> dict[str, Any]:
     """Answer one question, running tools as the model asks for them.
 
@@ -215,7 +224,7 @@ def answer(
     that produced it.
     """
     final: dict[str, Any] = {}
-    for event in answer_events(history=history, question=question, llm=llm):
+    for event in answer_events(history=history, question=question, llm=llm, commands=commands):
         if event["type"] == "done":
             final = {k: v for k, v in event.items() if k != "type"}
     return final

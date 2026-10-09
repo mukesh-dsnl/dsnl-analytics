@@ -1,24 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  AlertTriangle,
-  Loader2,
-  Lock,
-  PhoneCall,
-  PhoneForwarded,
-  User,
-  Users,
-} from 'lucide-react';
-import EqualizerIcon from '@mui/icons-material/Equalizer';
+import { Eye, EyeOff, Loader2, Lock, PhoneCall, PhoneForwarded, User, Users } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import { useAuthStore, useUIStore } from '../store';
 
-/** The app's own input, lifted from ServiceFilterBar so the two read as one control. */
+/** The sign-in input — the same control as RunDesk's sign-in page. */
 const INPUT_CLASS =
-  'w-full h-11 pl-10 pr-3 rounded-lg border bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800 ' +
-  'text-zinc-900 dark:text-white text-sm placeholder:text-zinc-400 ' +
-  'focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-shadow';
+  'w-full h-12 pl-11 rounded-lg text-[15px] border bg-white dark:bg-[#0a0f1d] border-zinc-300 dark:border-zinc-700 ' +
+  'text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 ' +
+  'focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-colors';
 
 /**
  * How long the card takes to grow into the content panel, and therefore how
@@ -29,7 +20,7 @@ const INPUT_CLASS =
 const EXPAND_MS = 550;
 
 /** Bar heights for the chart motif, as percentages. Decorative — no data is implied. */
-const MOTIF_BARS = [38, 62, 46, 88, 54, 72, 41, 66, 95, 58, 34, 78];
+const MOTIF_BARS = [35, 55, 40, 80, 60, 45, 70, 50, 90, 65, 42, 75, 55, 85, 48, 62, 38, 72];
 
 /**
  * The three services, with the icons the sidebar gives them — so the names
@@ -59,6 +50,7 @@ const SERVICES = [
 export function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   /** Set the moment auth succeeds: the card is expanding and the route is about to change. */
@@ -123,49 +115,42 @@ export function Login() {
   const isBusy = isSubmitting || isLeaving;
 
   return (
-    // Full bleed, no gutter of its own: the left region is the ground itself,
-    // not something floating on it, so nothing insets it from the edges. The
-    // card below carries the only gutter on this page.
+    // Full bleed: the left region is the ground itself, not something floating
+    // on it. The card below carries the only gutter on this page.
     <div className="app-ground app-ground-hero relative h-full w-full overflow-hidden">
-      {/* ── Left: the sidebar field ──────────────────────────────────────
-          Exactly what the app's sidebar is — the textured ground plus the
-          scrim that fades out toward its right edge. No fill, no border and no
-          radius of its own, because it is not a panel. Its content fades on
-          the way out, leaving the bare field the sidebar arrives on.
-
-          Hidden below lg, where the card takes the full width and all that
-          remains of this is the gutter around it. */}
+      {/* ── Left: brand hero ─────────────────────────────────────────────
+          40% of the width, dark ink on the brand ground (white in dark mode).
+          Its content fades in on arrival and out on the way into the app,
+          leaving the bare field the sidebar arrives on. Hidden below lg. */}
       <div
         className={clsx(
-          'app-sidebar-scrim absolute inset-y-0 left-0 w-[40%] hidden lg:flex flex-col justify-between',
-          'p-10 transition-opacity duration-500',
+          'absolute inset-y-0 left-0 w-[40%] hidden lg:flex flex-col px-14 py-10',
+          'text-indigo-deep dark:text-white transition-opacity duration-500',
           isLeaving || !hasEntered ? 'opacity-0' : 'opacity-100',
         )}
       >
-        {/* The sidebar's own brand block, at the same size and in the same
-            corner it will be in a moment. */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
-            <EqualizerIcon className="text-white" sx={{ fontSize: 18 }} />
+        {/* Brand mark — the same logo block as the sidebar */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+            <img src="/DSNL.png" alt="DSNL" className="w-full h-full object-cover" />
           </div>
-          <span className="text-lg font-semibold tracking-tight text-white">DSNL Analytics</span>
+          <span className="text-base font-bold tracking-tight">DSNL Analytics</span>
         </div>
 
-        <div className="min-w-0">
-          <h2 className="text-4xl xl:text-5xl font-semibold tracking-tight text-white leading-[1.05]">
+        {/* Headline, services, pitch and bar motif, centred in the free height */}
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center py-8">
+          <h2 className="text-5xl xl:text-6xl font-extrabold tracking-[-0.035em] leading-[1.02]">
             Every call,
             <br />
-            measured.
+            <span className="text-white dark:text-cyan-light">measured.</span>
           </h2>
-          {/* The three services, directly under the headline and wearing the
-              sidebar's own pill: same white wash, same border, same icons. So
-              they read as the nav they are about to become rather than as
-              decoration, and the sentence below no longer has to list them. */}
-          <ul className="mt-6 flex flex-wrap gap-2">
+
+          {/* The three services, wearing the same icons as the sidebar. */}
+          <ul className="mt-7 flex flex-wrap gap-2">
             {SERVICES.map(({ label, icon: Icon }) => (
               <li
                 key={label}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/15 border border-white/25 text-xs font-medium text-white"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/25 border border-indigo-deep/10 dark:bg-white/10 dark:border-white/15"
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 {label}
@@ -173,18 +158,18 @@ export function Login() {
             ))}
           </ul>
 
-          <p className="mt-5 text-sm text-white/70 max-w-sm">
+          <p className="mt-6 text-lg leading-relaxed max-w-md opacity-85 dark:text-white/75 dark:opacity-100">
             Analyze your daily call metrics.
           </p>
 
           {/* The dashboard's own shape, as a motif. Decorative only. */}
-          <div aria-hidden="true" className="mt-10 flex items-end gap-1.5 h-24">
+          <div aria-hidden="true" className="mt-10 flex items-end gap-2 h-36">
             {MOTIF_BARS.map((height, index) => (
               <div
                 key={index}
                 className={clsx(
-                  'flex-1 rounded-t-sm',
-                  index % 4 === 3 ? 'bg-white/50' : 'bg-white/15 backdrop-blur-sm',
+                  'flex-1 rounded-t-md',
+                  index % 4 === 3 ? 'bg-indigo-deep/40 dark:bg-hero' : 'bg-black/[0.08] dark:bg-white/10',
                 )}
                 style={{ height: `${height}%` }}
               />
@@ -192,66 +177,59 @@ export function Login() {
           </div>
         </div>
 
-        <p className="text-xs text-white/50">© {new Date().getFullYear()} DSNL</p>
+        <p className="text-xs font-medium opacity-80 dark:text-white/70 dark:opacity-100 shrink-0">
+          © {new Date().getFullYear()} DSNL
+        </p>
       </div>
 
       {/* ── Right: the floating card ─────────────────────────────────────
-          60% of the width, inset by the same 12px gutter Layout puts around
-          its content panel. Its left edge is the one thing that animates. */}
+          60% of the width at rest, inset by Layout's 12px gutter. On success
+          its left edge slides to 268px — the sidebar (w-64) plus that gutter,
+          the content panel's own position — so the two pages share one
+          continuous surface. */}
       <div
         className={clsx(
           'absolute top-3 bottom-3 right-3 flex flex-col rounded-2xl overflow-hidden',
-          'bg-white dark:bg-surface-dark shadow-2xl shadow-black/25',
+          'bg-white dark:bg-surface-dark shadow-2xl shadow-black/25 dark:ring-1 dark:ring-white/5',
           'transition-[left] ease-in-out motion-reduce:transition-none',
-          // 40% in, so the card is the remaining 60% of the width. On the way
-          // out it goes to 268px: the dashboard's sidebar (w-64) plus Layout's
-          // 12px gutter — the content panel's own left edge, not a number
-          // picked by eye. Both are lg-only; below that the card is full width
-          // in either state and there is nothing to animate.
           isLeaving ? 'left-3 lg:left-[268px]' : 'left-3 lg:left-[40%]',
         )}
         style={{ transitionDuration: `${EXPAND_MS}ms` }}
       >
-        {/* Everything inside fades as the box grows — a form stretched across
-            a full-width panel on the way out reads as a layout bug. */}
+        {/* The form fades as the box grows — a form stretched across a full
+            panel on the way out would read as a layout bug. */}
         <div
           className={clsx(
             'flex-1 min-h-0 flex flex-col overflow-y-auto transition-opacity duration-300',
             isLeaving ? 'opacity-0' : 'opacity-100',
           )}
         >
-          {/* Only below lg, where the left region — and with it the brand mark
-              — is not on screen at all. */}
+          {/* Mobile-only brand mark — below lg the hero side is hidden */}
           <div className="flex lg:hidden items-center gap-3 px-8 pt-8 shrink-0">
-            <div className="w-9 h-9 rounded-md bg-primary flex items-center justify-center shrink-0">
-              <EqualizerIcon className="text-white" sx={{ fontSize: 20 }} />
+            <div className="w-10 h-10 rounded-lg bg-white border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
+              <img src="/DSNL.png" alt="DSNL" className="w-full h-full object-cover" />
             </div>
-            <span className="text-base font-semibold tracking-tight text-zinc-900 dark:text-white">
+            <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-white">
               DSNL Analytics
             </span>
           </div>
 
-          {/* my-auto rather than justify-center: the form centres in the
-              leftover height when there is any, and simply scrolls from the
-              top when the window is too short for it. */}
-          <div className="w-full max-w-sm mx-auto my-auto px-8 lg:px-12 py-10">
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+          {/* my-auto: centred in the leftover height when there is any, and
+              scrolling from the top when the window is too short for it. */}
+          <div className="w-full max-w-[400px] mx-auto my-auto px-6 py-10">
+            <h1 className="text-[34px] font-bold tracking-[-0.02em] text-zinc-950 dark:text-white">
               Sign In
             </h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1.5">
+            <p className="text-[15px] text-zinc-600 dark:text-zinc-400 mt-1.5">
               Sign in to continue to your dashboard.
             </p>
 
-            <form onSubmit={handleSubmit} className="mt-8 space-y-4">
-              {/* The same banner the dashboard raises when the lake is
-                  unreadable, down to the icon — one shape for "something went
-                  wrong", wherever it happens. */}
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               {error && (
                 <div
                   role="alert"
-                  className="flex items-start gap-3 px-4 py-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 text-sm text-red-700 dark:text-red-400"
+                  className="flex items-start gap-3 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 text-sm text-red-700 dark:text-red-400"
                 >
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <p className="min-w-0 flex-1 break-words">{error}</p>
                 </div>
               )}
@@ -259,12 +237,12 @@ export function Login() {
               <div>
                 <label
                   htmlFor="login-username"
-                  className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5"
+                  className="block text-sm font-semibold text-zinc-900 dark:text-white mb-2"
                 >
                   Username
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                  <User className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 pointer-events-none" />
                   <input
                     id="login-username"
                     type="text"
@@ -273,7 +251,7 @@ export function Login() {
                     autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className={INPUT_CLASS}
+                    className={clsx(INPUT_CLASS, 'pr-4')}
                     placeholder="username"
                   />
                 </div>
@@ -282,31 +260,38 @@ export function Login() {
               <div>
                 <label
                   htmlFor="login-password"
-                  className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5"
+                  className="block text-sm font-semibold text-zinc-900 dark:text-white mb-2"
                 >
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                  <Lock className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 pointer-events-none" />
                   <input
                     id="login-password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={INPUT_CLASS}
+                    className={clsx(INPUT_CLASS, 'pr-12')}
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-md text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
-              {/* blue-600 into blue-500 on hover: the same pairing the rest of
-                  the app's accents use. */}
               <button
                 type="submit"
                 disabled={isBusy}
-                className="w-full h-11 flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:pointer-events-none text-white text-sm font-semibold transition-colors"
+                className="w-full h-12 !mt-7 flex items-center justify-center gap-2 rounded-lg bg-action hover:bg-action-hover disabled:opacity-60 disabled:pointer-events-none text-on-action text-[15px] font-semibold shadow-sm transition-colors"
               >
                 {isBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                 Sign In

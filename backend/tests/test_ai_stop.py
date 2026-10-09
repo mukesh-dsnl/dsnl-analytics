@@ -94,7 +94,7 @@ class SlowRounds:
         self.total = total
         self.exhausted = threading.Event()
 
-    def __call__(self, history, question, llm):
+    def __call__(self, history, question, llm, **_options):
         for index in range(1, self.total + 1):
             self.rounds_run = index
             yield {"type": "round_start", "round": index}
@@ -201,7 +201,7 @@ def test_a_finished_answer_is_not_overwritten_by_a_late_stop(db, interaction, mo
     the worker must not write an answer over it."""
     conversation, message = interaction
 
-    def one_round(history, question, llm):
+    def one_round(history, question, llm, **_options):
         yield {"type": "round_start", "round": 1}
         # Somebody stops it — in another process, where the in-memory Event
         # signals nothing — while this round is still running.
