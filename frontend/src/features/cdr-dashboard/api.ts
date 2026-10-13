@@ -75,6 +75,12 @@ export interface CdrSummary {
   total_calls: number;
   /** Distinct phone numbers (last 10 digits) — TEL_DIGIT dialling out, CLI dialling in. */
   total_phone_numbers: number;
+  /**
+   * Distinct participants — one per conferee per room per day, however many
+   * attempts: CALL_DATE + CRN + CONFEREE_SEQ_NO (Voicedrop), plus CONF_NUM for
+   * Conference and Multicall.
+   */
+  total_participants: number;
   minutes_usage: number;
   /** Distinct CRN + CONF_NUM pairs — meaningful for Conference and Multicall only. */
   total_conferences: number;

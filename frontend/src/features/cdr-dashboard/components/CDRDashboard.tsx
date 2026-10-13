@@ -12,9 +12,9 @@ import {
   PlugZap,
   Radio,
   Repeat2,
-  Smartphone,
   Timer,
   Unplug,
+  Users,
   Waypoints,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -27,6 +27,7 @@ import { CrossTabTooltip } from './CrossTabTooltip';
 import type { CubeDimension } from '../cubeDimensions';
 import { DirectionSplitTooltip } from './DirectionSplitTooltip';
 import { MinutesByLocationTooltip } from './MinutesByLocationTooltip';
+import { PhoneNumbersTooltip } from './PhoneNumbersTooltip';
 import { ReblastAidTooltip } from './ReblastAidTooltip';
 import { KpiCard } from './KpiCard';
 import { PeakPortsChart } from './PeakPortsChart';
@@ -216,11 +217,12 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           error={error}
         />
         <KpiCard
-          label="Total Phone Numbers"
-          value={formatCount(data?.summary.total_phone_numbers ?? 0)}
-          icon={Smartphone}
+          label="Total Participants"
+          value={formatCount(data?.summary.total_participants ?? 0)}
+          icon={Users}
           isLoading={isPending}
           error={error}
+          tooltip={<PhoneNumbersTooltip phoneNumbers={data?.summary.total_phone_numbers ?? 0} />}
           accent="bg-violet-500/10 border-violet-500/20 text-violet-500"
         />
         {showTotalConferences && (
