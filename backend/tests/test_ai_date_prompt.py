@@ -74,6 +74,6 @@ def test_the_prompt_declines_questions_outside_the_call_data():
 
     prompt = dated_system_prompt()
     assert "0. ONLY THIS DATA" in prompt
-    assert "Fibonacci" in prompt and "call no tool" in prompt
+    assert "general code" in prompt and "call no tool" in prompt
     # Repeated in the last section, closest to the question.
     assert "declined in one or two sentences" in prompt.split("=== Today ===")[1]

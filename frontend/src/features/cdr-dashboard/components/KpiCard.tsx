@@ -75,7 +75,7 @@ export function KpiCard({
           the tooltip's own content to mount — it's already there, just
           transparent and un-clickable until the card is hovered or focused. */}
       {showTooltip && (
-        <div className="absolute left-0 top-full mt-2 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity duration-150 pointer-events-none">
+        <div className="absolute left-0 top-full mt-2 z-50 opacity-0 invisible translate-y-1 scale-[0.98] origin-top-left group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:scale-100 transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none pointer-events-none">
           {tooltip}
         </div>
       )}
