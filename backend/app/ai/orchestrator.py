@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Order matters: the model reads these as a list, and the one that answers most
 # questions is offered first.
 TOOLS = [QUERY_METRICS_TOOL, VOICEDROP_REPORT_TOOL, GET_PANEL_TOOL, RUN_QUERY_TOOL]
+REPORT_TOOLS = [VOICEDROP_REPORT_TOOL]
 
 DISPATCH: dict[str, Callable[..., tuple[str, bool]]] = {
     "query_metrics": query_metrics,
@@ -106,6 +107,10 @@ def answer_events(
     # The commands' section goes after the date, last, for the same reason the
     # date does: the long fixed prompt stays an identical prefix.
     system = dated_system_prompt() + slash.instructions(commands or slash.Parsed())
+    # /voicedrop-report is answered by the report and nothing else: its Excel
+    # file is the report, so the model is not offered a tool that would answer
+    # with something nearby (an account summary instead of the number list).
+    tools = REPORT_TOOLS if commands and commands.wants_report else TOOLS
 
     conversation: list[NeutralMessage] = [
         *(history or []),
@@ -125,7 +130,7 @@ def answer_events(
         yield {"type": "round_start", "round": round_index}
 
         started = perf_counter()
-        turn = client.send(system, conversation, TOOLS)
+        turn = client.send(system, conversation, tools)
         input_tokens += turn.input_tokens
         output_tokens += turn.output_tokens
 

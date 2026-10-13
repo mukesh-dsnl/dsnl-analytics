@@ -34,6 +34,9 @@ class ExportData:
     # One line saying what this data is, for the logs.
     description: str = ""
     notes: list[str] = field(default_factory=list)
+    # The file's header row, when the source names its own columns exactly
+    # (a report with fixed column names). None: humanised from `columns`.
+    headers: list[str] | None = None
 
 
 def connect():

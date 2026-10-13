@@ -27,7 +27,7 @@ export const COMMANDS: ChatCommand[] = [
   {
     name: 'voicedrop-report',
     label: 'Voicedrop report',
-    description: 'Phone-number list: status, duration, attempts',
+    description: 'Excel phone-number list: status, call type, duration, attempts',
     kind: 'report',
     icon: ListChecks,
   },

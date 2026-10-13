@@ -54,7 +54,12 @@ class Parsed:
 
     @property
     def exports(self) -> list[str]:
-        return [c for c in self.commands if c in EXPORTS]
+        """The files to attach. /voicedrop-report always produces its Excel
+        file; an explicit /csv or /excel is honoured as well."""
+        chosen = [c for c in self.commands if c in EXPORTS]
+        if self.wants_report and "excel" not in chosen:
+            chosen.insert(0, "excel")
+        return chosen
 
     @property
     def wants_chart(self) -> bool:
@@ -124,11 +129,16 @@ def instructions(parsed: Parsed) -> str:
 
     if parsed.wants_report:
         lines.append(
-            "  - Report: this is a Voicedrop phone-number question. Answer it with the "
-            "voicedrop_report tool — one row per number dialled per campaign per day, with "
-            "its status, total duration and attempts across retries. Pass the account, "
-            "CRNs, phone numbers and status the question names, and the whole date range "
-            "in one call."
+            "  - Report: this is the Voicedrop phone-number report, delivered as an Excel "
+            "file. Call the voicedrop_report tool, ONCE, with whatever the question names — "
+            "account and date, CRNs and date, or CRNs alone — and the whole date range. Do "
+            "not look up the CRN or the account first and do not ask for them: the tool "
+            "finds the campaigns itself and lists their CRNs, accounts and dates. Add "
+            "`columns` only for columns the question asks for beyond the default eight. "
+            "Then say which campaigns the file covers (CRN, account, date) and the totals "
+            "(numbers, connected, not connected). One tool call is the whole job: once "
+            "it has returned, reply in plain prose only — never call it again, and never "
+            "write a tool call, JSON or code in the reply."
         )
 
     if parsed.wants_chart:
