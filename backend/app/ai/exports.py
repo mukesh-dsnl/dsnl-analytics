@@ -34,6 +34,7 @@ from typing import Any, Callable, Iterator
 
 from sqlalchemy.orm import Session
 
+from app.ai import commands as slash
 from app.ai.tools import ad_hoc_sql, metrics, structured, voicedrop_report
 from app.ai.tools.export_source import ExportData, ExportUnavailable
 from app.core.config import get_settings
@@ -321,7 +322,7 @@ class _Sheet:
         self.rows = 0
         self.capped = False
 
-        names = [header(c) for c in data.columns]
+        names = data.headers or [header(c) for c in data.columns]
         # Widths from the header and the first batch — a write-only sheet has
         # to be told before its first row, and the first batch is a fair sample.
         for index, name in enumerate(names):
@@ -371,7 +372,7 @@ def _write(data: ExportData, parts: dict[str, Path]) -> dict[str, tuple[int, boo
         # utf-8-sig: the byte-order mark is what makes Excel open UTF-8 correctly.
         writer = csv.writer(handle) if handle else None
         if writer:
-            writer.writerow([header(c) for c in data.columns])
+            writer.writerow(data.headers or [header(c) for c in data.columns])
         for batch in _chain(first, batches):
             if writer:
                 writer.writerows([_csv_value(v) for v in row] for row in batch)
@@ -409,6 +410,10 @@ def build(db: Session, message: Message, exports: list[MessageExport], question:
     formats = {e.format for e in exports}
 
     calls = sources(message.queries)
+    if slash.parse(message.query or "").wants_report:
+        # The report's file is the report and only the report — never another
+        # query's rows under its name.
+        calls = [c for c in calls if c.get("tool") == "voicedrop_report"]
     if not calls:
         _fail(db, exports, "This answer did not query any data, so there is nothing to export.")
         return

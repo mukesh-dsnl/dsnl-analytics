@@ -98,7 +98,8 @@ def _metrics(window_days, monkeypatch, **args):
 @pytest.mark.parametrize("group_by", [None, ["date"], ["account"], ["account", "date"]])
 def test_windowed_metrics_equal_one_query_over_the_range(two_day_lake, monkeypatch, group_by):
     measures = ["calls", "connected", "not_connected", "connect_rate", "minutes",
-                "phone_numbers", "conferences", "accounts"]
+                "phone_numbers", "conferences", "accounts", "participants",
+                "connected_participants", "not_connected_participants"]
     single = _metrics(30, monkeypatch, measures=measures, group_by=group_by)
     windowed = _metrics(1, monkeypatch, measures=measures, group_by=group_by)
     key = lambda r: json.dumps(r, sort_keys=True)  # noqa: E731
@@ -110,6 +111,23 @@ def test_a_number_dialled_in_two_windows_is_counted_once(two_day_lake, monkeypat
     # 9000000001 is dialled on both days: 4 distinct numbers, not 5.
     row = _metrics(1, monkeypatch, measures=["phone_numbers", "calls"])["rows"][0]
     assert row == {"phone_numbers": 4, "calls": 6}
+
+
+@pytest.mark.parametrize("window_days", [1, 30])
+def test_participants_are_one_per_number_per_campaign_per_day(two_day_lake, monkeypatch, window_days):
+    # Voicedrop: CALL_DATE + CRN + CONFEREE_SEQ_NO. 501/1 is dialled twice and
+    # counts once; 9000000001 in campaigns 501 and 502 is two participants.
+    row = _metrics(window_days, monkeypatch, measures=[
+        "participants", "connected_participants", "not_connected_participants", "calls"])["rows"][0]
+    assert row == {"participants": 5, "connected_participants": 3, "not_connected_participants": 2, "calls": 6}
+
+
+def test_conference_participants_are_keyed_by_room_too():
+    # Conference and MultiCall add CONF_NUM; Voicedrop (CONFEREE_TYPE 6) does not.
+    key = metrics._PARTICIPANT_KEY
+    voicedrop, rooms = key.split(" ELSE ")
+    assert "CONF_NUM" not in voicedrop and "CONFEREE_TYPE = 6" in voicedrop
+    assert all(col in rooms for col in ("CALL_DATE", "CRN", "CONF_NUM", "CONFEREE_SEQ_NO"))
 
 
 # ── The Voicedrop report ───────────────────────────────────────────────────
@@ -126,12 +144,15 @@ def test_report_collapses_retries_into_one_row_per_number(two_day_lake, monkeypa
     report = _report(account_id="7001")
     rows = {(r["crn"], r["phone_number"]): r for r in report["rows"]}
     assert rows[(501, "9000000001")]["status"] == "Connected"
-    assert rows[(501, "9000000001")]["total_attempts"] == 2
-    assert rows[(501, "9000000001")]["total_duration_secs"] == 40
+    assert rows[(501, "9000000001")]["attempts"] == 2
+    assert rows[(501, "9000000001")]["duration_secs"] == 40
+    assert rows[(501, "9000000001")]["call_type"] == "Dial Out"
     assert rows[(501, "9000000002")]["status"] == "Not Connected"
+    assert report["columns"] == [
+        "CALL_DATE", "CRN", "PHONE_NUMBER", "STATUS", "CALL_TYPE", "START_TIME", "DURATION_SECS", "ATTEMPTS"]
     assert report["totals"] == {
         "numbers": 4, "connected": 2, "not_connected": 2,
-        "total_duration_secs": 52, "total_attempts": 5, "campaigns": 2,
+        "duration_secs": 52, "attempts": 5, "campaigns": 2, "accounts": [7001],
     }
 
 
@@ -139,19 +160,23 @@ def test_report_matches_the_reporting_teams_query(two_day_lake):
     """The exact SQL the report is built from, run by hand, gives the same rows."""
     files = [p.as_posix() for p in sorted(two_day_lake.glob("*.parquet"))]
     theirs = duckdb.connect().execute(f"""
-        SELECT CRN, call_date,
+        SELECT call_date AS CALL_DATE, CRN AS CRN,
             MAX(CASE WHEN CALLTYPE = 0 THEN CLI ELSE TEL_DIGIT END) AS PHONE_NUMBER,
             CASE WHEN MAX(CASE WHEN INCONFERENCE IS NOT NULL THEN 1 ELSE 0 END) = 1
                 THEN 'Connected' ELSE 'Not Connected' END AS STATUS,
+            CASE WHEN COALESCE(MAX(CASE WHEN INCONFERENCE IS NOT NULL THEN CALLTYPE END), 1) = 1
+                THEN 'Dial Out' ELSE 'Dial In' END AS CALL_TYPE,
+            MIN(CAST(INCONFERENCE AS TIME)) AS START_TIME,
             SUM(CASE WHEN INCONFERENCE IS NULL THEN 0
-                ELSE GREATEST(DISCONNECT_DATETIME_EPOC - INCONF_DATETIME_EPOC, 1) END) AS TOTAL_DURATION_SECS,
-            count(*) as TOTAL_ATTEMPTS
+                ELSE GREATEST(DISCONNECT_DATETIME_EPOC - INCONF_DATETIME_EPOC, 1) END) AS DURATION_SECS,
+            count(*) as ATTEMPTS
         FROM read_parquet({files})
-        WHERE CRN IN (501, 502, 601)
+        WHERE CRN IN (501, 502, 601) AND CONFEREE_TYPE = 6
         GROUP BY CRN, CALL_DATE, CONFEREE_SEQ_NO
-        ORDER BY CALL_DATE, CRN, CONFEREE_SEQ_NO""").fetchall()
+        ORDER BY STATUS, CRN, CONFEREE_SEQ_NO""").fetchall()
     with voicedrop_report.export_rows({"date_from": str(DAY1), "date_to": str(DAY2)}, 1000) as data:
         ours = [row for batch in data.batches for row in batch]
+        assert data.headers[:3] == ["CALL_DATE", "CRN", "PHONE_NUMBER"]
     assert ours == theirs
 
 
@@ -161,6 +186,34 @@ def test_report_filters(two_day_lake):
     assert _report(crns=["502"])["totals"]["numbers"] == 2
     assert _report(phone_numbers=["+91 90000 00001"])["totals"]["numbers"] == 2  # last 10 digits
     assert _report(account_id="7002")["rows"][0]["phone_number"] == "9000000004"  # CLI for dial-in
+
+
+def test_report_finds_the_crn_from_the_account_and_the_account_from_the_crn(two_day_lake):
+    by_account = _report(account_id="7001")
+    assert [c["crn"] for c in by_account["campaigns"]] == [501, 502]
+    assert any("CRN(s) found: 501, 502" in n for n in by_account["notes"])
+    by_crn = _report(crns=["601"])
+    assert by_crn["totals"]["accounts"] == [7002]
+    assert any("7002" in n for n in by_crn["notes"])
+
+
+def test_a_crn_without_a_date_is_looked_up(two_day_lake):
+    content, error = voicedrop_report.voicedrop_report(crns=["502"])
+    assert not error, content
+    report = json.loads(content)
+    assert (report["date_from"], report["date_to"]) == (str(DAY2), str(DAY2))
+    assert report["totals"]["numbers"] == 2
+    # An account alone has no day to search.
+    content, error = voicedrop_report.voicedrop_report(account_id="7001")
+    assert error and "date" in content
+
+
+def test_requested_columns_are_added_after_the_default_eight(two_day_lake):
+    report = _report(crns=["501"], columns=["account_id", "conferee_seq_no"])
+    assert report["columns"][-2:] == ["ACCOUNT_ID", "CONFEREE_SEQ_NO"]
+    assert report["rows"][0]["account_id"] == 7001
+    content, error = voicedrop_report.voicedrop_report(date_from=str(DAY1), columns=["salary"])
+    assert error and "Unknown column" in content
 
 
 def test_report_rejects_bad_input(two_day_lake):
@@ -175,6 +228,12 @@ def test_report_command_is_not_read_as_the_voicedrop_scope():
     assert parsed.commands == ["voicedrop-report", "excel"] and parsed.wants_report
     assert parsed.scopes == []
     assert "voicedrop_report tool" in commands.instructions(parsed)
+
+
+def test_the_report_command_always_makes_an_excel_file():
+    assert commands.parse("/voicedrop-report account 7001 oct 8").exports == ["excel"]
+    assert commands.parse("/voicedrop-report /csv account 7001").exports == ["excel", "csv"]
+    assert commands.parse("/voicedrop account 7001").exports == []
 
 
 # ── Ad-hoc SQL reads only the columns it uses ──────────────────────────────
