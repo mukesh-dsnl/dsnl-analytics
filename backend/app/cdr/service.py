@@ -224,6 +224,10 @@ def _applied(f: CdrFilter, where: WhereClause, joined: bool) -> dict[str, Any]:
 # the parquet reader skips the rest entirely, which is most of the 42.
 
 _SLICE_COLUMNS = """c.CALLTYPE,
+           -- The day the leg is filed under, and the conferee kind — together
+           -- with CRN, CONF_NUM and CONFEREE_SEQ_NO they identify a participant.
+           COALESCE(c.CALL_DATE, CAST(c.START_DATETIME AS DATE)) AS CALL_DATE,
+           c.CONFEREE_TYPE,
            c.LOCATION_ID,
            c.SERVICE_PROVIDER,
            c.DISCONNECT_REASON,
@@ -359,6 +363,19 @@ _PANEL_SQL: dict[str, str] = {
            CAST(COUNT(DISTINCT PHONE_NUMBER)
                 FILTER (WHERE PHONE_NUMBER IS NOT NULL
                           AND TRIM(PHONE_NUMBER) <> '') AS DOUBLE)
+    FROM slice
+    UNION ALL
+    -- Participants: one per conferee per room per day, however many attempts
+    -- it took. Voicedrop (CONFEREE_TYPE 6) is keyed CALL_DATE + CRN +
+    -- CONFEREE_SEQ_NO; Conference and Multicall add CONF_NUM, since a CRN is
+    -- reused across rooms.
+    SELECT 'summary', 'total_participants',
+           CAST(COUNT(DISTINCT CASE WHEN CONFEREE_TYPE = 6
+                    THEN concat_ws('|', 'v', CAST(CALL_DATE AS VARCHAR), CAST(CRN AS VARCHAR),
+                                   CAST(CONFEREE_SEQ_NO AS VARCHAR))
+                    ELSE concat_ws('|', 'c', CAST(CALL_DATE AS VARCHAR), CAST(CRN AS VARCHAR),
+                                   CAST(CONF_NUM AS VARCHAR), CAST(CONFEREE_SEQ_NO AS VARCHAR))
+                    END) AS DOUBLE)
     FROM slice
     UNION ALL
     SELECT 'summary', 'minutes_usage',
@@ -682,6 +699,7 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
         return {
             "total_calls": int(_scalar(rows, "total_calls")),
             "total_phone_numbers": int(_scalar(rows, "total_phone_numbers")),
+            "total_participants": int(_scalar(rows, "total_participants")),
             "minutes_usage": int(_scalar(rows, "minutes_usage")),
             "total_conferences": int(_scalar(rows, "total_conferences")),
         }

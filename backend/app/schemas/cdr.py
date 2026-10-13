@@ -137,6 +137,10 @@ class CdrSummary(BaseModel):
     # dial-out legs, CLI on dial-in ones. Counts subscribers reached, where
     # total_calls counts the attempts made at them.
     total_phone_numbers: int = 0
+    # Distinct participants — one per conferee per room per day, however many
+    # attempts: CALL_DATE + CRN + CONFEREE_SEQ_NO for Voicedrop, plus CONF_NUM
+    # for Conference and Multicall. The headline KPI; phone numbers is its hover.
+    total_participants: int = 0
     minutes_usage: int = 0
     # Distinct CRN + CONF_NUM pairs — one conference/multicall room, however
     # many call legs it generated. Meaningful once the service is scoped to

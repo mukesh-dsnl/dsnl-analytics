@@ -507,3 +507,20 @@ def test_structured_tool_returns_validation_errors_for_the_model_to_fix():
 
     assert is_error is True
     assert "date_to" in content
+
+
+def test_the_report_command_offers_only_the_report_tool():
+    from app.ai import commands
+
+    seen_tools: list[list[str]] = []
+
+    class Recorder(FakeLLMClient):
+        def send(self, system, history, tools):
+            seen_tools.append([t.name for t in tools])
+            return super().send(system, history, tools)
+
+    done = LLMTurn(text="ok", tool_calls=[], stop_reason="end_turn", input_tokens=1, output_tokens=1)
+    orchestrator.answer(question="q", llm=Recorder([done]), commands=commands.parse("/voicedrop-report account 1 oct 8"))
+    orchestrator.answer(question="q", llm=Recorder([done]), commands=commands.parse("/voicedrop account 1"))
+    assert seen_tools[0] == ["voicedrop_report"]
+    assert "query_metrics" in seen_tools[1] and len(seen_tools[1]) == 4

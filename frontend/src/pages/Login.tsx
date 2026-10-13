@@ -177,9 +177,15 @@ export function Login() {
           </div>
         </div>
 
-        <p className="text-xs font-medium opacity-80 dark:text-white/70 dark:opacity-100 shrink-0">
-          © {new Date().getFullYear()} DSNL
-        </p>
+        <div className="shrink-0">
+          <p className="text-xs font-medium opacity-80 dark:text-white/70 dark:opacity-100">
+            © {new Date().getFullYear()} DSNL
+          </p>
+          {/* From package.json's "version", at build time. */}
+          <p className="mt-0.5 text-[11px] font-medium opacity-50 dark:text-white/40 dark:opacity-100">
+            V{__APP_VERSION__}
+          </p>
+        </div>
       </div>
 
       {/* ── Right: the floating card ─────────────────────────────────────

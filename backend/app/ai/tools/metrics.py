@@ -85,6 +85,20 @@ DIMENSIONS: dict[str, tuple[str, bool]] = {
 # by hand, which is the point of offering them rather than leaving the model to
 # write the arithmetic itself.
 
+# A participant — one conferee in one room on one day, however many times it
+# was dialled or rejoined. Voicedrop numbers are counted per campaign:
+#   CALL_DATE, CRN, CONFEREE_SEQ_NO
+# Conference and MultiCall rooms add the room number, since a CRN is reused:
+#   CALL_DATE, CRN, CONF_NUM, CONFEREE_SEQ_NO
+# Voicedrop rows are CONFEREE_TYPE = 6, so no join is needed to tell them apart.
+_PARTICIPANT_KEY = (
+    "CASE WHEN c.CONFEREE_TYPE = 6 "
+    "THEN concat_ws('|', 'v', CAST(c.CALL_DATE AS VARCHAR), CAST(c.CRN AS VARCHAR), "
+    "CAST(c.CONFEREE_SEQ_NO AS VARCHAR)) "
+    "ELSE concat_ws('|', 'c', CAST(c.CALL_DATE AS VARCHAR), CAST(c.CRN AS VARCHAR), "
+    "CAST(c.CONF_NUM AS VARCHAR), CAST(c.CONFEREE_SEQ_NO AS VARCHAR)) END"
+)
+
 MEASURES: dict[str, str] = {
     "calls": "CAST(COUNT(*) AS BIGINT)",
     "connected": f"CAST(COUNT(*) FILTER (WHERE {_CONNECTED}) AS BIGINT)",
@@ -109,6 +123,17 @@ MEASURES: dict[str, str] = {
         "AS BIGINT)"
     ),
     "conferences": "CAST(COUNT(DISTINCT (c.CRN, c.CONF_NUM)) AS BIGINT)",
+    # Participants, and of those the ones with at least one connected attempt.
+    # Not connected is the difference: a participant who connected on a retry
+    # is connected, not both.
+    "participants": f"CAST(COUNT(DISTINCT {_PARTICIPANT_KEY}) AS BIGINT)",
+    "connected_participants": (
+        f"CAST(COUNT(DISTINCT {_PARTICIPANT_KEY}) FILTER (WHERE {_CONNECTED}) AS BIGINT)"
+    ),
+    "not_connected_participants": (
+        f"CAST(COUNT(DISTINCT {_PARTICIPANT_KEY}) "
+        f"- COUNT(DISTINCT {_PARTICIPANT_KEY}) FILTER (WHERE {_CONNECTED}) AS BIGINT)"
+    ),
     "accounts": "CAST(COUNT(DISTINCT c.ACCOUNTID) AS BIGINT)",
     # Blast 0 is the initial dial, so a reblast is any later attempt.
     "reblasts": "CAST(COUNT(*) FILTER (WHERE c.CONFDIAL_REBLAST_COUNT > 0) AS BIGINT)",
@@ -136,7 +161,12 @@ QUERY_METRICS_TOOL = ToolSpec(
         "totals with no grouping at all.\n"
         "  measures: calls (attempts), connected, not_connected, connect_rate (%), "
         "minutes (billable, connected legs only), phone_numbers (distinct subscribers), "
-        "conferences (distinct CRN+CONF_NUM rooms), accounts, reblasts, dtmf_entries.\n"
+        "conferences (distinct CRN+CONF_NUM rooms), participants, connected_participants, "
+        "not_connected_participants (distinct conferees, however many attempts: Voicedrop "
+        "per CALL_DATE+CRN+CONFEREE_SEQ_NO, Conference and MultiCall per "
+        "CALL_DATE+CRN+CONF_NUM+CONFEREE_SEQ_NO — use these for any 'how many "
+        "participants / users / people / numbers reached' question), accounts, reblasts, "
+        "dtmf_entries.\n"
         "  group_by: date, hour, location, account, service_provider, conference, "
         "direction (dial in/out), disconnect_reason, blast, service_type. "
         "Omit group_by for a single total row.\n"
@@ -329,7 +359,12 @@ _DISTINCT: dict[str, tuple[str, str]] = {
     ),
     "conferences": ("CAST(c.CRN AS VARCHAR) || '/' || CAST(c.CONF_NUM AS VARCHAR)", "TRUE"),
     "accounts": ("CAST(c.ACCOUNTID AS VARCHAR)", "TRUE"),
+    "participants": (_PARTICIPANT_KEY, "TRUE"),
+    "connected_participants": (_PARTICIPANT_KEY, _CONNECTED),
 }
+
+# Measures worked out from other staged measures once the windows are merged.
+_DERIVED_DISTINCT = {"not_connected_participants": ("participants", "connected_participants")}
 
 
 def _from_clause(plan: _Plan, start, end) -> tuple[str | None, str | None]:
@@ -402,7 +437,12 @@ def _execute(plan: _Plan, con, cap: int):
         for name in (("calls", "connected") if m == "connect_rate" else (m,))
         if name in _ADDITIVE
     } | {"calls"})
-    distinct = [m for m in plan.measures if m in _DISTINCT]
+    distinct = list(dict.fromkeys(
+        name
+        for m in plan.measures
+        for name in (_DERIVED_DISTINCT.get(m) or (m,))
+        if name in _DISTINCT
+    ))
 
     notes: list[str] = []
     covered = 0
@@ -465,6 +505,11 @@ def _execute(plan: _Plan, con, cap: int):
             finals.append('ROUND(100.0 * a."p_connected" / NULLIF(a."p_calls", 0), 2) AS "connect_rate"')
         elif m in _ADDITIVE:
             finals.append(f'CAST(a."p_{m}" AS BIGINT) AS "{m}"')
+        elif m in _DERIVED_DISTINCT:
+            total, part = _DERIVED_DISTINCT[m]
+            finals.append(
+                f'CAST(COALESCE(d_{total}."{total}", 0) - COALESCE(d_{part}."{part}", 0) AS BIGINT) AS "{m}"'
+            )
         else:
             finals.append(f'CAST(COALESCE(d_{m}."{m}", 0) AS BIGINT) AS "{m}"')
 
