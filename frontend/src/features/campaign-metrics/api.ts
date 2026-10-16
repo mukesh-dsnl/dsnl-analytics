@@ -44,6 +44,26 @@ export interface LocationMetricsRow extends CampaignMetricsRow {
   location: string;
 }
 
+/** One Voicedrop campaign (CRN) on one day, from q100_dump.voicedrop_summary. */
+export interface VoicedropCampaignRow {
+  date: string | null;
+  account_id: number;
+  client_id: number;
+  name: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  booking_reference: number | null;
+  crn: number;
+  phone_number_count: number;
+  dnd_count: number;
+  dialout_count: number;
+  blast_count: number;
+  unblast_count: number;
+  connected: number;
+  not_connected: number;
+  connected_duration: number;
+}
+
 // ── Account insight (the per-row chart popup) ─────────────────────────────
 
 export interface InsightSummary {
@@ -156,6 +176,22 @@ export const campaignApi = {
 
   locationWise: (filters: CampaignFilter): Promise<{ rows: LocationMetricsRow[] }> =>
     post('location-wise', filters),
+
+  /** The day's Voicedrop campaigns, from the summary table — Voicedrop only. */
+  campaigns: (filters: CampaignFilter): Promise<{ rows: VoicedropCampaignRow[] }> =>
+    post('campaigns', filters),
+
+  /**
+   * One campaign's call records — one row per number dialled, every row, in
+   * the reporting team's column order. Rows are plain arrays to keep a large
+   * campaign's payload small.
+   */
+  campaignRecords: (
+    date: string,
+    accountId: number,
+    crn: number,
+  ): Promise<{ columns: string[]; rows: (string | number | null)[][] }> =>
+    post('campaigns/records', { date, account_id: accountId, crn }),
 
   /**
    * Everything the chart popup draws for one row.

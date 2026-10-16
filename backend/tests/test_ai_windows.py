@@ -278,3 +278,14 @@ def test_a_column_typed_differently_on_different_days_does_not_break_a_range(two
     assert json.loads(content)["row_count"] == 6
     content, error = metrics.query_metrics(date_from=str(DAY1), date_to=str(DAY2), measures=["calls"])
     assert not error and json.loads(content)["rows"][0]["calls"] == 6
+
+
+def test_campaign_call_records_are_the_report_rows_for_one_campaign(two_day_lake):
+    out = voicedrop_report.call_records(DAY1, 7001, 501)
+    assert out["columns"] == [
+        "CALL_DATE", "CRN", "PHONE_NUMBER", "STATUS", "CALL_TYPE", "START_TIME", "DURATION_SECS", "ATTEMPTS"]
+    # Number 1 retried once and connected; number 2 never did. Connected sorts first.
+    assert [r[2:4] for r in out["rows"]] == [["9000000001", "Connected"], ["9000000002", "Not Connected"]]
+    assert out["rows"][0][0] == str(DAY1) and out["rows"][0][7] == 2
+    # Another account's CRN is not this campaign.
+    assert voicedrop_report.call_records(DAY1, 7002, 501)["rows"] == []
