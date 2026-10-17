@@ -484,3 +484,28 @@ def export_rows(arguments: dict[str, Any], max_rows: int) -> Iterator[ExportData
             cap=max_rows,
             description=f"voicedrop_report | {request.describe()}",
         )
+
+
+def call_records(day: date, account_id: int, crn: int) -> dict[str, Any]:
+    """Every number of one campaign on one day — the report's eight columns.
+
+    For the Campaigns table's records popup: the reporting team's query for one
+    CRN, account and date, every row, as plain lists. Dates and times are cast
+    to text in SQL so a campaign of 80,000 numbers serialises without a Python
+    pass over each value.
+    """
+    request = _Request({"date_from": day, "date_to": day, "account_id": account_id, "crns": [crn]})
+    rows: list[list[Any]] = []
+    with connect() as con:
+        for start, end, files in request.windows_with_files():
+            sql, params = request.sql(files, start, end)
+            rows += [
+                list(row)
+                for row in con.execute(
+                    f"""SELECT CAST(call_date AS VARCHAR), crn, phone_number, status, call_type,
+                               CAST(start_time AS VARCHAR), duration_secs, attempts
+                        FROM ({sql}) r""",
+                    params,
+                ).fetchall()
+            ]
+    return {"columns": [c.upper() for c in DEFAULT_COLUMNS], "rows": rows}

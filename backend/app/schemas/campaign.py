@@ -102,6 +102,39 @@ class CampaignLocationResponse(BaseModel):
     rows: list[LocationMetricsRow]
 
 
+class VoicedropCampaignRow(BaseModel):
+    """One campaign (CRN) on one day, as q100_dump.voicedrop_summary holds it."""
+
+    date: Optional[str] = None
+    account_id: int
+    client_id: int
+    name: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    booking_reference: Optional[int] = None
+    crn: int
+    phone_number_count: int = 0
+    dnd_count: int = 0
+    dialout_count: int = 0
+    blast_count: int = 0
+    unblast_count: int = 0
+    connected: int = 0
+    not_connected: int = 0
+    connected_duration: int = 0
+
+
+class VoicedropCampaignsResponse(BaseModel):
+    rows: list[VoicedropCampaignRow]
+
+
+class CampaignRecordsRequest(BaseModel):
+    """One campaign's call records: its day, account and CRN."""
+
+    date: date
+    account_id: int
+    crn: int
+
+
 # ── Account insight (the per-row chart popup) ──────────────────────────────
 
 

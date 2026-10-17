@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Dedicated read-only connection to the production MultiCall source tables.
     # Optional at app startup; required when the registration lookup is used.
     MULTICALL_DATABASE_URL: Optional[str] = None
+    # Read-only connection to q100_dump on 192.168.0.117, for the Voicedrop
+    # Campaigns table (voicedrop_summary). Optional at startup.
+    VOICEDROP_SUMMARY_DATABASE_URL: Optional[str] = None
 
     # Storage paths (relative to project root)
     STORAGE_PATH: str = "storage"

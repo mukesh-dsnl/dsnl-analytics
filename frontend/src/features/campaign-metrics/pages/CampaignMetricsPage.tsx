@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, Users, Radio, MapPin } from 'lucide-react';
+import { AlertTriangle, Loader2, Users, Radio, MapPin, Megaphone } from 'lucide-react';
 import clsx from 'clsx';
 
 import { campaignApi } from '../api';
@@ -18,13 +18,16 @@ import { AccountWiseTable } from '../components/AccountWiseTable';
 import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
 import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
 import { MetricsToolbar } from '../components/MetricsToolbar';
+import { CampaignsTable } from '../components/CampaignsTable';
+import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
+import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
 
 interface CampaignMetricsPageProps {
   service: CampaignService;
 }
 
-type View = 'account' | 'provider' | 'location';
+type View = 'account' | 'campaigns' | 'provider' | 'location';
 
 const VIEWS: ToolbarTab<View>[] = [
   { id: 'account', label: 'Account wise', icon: Users },
@@ -32,8 +35,17 @@ const VIEWS: ToolbarTab<View>[] = [
   { id: 'location', label: 'Location wise', icon: MapPin },
 ];
 
+// Campaigns reads voicedrop_summary, which only Voicedrop has — so the tab is
+// offered on Voicedrop alone, next to Account wise.
+const VOICEDROP_VIEWS: ToolbarTab<View>[] = [
+  VIEWS[0],
+  { id: 'campaigns', label: 'Campaigns', icon: Megaphone },
+  ...VIEWS.slice(1),
+];
+
 const VIEW_META: Record<View, { column: string; icon: typeof Radio }> = {
   account: { column: 'Account', icon: Users },
+  campaigns: { column: 'Campaign', icon: Megaphone },
   provider: { column: 'Service Provider', icon: Radio },
   location: { column: 'Location', icon: MapPin },
 };
@@ -52,6 +64,7 @@ function searchPlaceholder(view: View, service: CampaignService): string {
       ? 'Search by account or CRN…'
       : 'Search by account, CRN or CPIN…';
   }
+  if (view === 'campaigns') return 'Search by CRN, account, client or name…';
   return view === 'provider' ? 'Search service provider…' : 'Search location…';
 }
 
@@ -115,6 +128,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   if (searchFor !== service) {
     setSearchFor(service);
     setSearch('');
+    // Campaigns exists on Voicedrop only; leaving it lands on Account wise.
+    if (view === 'campaigns' && service !== 'voicedrop') setView('account');
   }
 
   const filters: CampaignFilter = { date, service };
@@ -143,8 +158,20 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     enabled: enabled && view === 'location',
   });
 
+  const campaignsQuery = useQuery({
+    queryKey: ['campaign', 'campaigns', filters.date],
+    queryFn: () => campaignApi.campaigns(filters),
+    enabled: view === 'campaigns' && service === 'voicedrop',
+  });
+
   const active =
-    view === 'account' ? accountQuery : view === 'provider' ? providerQuery : locationQuery;
+    view === 'account'
+      ? accountQuery
+      : view === 'campaigns'
+        ? campaignsQuery
+        : view === 'provider'
+          ? providerQuery
+          : locationQuery;
 
   // Search and sort both live here rather than inside the tables, so Export can
   // hand back exactly what the table is showing — every page of it, in the
@@ -166,6 +193,20 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     return rows.filter((r) => r.label.toLowerCase().includes(term));
   }, [view, providerQuery.data, locationQuery.data, term]);
 
+  // Campaign rows are one day's tens of campaigns, filtered here.
+  const campaignRows = useMemo((): CampaignTableRow[] | undefined => {
+    const rows = campaignsQuery.data?.rows.map(withConnectedShare);
+    if (!rows || !term) return rows;
+    return rows.filter((r) =>
+      [r.crn, r.account_id, r.client_id, r.name ?? '', r.booking_reference ?? '']
+        .some((value) => String(value).toLowerCase().includes(term)),
+    );
+  }, [campaignsQuery.data, term]);
+  const campaignSort = useSortableRows<CampaignTableRow, CampaignSortKey>(campaignRows, {
+    key: 'start_time',
+    direction: 'asc',
+  });
+
   const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(accountRows, {
     key: 'total_size',
     direction: 'desc',
@@ -179,6 +220,17 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
   const handleExport = () => {
     const stamp = `${service}-${view}-${date}`;
+    if (view === 'campaigns') {
+      downloadCsv(
+        `campaign-${stamp}.csv`,
+        ['Date', ...CAMPAIGN_COLUMNS.map((c) => c.label)],
+        (campaignSort.rows ?? []).map((r) => [
+          r.date,
+          ...CAMPAIGN_COLUMNS.map((c) => r[c.key]),
+        ]),
+      );
+      return;
+    }
     if (view === 'account') {
       downloadCsv(
         `campaign-${stamp}.csv`,
@@ -208,7 +260,11 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   };
 
   const visibleCount =
-    view === 'account' ? (accountSort.rows?.length ?? 0) : (simpleSort.rows?.length ?? 0);
+    view === 'account'
+      ? (accountSort.rows?.length ?? 0)
+      : view === 'campaigns'
+        ? (campaignSort.rows?.length ?? 0)
+        : (simpleSort.rows?.length ?? 0);
 
   return (
     // A full-height flex column rather than a growing page: the table below
@@ -257,7 +313,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
         <div className="shrink-0">
           <MetricsToolbar
-            tabs={VIEWS}
+            tabs={service === 'voicedrop' ? VOICEDROP_VIEWS : VIEWS}
             active={view}
             onTab={(next) => {
               setView(next);
@@ -278,6 +334,14 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
               Campaign Metrics needs a readable CDR export directory.
             </div>
+          ) : view === 'campaigns' ? (
+            <CampaignsTable
+              rows={campaignSort.rows}
+              isLoading={campaignsQuery.isPending}
+              error={campaignsQuery.error}
+              sort={campaignSort.sort}
+              onSort={campaignSort.toggle}
+            />
           ) : view === 'account' ? (
             <AccountWiseTable
               filters={filters}
