@@ -77,7 +77,7 @@ export function SimpleMetricsTable({
               {pageRows!.map((row) => (
                 <tr
                   key={row.label}
-                  className="border-b border-zinc-100 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors"
+                  className="border-b border-[#eef2f8] dark:border-zinc-800/40 last:border-0 hover:bg-[#f4f8fd] dark:hover:bg-white/[0.03] transition-colors"
                 >
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-2.5">

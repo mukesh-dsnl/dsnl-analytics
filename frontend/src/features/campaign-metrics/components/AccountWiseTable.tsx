@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, ChevronRight, Loader2 } from 'lucide-react';
+import { ChartNoAxesColumn, ChevronRight, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { campaignApi } from '../api';
 import type { CampaignFilter, AccountMetricsRow } from '../api';
 import type { SortState } from '../useSortableRows';
 import { usePagination } from '../usePagination';
 import { ConnectedBar } from './ConnectedBar';
-import { SortableHeader, TableCard, TablePager, TableStatus, TH_CLASS } from './TableChrome';
+import {
+  ROW_ACTION_CLASS,
+  ROW_ACTION_IDLE_CLASS,
+  SortableHeader,
+  TableCard,
+  TablePager,
+  TableStatus,
+  TH_CLASS,
+} from './TableChrome';
 import { AccountInsightDialog } from './AccountInsightDialog';
 
 type SortKey = keyof AccountMetricsRow;
@@ -171,7 +179,7 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
           'cursor-pointer transition-colors',
           isOpen
             ? 'border-t border-blue-200 dark:border-blue-500/30'
-            : 'border-b border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/30',
+            : 'border-b border-[#eef2f8] dark:border-zinc-800/40 hover:bg-[#f4f8fd] dark:hover:bg-white/[0.03]',
         )}
       >
         <td className={clsx('pl-4 py-3', openCell)}>
@@ -325,9 +333,9 @@ function ChartButton({ label, onClick }: { label: string; onClick: () => void })
       }}
       aria-label={label}
       title="View charts"
-      className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10 transition-colors"
+      className={clsx(ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS)}
     >
-      <BarChart3 className="w-4 h-4" />
+      <ChartNoAxesColumn className="h-[18px] w-[18px]" strokeWidth={2.6} />
     </button>
   );
 }

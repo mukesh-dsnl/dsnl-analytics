@@ -147,10 +147,10 @@ export function Layout() {
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/assistant');
   const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
-  // The attempt-metrics pages (every service) use the attempt-analytics
+  // The attempt-metrics and campaign-metrics pages (every service) use the
   // redesign, which paints the whole panel — header included — with its blue
   // canvas (see .vd-canvas).
-  const isRedesigned = /^\/analytics\/(all|voicedrop|conference|multicall)\/attempt-metrics\/?$/.test(location.pathname);
+  const isRedesigned = /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
@@ -189,7 +189,7 @@ export function Layout() {
     // dark. The fill stays flat underneath because any gradient spanning the
     // whole field would drift away from itself between the sidebar and the far
     // edge of the gutter, putting a seam exactly where the two are continuous.
-    <div className="app-ground flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
+    <div className="app-ground app-shell flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
 
       {/* Left Sidebar — flush to the edge, full height; w-64, or a w-20 icon
           rail when collapsed. No fill
@@ -363,7 +363,7 @@ export function Layout() {
       <div
         ref={setContentPanel}
         className={clsx(
-          'relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10',
+          'vd-edge relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10 dark:shadow-[0_0_32px_-14px_rgba(34,211,238,0.12)]',
           isRedesigned
             ? 'vd-canvas'
             : 'bg-zinc-50 dark:bg-canvas-dark',

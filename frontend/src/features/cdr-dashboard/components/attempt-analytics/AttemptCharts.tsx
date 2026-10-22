@@ -179,7 +179,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <div className="mx-px mb-[13px] flex items-center justify-between gap-3">
         <h2 className="m-0 text-[13px] font-medium text-[#576980] dark:text-zinc-300">{title}</h2>
       </div>
-      <div className="mb-7 grid grid-cols-12 gap-[18px]">{children}</div>
+      <div className="mb-6 grid grid-cols-12 gap-4">{children}</div>
     </>
   );
 }
@@ -213,20 +213,20 @@ function Card({
   return (
     <article
       className={clsx(
-        'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eef5] bg-white shadow-[0_6px_20px_#1c305408] dark:border-zinc-800/60 dark:bg-surface-dark',
+        'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eef5] bg-white shadow-[0_6px_20px_#1c305408] dark:border-[#1c2a42] dark:bg-[#0e192c] dark:shadow-[0_10px_30px_-16px_rgba(0,0,0,0.8)]',
         span === 7 && 'lg:col-span-7',
         span === 5 && 'lg:col-span-5',
         span === 6 && 'lg:col-span-6',
       )}
     >
-      <div className="flex items-start justify-between gap-2 px-[22px] pt-[21px]">
+      <div className="flex items-start justify-between gap-2 px-[18px] pt-4">
         <div className="min-w-0">
-          <h3 className={clsx('m-0 text-[14px] font-medium leading-[1.4]', INK)}>{title}</h3>
-          <p className={clsx('mt-1 mb-0 text-[12px] leading-normal', MUTED)}>{subtitle}</p>
+          <h3 className={clsx('m-0 text-[13px] font-medium leading-[1.4]', INK)}>{title}</h3>
+          <p className={clsx('mt-0.5 mb-0 text-[12px] leading-normal', MUTED)}>{subtitle}</p>
         </div>
         {!isLoading && !error && !isEmpty && extra}
       </div>
-      <div className={clsx('flex-1 p-[22px]', bodyClassName)}>
+      <div className={clsx('flex-1 p-[18px]', bodyClassName)}>
         {isLoading ? (
           <div className="flex h-full min-h-[180px] items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-[#50a6d5]" />
@@ -245,7 +245,7 @@ function Card({
         )}
       </div>
       {footer && !isLoading && !error && !isEmpty && (
-        <div className="flex items-center gap-1.5 border-t border-[#eff2f6] px-[22px] py-[11px] text-[10px] text-[#74859d] dark:border-zinc-800/60 dark:text-zinc-500">
+        <div className="flex items-center gap-1.5 border-t border-[#eff2f6] px-[18px] py-2.5 text-[10px] text-[#74859d] dark:border-zinc-800/60 dark:text-zinc-500">
           <Info className="h-3 w-3 shrink-0" />
           <span>{footer}</span>
         </div>
@@ -347,7 +347,7 @@ function ActivityCard({ data, total, ...state }: CardStateProps & { data?: CdrDa
       footer="Event counts can overlap. Each percentage is a share of total attempts."
       isEmpty={funnel.length === 0}
     >
-      <div className="flex flex-col gap-[17px] pt-px">
+      <div className="flex flex-col gap-3.5 pt-px">
         {STAGES.map((stage) => {
           const n = value(stage.label);
           const Icon = stage.icon;
@@ -428,9 +428,9 @@ function ConnectionCard({
           Connection rate
         </span>
       }
-      bodyClassName="flex min-h-[214px] items-center justify-center gap-[25px] pt-3.5 pb-4"
+      bodyClassName="flex min-h-[190px] items-center justify-center gap-6 pt-3 pb-3.5"
     >
-      <div className="relative h-[158px] w-[158px] shrink-0">
+      <div className="relative h-[136px] w-[136px] shrink-0">
         <svg className="h-full w-full -rotate-90 overflow-visible" viewBox="0 0 180 180" aria-label={`Connection rate ${pct(connected, base)}`}>
           <circle cx="90" cy="90" r="70" fill="none" strokeWidth="15" className="stroke-[#f2f5f9] dark:stroke-white/[0.06]" />
           {segments.map((s, i) => {
@@ -459,7 +459,7 @@ function ConnectionCard({
           })}
         </svg>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <strong className="text-[27px] font-bold tracking-[-1px] text-[#263750] dark:text-white">{pct(connected, base)}</strong>
+          <strong className="text-[23px] font-semibold tracking-[-0.6px] text-[#263750] dark:text-white">{pct(connected, base)}</strong>
           <small className="mt-px text-[10px] text-[#788da7] dark:text-zinc-500">connection rate</small>
         </div>
       </div>
@@ -470,7 +470,7 @@ function ConnectionCard({
               <Dot color={s.color} />
               {s.label}
             </span>
-            <span className="mt-[5px] mb-px block pl-3 text-[16px] font-medium tracking-[-0.25px] tabular-nums text-[#4d5d76] dark:text-zinc-100">
+            <span className="mt-[5px] mb-px block pl-3 text-[15px] font-medium tracking-[-0.2px] tabular-nums text-[#4d5d76] dark:text-zinc-100">
               {fmt(s.value)}
             </span>
             <span className="pl-3 text-[10px] text-[#8193ad] dark:text-zinc-500">{pct(s.value, base)} of all attempts</span>
@@ -497,7 +497,7 @@ function DurationCard({ data, ...state }: CardStateProps & { data?: CdrDashboard
       subtitle="Connected calls, grouped by call length"
       isEmpty={buckets.length === 0}
     >
-      <div className="mb-[5px] grid h-[176px] grid-cols-[35px_1fr] gap-[9px]">
+      <div className="mb-[5px] grid h-[156px] grid-cols-[35px_1fr] gap-[9px]">
         <div className="flex flex-col justify-between pb-7 text-[10px] text-[#8599b3] dark:text-zinc-500">
           <span>{compact(max)}</span>
           <span>{compact((max / 3) * 2)}</span>
@@ -593,7 +593,7 @@ function DirectionCard({
       isEmpty={rows.length === 0}
       bodyClassName="pt-5"
     >
-      <div className="text-[29px] font-bold leading-[1.2] tracking-[-0.8px] text-[#2e4767] dark:text-white">
+      <div className="text-[24px] font-semibold leading-[1.2] tracking-[-0.5px] text-[#2e4767] dark:text-white">
         {pct(outbound, base)}
         <span className="ml-[7px] text-[12px] font-normal tracking-normal text-[#7b8fab] dark:text-zinc-400">outbound</span>
       </div>
@@ -720,7 +720,7 @@ function LocationCard({
       subtitle="How call traffic is distributed"
       footer="Hover for the connection and direction breakdown."
       isEmpty={rows.length === 0}
-      bodyClassName="pt-7"
+      bodyClassName="pt-5"
     >
       {rows.map((r, i) => (
         <Hoverable
@@ -734,7 +734,7 @@ function LocationCard({
               sections={cubeSections(cubeRows, 'location', r.label)}
             />
           )}
-          className="group mb-[23px] block w-full rounded text-left"
+          className="group mb-[18px] block w-full rounded text-left"
         >
           <span className="mb-[9px] flex items-center justify-between text-[12px] text-[#8291a6] dark:text-zinc-400">
             <span className="flex items-center gap-1.5 whitespace-nowrap text-[#70829b] dark:text-zinc-400">
@@ -776,14 +776,14 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
       bodyClassName="py-3.5"
       extra={
         <div className="text-right">
-          <strong className="text-[25px] font-medium leading-[1.1] tracking-[-0.6px] tabular-nums text-[#4d617f] dark:text-zinc-100">
+          <strong className="text-[21px] font-medium leading-[1.1] tracking-[-0.4px] tabular-nums text-[#4d617f] dark:text-zinc-100">
             {fmt(peak)}
           </strong>
           <small className="mt-[5px] block text-[10px] text-[#a1adbe] dark:text-zinc-500">Peak · concurrent ports</small>
         </div>
       }
     >
-      <ResponsiveContainer width="100%" height={225}>
+      <ResponsiveContainer width="100%" height={200}>
         <AreaChart data={points} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="vd-area-fill" x1="0" y1="0" x2="0" y2="1">
@@ -891,7 +891,7 @@ function RetryCard({
       isEmpty={stages.length === 0}
     >
       <div className="mb-5 flex items-baseline gap-[13px] border-b border-[#e7ebf2] pb-[19px] dark:border-zinc-800/60">
-        <strong className="text-[29px] font-bold tracking-[-0.7px] tabular-nums text-[#445775] dark:text-white">{fmt(repeat)}</strong>
+        <strong className="text-[24px] font-semibold tracking-[-0.5px] tabular-nums text-[#445775] dark:text-white">{fmt(repeat)}</strong>
         <span className="text-[11px] text-[#98a4b5] dark:text-zinc-500">reblasted</span>
         <small className="ml-auto rounded bg-[#f2f5fa] px-[7px] py-1 text-[10px] text-[#8d9cb1] dark:bg-white/[0.06] dark:text-zinc-400">
           {pct(repeat, total)} of attempts

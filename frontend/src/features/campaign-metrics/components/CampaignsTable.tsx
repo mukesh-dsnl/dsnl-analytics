@@ -5,7 +5,7 @@ import { isIncomplete } from '../campaignRows';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { SortState } from '../useSortableRows';
 import { ConnectedBar } from './ConnectedBar';
-import { SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
+import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
 import { campaignApi } from '../api';
 import { downloadCsv } from '../exportCsv';
 
@@ -103,7 +103,7 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
         'border-b transition-colors',
         incomplete
           ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
-          : 'border-zinc-100 hover:bg-zinc-50 dark:border-zinc-800/40 dark:hover:bg-zinc-800/30',
+          : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
       )}
     >
       {/* The red stripe on the leading edge keeps an incomplete row findable
@@ -231,10 +231,11 @@ function RecordsDownload({ row }: { row: CampaignTableRow }) {
             : 'Download call records (CSV)'
       }
       className={clsx(
-        'inline-flex items-center justify-center h-8 w-8 rounded-lg border bg-white dark:bg-zinc-900 transition-colors disabled:cursor-wait',
+        ROW_ACTION_CLASS,
+        'disabled:cursor-wait',
         state === 'failed'
           ? 'border-red-300 text-red-600 dark:border-red-500/50 dark:text-red-400'
-          : 'border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10',
+          : ROW_ACTION_IDLE_CLASS,
       )}
     >
       {state === 'loading' ? (

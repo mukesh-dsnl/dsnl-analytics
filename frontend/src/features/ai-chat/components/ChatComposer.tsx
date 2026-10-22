@@ -156,7 +156,7 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
 
         <div
           className={clsx(
-            'relative z-10 flex items-end gap-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-blue-500 transition-shadow shadow-sm',
+            'relative z-10 flex items-end gap-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 field-focus-within transition-shadow shadow-sm',
             'bg-white dark:bg-zinc-900 pl-4 pr-3 py-2.5',
           )}
         >

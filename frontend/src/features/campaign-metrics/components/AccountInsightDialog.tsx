@@ -665,7 +665,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 min-w-[124px] cursor-pointer appearance-none rounded-lg border border-[#e3e8f0] bg-white pr-9 pl-4 text-[13px] text-[#3b4a63] outline-none focus:border-[#5aa9ec] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+        className="h-10 min-w-[124px] cursor-pointer appearance-none rounded-lg border border-[#e3e8f0] bg-white pr-9 pl-4 text-[13px] text-[#3b4a63] outline-none field-focus dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

@@ -342,23 +342,83 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* The attempt-analytics redesign's page canvas: a pale blue-grey ground, a
-   fine dot grid, and a soft blue glow from the top right (with a fainter one
-   bottom left). Painted on the content panel, so it stays still while the
-   page scrolls over it. */
+/* The attempt-analytics redesign's page canvas: a pale blue-grey ground with a
+   soft blue glow from the top right (and a fainter one bottom left). Painted on
+   the content panel, so it stays still while the page scrolls over it. */
 .vd-canvas {
   background-color: #f1f5fa;
   background-image:
     radial-gradient(ellipse 55% 45% at 96% 0%, rgba(158, 200, 238, 0.55), rgba(158, 200, 238, 0) 70%),
-    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(196, 215, 244, 0.45), rgba(196, 215, 244, 0) 70%),
-    radial-gradient(circle, rgba(110, 132, 165, 0.17) 1px, transparent 1.3px);
-  background-size: 100% 100%, 100% 100%, 18px 18px;
-  background-repeat: no-repeat, no-repeat, repeat;
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(196, 215, 244, 0.45), rgba(196, 215, 244, 0) 70%);
+  background-repeat: no-repeat;
 }
 .dark .vd-canvas {
   background-color: #0f1729;
   background-image:
     radial-gradient(ellipse 55% 45% at 96% 0%, rgba(56, 120, 200, 0.22), rgba(56, 120, 200, 0) 70%),
-    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(80, 110, 190, 0.14), rgba(80, 110, 190, 0) 70%),
-    radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1.3px);
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(80, 110, 190, 0.14), rgba(80, 110, 190, 0) 70%);
+}
+
+/* ── Dark-mode shell ───────────────────────────────────────────────────────
+   In dark mode the app shell's field (sidebar + gutter) is a deep navy, built
+   the same way as the light mode's brand field — a flat fill, a broad diagonal
+   sheen and a fine halftone (see .app-ground) — just re-coloured. Scoped to
+   .app-shell so the sign-in page keeps its own ground. */
+.dark .app-ground.app-shell,
+.dark .app-ground.app-ground-hero {
+  --ground-dot: rgba(255, 255, 255, 0.05);
+
+  background-color: #0b1628;
+  background-image:
+    radial-gradient(circle at 16% 82%, rgba(56, 160, 230, 0.10), transparent 55%),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(var(--ground-dot) var(--ground-dot-radius), transparent var(--ground-dot-edge));
+  background-size: auto, auto, var(--ground-dot-gap) var(--ground-dot-gap);
+}
+
+/* A 1px gradient edge drawn inside an element's border box, without touching
+   its background (so it works over layered backgrounds like .vd-canvas).
+   Colours come from --edge-from / --edge-via / --edge-to. Dark mode only. */
+.vd-edge {
+  --edge-from: rgba(34, 211, 238, 0.22);
+  --edge-via: rgba(59, 130, 246, 0.12);
+  --edge-to: rgba(139, 92, 246, 0.2);
+}
+.vd-edge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--edge-from), var(--edge-via), var(--edge-to));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+  opacity: 0;
+}
+.dark .vd-edge::before {
+  opacity: 1;
+}
+
+/* ── Field focus ───────────────────────────────────────────────────────────
+   Every text input, search box, select and date-picker trigger shows focus as
+   one thin brand-blue edge with a soft glow, instead of a thick ring. Drawn
+   with box-shadows, so it works on any field colour and follows the field's
+   rounded corners. `field-focus-within` is for a box that holds a borderless
+   field (the chat composer); `[data-state=open]` keeps a date picker lit while
+   its calendar is open, since a click does not set :focus-visible. */
+.field-focus:focus,
+.field-focus[data-state='open'],
+.field-focus-within:focus-within {
+  outline: none;
+  border-color: #00a3e0 !important;
+  box-shadow: 0 0 0 3px rgba(0, 163, 224, 0.14) !important;
+}
+.dark .field-focus:focus,
+.dark .field-focus[data-state='open'],
+.dark .field-focus-within:focus-within {
+  border-color: rgba(56, 189, 248, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14) !important;
 }

@@ -9,7 +9,7 @@ import { useAuthStore, useUIStore } from '../store';
 const INPUT_CLASS =
   'w-full h-12 pl-11 rounded-lg text-[15px] border bg-white dark:bg-[#0a0f1d] border-zinc-300 dark:border-zinc-700 ' +
   'text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 ' +
-  'focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-colors';
+  'field-focus outline-none transition-colors';
 
 /**
  * How long the card takes to grow into the content panel, and therefore how

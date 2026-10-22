@@ -2,7 +2,7 @@ import type { ClipboardEvent, FormEvent } from 'react';
 import clsx from 'clsx';
 import { Loader2, RotateCcw, Search, X } from 'lucide-react';
 import type { SearchField } from '../api';
-import { MAX_VALUES, SEARCH_FIELDS, focus, parseValues, surface } from '../lookup';
+import { MAX_VALUES, SEARCH_FIELDS, fieldFocus, focus, parseValues, surface } from '../lookup';
 import type { FieldMeta } from '../lookup';
 
 interface SearchPanelProps {
@@ -33,17 +33,17 @@ export function SearchPanel({ drafts, onChange, onSubmit, onReset, docked, pendi
   }
 
   return <form onSubmit={submit} role="search" aria-label="Registration lookup"
-    className={clsx(surface, 'p-3 transition-shadow duration-300 sm:p-4', !docked && 'shadow-lg')}>
+    className={clsx(surface.replace('rounded-xl', 'rounded-2xl'), 'p-3 transition-shadow duration-300 sm:p-4', !docked && 'shadow-lg')}>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
       {SEARCH_FIELDS.map((field, index) => <SearchBox key={field.key} field={field} value={drafts[field.key]} count={counts[index]}
         disabled={pending} autoFocus={!docked && index === 0} onChange={(value) => onChange(field.key, value)} />)}
 
       <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
-        <button type="submit" disabled={!canSearch} className={clsx('inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 xl:flex-none', focus)}>
+        <button type="submit" disabled={!canSearch} className={clsx('inline-flex h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 xl:flex-none', focus)}>
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Search
         </button>
         <button type="button" onClick={onReset} disabled={!hasText && !docked} title="Clear search and start over" aria-label="Clear search and start over"
-          className={clsx('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white', focus)}>
+          className={clsx('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white', focus)}>
           <RotateCcw className="h-4 w-4" />
         </button>
       </div>
@@ -87,13 +87,13 @@ function SearchBox({ field, value, count, disabled, autoFocus, onChange }: {
         disabled={disabled} autoFocus={autoFocus} type="text" inputMode={field.inputMode} autoComplete="off" spellCheck={false}
         placeholder={field.placeholder}
         className={clsx(
-          'w-full rounded-lg border bg-white pl-10 pr-9 text-zinc-900 placeholder:text-zinc-400 transition-colors disabled:cursor-wait disabled:opacity-60 dark:bg-zinc-900/50 dark:text-white',
+          'w-full rounded-xl border bg-white pl-10 pr-9 text-zinc-900 placeholder:text-zinc-400 transition-colors disabled:cursor-wait disabled:opacity-60 dark:bg-zinc-900/50 dark:text-white',
           over ? 'border-red-300 dark:border-red-500/50' : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-700 dark:hover:border-zinc-600',
           'h-10 text-sm',
-          focus,
+          fieldFocus,
         )} />
       {value && !disabled && <button type="button" onClick={() => onChange('')} aria-label={`Clear ${field.label}`}
-        className={clsx('absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200', focus)}>
+        className={clsx('absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200', focus)}>
         <X className="h-3.5 w-3.5" />
       </button>}
     </span>

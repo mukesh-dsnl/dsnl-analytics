@@ -24,7 +24,7 @@ import { PAGE_SIZE } from '../usePagination';
  */
 export function TableCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col min-h-0 bg-white dark:bg-surface-dark border border-zinc-200 dark:border-zinc-800/60 rounded-md shadow-sm dark:shadow-lg overflow-hidden transition-colors duration-300">
+    <div className="flex flex-col min-h-0 bg-white dark:bg-[#0e192c] border border-[#dce8f5] dark:border-[#1c2a42] rounded-xl shadow-[0_2px_10px_#1c305408] dark:shadow-[0_10px_30px_-16px_rgba(0,0,0,0.8)] overflow-hidden transition-colors duration-300">
       {children}
     </div>
   );
@@ -65,8 +65,8 @@ export function TableStatus({ isLoading, error, isEmpty }: { isLoading: boolean;
  * separation. A shadow belongs to the cell and travels with it.
  */
 export const TH_CLASS =
-  'sticky top-0 z-20 bg-white dark:bg-surface-dark px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 ' +
-  'shadow-[inset_0_-1px_0_theme(colors.zinc.200)] dark:shadow-[inset_0_-1px_0_theme(colors.zinc.800)]';
+  'sticky top-0 z-20 bg-[#e2eefb] dark:bg-[#15284a] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#2f5a8c] dark:text-[#a9c3e6] ' +
+  'shadow-[inset_0_-1px_0_#cfe0f3] dark:shadow-[inset_0_-1px_0_#22385a]';
 export const TH_CLASS_RIGHT = `${TH_CLASS} text-right`;
 export const TD_CLASS = 'px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300 tabular-nums';
 export const TD_CLASS_RIGHT = `${TD_CLASS} text-right`;
@@ -186,3 +186,7 @@ export function SortableHeader<K extends string>({
     </th>
   );
 }
+
+/** The row-end action button — a white tile with a light-blue edge and a blue icon. */
+export const ROW_ACTION_CLASS = 'inline-flex h-9 w-9 items-center justify-center rounded-xl border bg-white shadow-[0_1px_3px_#2f7fe014] transition-colors dark:bg-[#0f1d33]';
+export const ROW_ACTION_IDLE_CLASS = 'border-[#cfe1f6] text-[#2f7fe0] hover:border-[#9ec7f2] hover:bg-[#eef5fd] dark:border-[#24406a] dark:text-[#5aa7ff] dark:hover:border-[#3b6aa8] dark:hover:bg-[#13284a]';

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { AlertTriangle, Hash, Layers, Loader2, Phone, Timer, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
@@ -217,35 +217,42 @@ interface Tone {
   card: string;
   tile: string;
   bar: string;
+  /** The dark-mode gradient edge, start and end. */
+  edge: [string, string];
 }
 
 // Each card's tint, icon tile and bar — the light values from the mockup,
 // with dark equivalents.
 const TONES: Record<'blue' | 'violet' | 'sky' | 'teal' | 'orange', Tone> = {
   blue: {
-    card: 'border-[#cfe1f6] from-white to-[#f1f7fe] dark:border-sky-500/25 dark:from-surface-dark dark:to-sky-500/[0.06]',
+    card: 'border-[#cfe1f6] from-white to-[#f1f7fe] dark:border-sky-500/25 dark:from-[#0d1729] dark:to-sky-500/[0.06]',
     tile: 'bg-[#e6f1fd] text-[#3a86d8] dark:bg-sky-500/15 dark:text-sky-300',
     bar: 'bg-[#3a86d8]',
+    edge: ['rgba(59,130,246,0.45)', 'rgba(34,211,238,0.28)'],
   },
   violet: {
-    card: 'border-[#e2d7f6] from-white to-[#faf4fd] dark:border-violet-500/25 dark:from-surface-dark dark:to-violet-500/[0.06]',
+    card: 'border-[#e2d7f6] from-white to-[#faf4fd] dark:border-violet-500/25 dark:from-[#0d1729] dark:to-violet-500/[0.06]',
     tile: 'bg-[#f1eafd] text-[#8b6fd8] dark:bg-violet-500/15 dark:text-violet-300',
     bar: 'bg-gradient-to-r from-[#8b6fd8] to-[#e35d92]',
+    edge: ['rgba(139,92,246,0.45)', 'rgba(236,72,153,0.32)'],
   },
   sky: {
-    card: 'border-[#c8e4f4] from-white to-[#eff8fd] dark:border-cyan-500/25 dark:from-surface-dark dark:to-cyan-500/[0.06]',
+    card: 'border-[#c8e4f4] from-white to-[#eff8fd] dark:border-cyan-500/25 dark:from-[#0d1729] dark:to-cyan-500/[0.06]',
     tile: 'bg-[#e0f2fb] text-[#1f93c4] dark:bg-cyan-500/15 dark:text-cyan-300',
     bar: 'bg-[#29a3d6]',
+    edge: ['rgba(14,165,233,0.45)', 'rgba(99,102,241,0.28)'],
   },
   teal: {
-    card: 'border-[#c9ece2] from-white to-[#f0fbf7] dark:border-emerald-500/25 dark:from-surface-dark dark:to-emerald-500/[0.06]',
+    card: 'border-[#c9ece2] from-white to-[#f0fbf7] dark:border-emerald-500/25 dark:from-[#0d1729] dark:to-emerald-500/[0.06]',
     tile: 'bg-[#e2f6ef] text-[#25a883] dark:bg-emerald-500/15 dark:text-emerald-300',
     bar: 'bg-[#2fb58f]',
+    edge: ['rgba(16,185,129,0.45)', 'rgba(34,211,238,0.28)'],
   },
   orange: {
-    card: 'border-[#f6dcc4] from-white to-[#fff6ee] dark:border-orange-500/25 dark:from-surface-dark dark:to-orange-500/[0.06]',
+    card: 'border-[#f6dcc4] from-white to-[#fff6ee] dark:border-orange-500/25 dark:from-[#0d1729] dark:to-orange-500/[0.06]',
     tile: 'bg-[#fdeedd] text-[#e07d2c] dark:bg-orange-500/15 dark:text-orange-300',
     bar: 'bg-[#ee8a3c]',
+    edge: ['rgba(249,115,22,0.45)', 'rgba(234,179,8,0.28)'],
   },
 };
 
@@ -278,15 +285,17 @@ function Kpi({
     <div
       {...(ready ? hover : {})}
       className={clsx(
-        'rounded-2xl border bg-gradient-to-br px-5 py-4 shadow-[0_6px_20px_#1c305408] outline-none transition-shadow hover:shadow-[0_8px_24px_#1c305412] focus-visible:ring-2 focus-visible:ring-[#42b9e9]',
+        'vd-edge relative rounded-2xl border bg-gradient-to-br px-4 py-3.5 shadow-[0_1px_3px_#1c305408] outline-none transition-shadow hover:shadow-[0_3px_10px_#1c30540d] focus-visible:ring-2 focus-visible:ring-[#42b9e9]',
+        'dark:border-transparent dark:shadow-[0_4px_14px_-10px_var(--edge-from)] dark:hover:shadow-[0_6px_18px_-10px_var(--edge-from)]',
         tone.card,
       )}
+      style={{ '--edge-from': tone.edge[0], '--edge-via': tone.edge[1], '--edge-to': tone.edge[1] } as CSSProperties}
     >
       <div className="flex items-center gap-3">
-        <span className={clsx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', tone.tile)}>
-          <Icon className="h-[18px] w-[18px]" />
+        <span className={clsx('inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tone.tile)}>
+          <Icon className="h-4 w-4" />
         </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.9px] text-[#4d5d76] dark:text-zinc-400">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-[#4d5d76] dark:text-zinc-400">
           {label}
         </span>
       </div>
@@ -299,20 +308,20 @@ function Kpi({
         </p>
       ) : (
         <>
-          <p className="mt-3 text-[28px] font-bold leading-none tracking-[-0.6px] tabular-nums text-[#16213a] dark:text-white">
+          <p className="mt-2.5 text-[24px] font-semibold leading-none tracking-[-0.4px] tabular-nums text-[#16213a] dark:text-white">
             {value}
           </p>
           {bar === undefined ? (
-            <div className="mt-3 h-1.5" />
+            <div className="mt-2.5 h-1.5" />
           ) : (
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e9eef5] dark:bg-white/[0.07]">
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#e9eef5] dark:bg-white/[0.07]">
               <div
                 className={clsx('h-full rounded-full', tone.bar)}
                 style={{ width: `${Math.min(Math.max(bar, 0), 100)}%`, minWidth: bar > 0 ? 3 : 0 }}
               />
             </div>
           )}
-          <p className="mt-2 text-[12px] text-[#5b6a82] dark:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-[#16213a] dark:[&_strong]:text-white">
+          <p className="mt-1.5 text-[12px] text-[#5b6a82] dark:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-[#16213a] dark:[&_strong]:text-white">
             {note}
           </p>
         </>

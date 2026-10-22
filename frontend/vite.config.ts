@@ -20,8 +20,8 @@ export default defineConfig({
     },
   },
   server: {
-    // host: 'localhost',
-    allowedHosts: ["approximately-computed-emissions-behind.trycloudflare.com"],
+    host: true,
+    // allowedHosts: ["approximately-computed-emissions-behind.trycloudflare.com"],
     proxy: {
       // The analytics backend runs on 8001. Port 8000 belongs to the separate
       // Report Console project on this machine, which 404s every /api/cdr/* call.
