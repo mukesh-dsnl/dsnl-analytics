@@ -312,3 +312,32 @@ body {
   --action-hover: #33b8ed;
   --on-action: #10152a;
 }
+
+/* The attempt-analytics redesign's typeface (Voicedrop charts). Scoped to
+   .vd-design so the rest of the app keeps Inter. */
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-medium.woff2') format('woff2');
+  font-weight: 500 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-bold.woff2') format('woff2');
+  font-weight: 650 900;
+  font-display: swap;
+}
+.vd-design {
+  font-family: Dashboard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-synthesis: none;
+}
+@keyframes vd-tooltip-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}

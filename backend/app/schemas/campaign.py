@@ -192,6 +192,10 @@ class InsightCarrier(BaseModel):
     total: int = 0
     connected: int = 0
     connect_percentage: float = 0.0
+    # Dial attempts through this carrier, and their share of all the account's
+    # attempts — the carriers' shares add up to 100%.
+    attempts: int = 0
+    attempt_percentage: float = 0.0
 
 
 class InsightAid(BaseModel):
