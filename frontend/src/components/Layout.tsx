@@ -147,6 +147,10 @@ export function Layout() {
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/assistant');
   const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
+  // The attempt-metrics pages (every service) use the attempt-analytics
+  // redesign, which paints the whole panel — header included — with its blue
+  // canvas (see .vd-canvas).
+  const isRedesigned = /^\/analytics\/(all|voicedrop|conference|multicall)\/attempt-metrics\/?$/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
@@ -358,9 +362,12 @@ export function Layout() {
           nothing outside it. */}
       <div
         ref={setContentPanel}
-        className="relative h-full flex flex-col rounded-2xl overflow-hidden
-                   shadow-lg shadow-black/10
-                   bg-zinc-50 dark:bg-canvas-dark"
+        className={clsx(
+          'relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10',
+          isRedesigned
+            ? 'vd-canvas'
+            : 'bg-zinc-50 dark:bg-canvas-dark',
+        )}
       >
         {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
@@ -373,9 +380,12 @@ export function Layout() {
             on the way out would read as a layout bug, not as a transition. */}
         <header
           className={clsx(
-            `h-[72px] flex items-center gap-5 px-6 shrink-0 z-10
-             bg-white dark:bg-surface-dark border-b border-zinc-200 dark:border-zinc-800/60
-             transition-opacity duration-300`,
+            'h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 border-b transition-opacity duration-300',
+            // On the redesigned page the header is glass over the gradient, so
+            // the blue runs through it instead of stopping at a white band.
+            isRedesigned
+              ? 'bg-white/45 backdrop-blur-md border-[#dfe7f1] dark:bg-white/[0.03] dark:border-white/[0.06]'
+              : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60',
             isLoggingOut && 'opacity-0 pointer-events-none',
           )}
         >

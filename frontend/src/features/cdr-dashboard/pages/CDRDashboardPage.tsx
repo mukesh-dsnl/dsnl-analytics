@@ -136,6 +136,8 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   const isQueryable = status.available && !isReversed && !isTooWide;
 
   return (
+    // Voicedrop's blue background is painted by the panel behind this page
+    // (Layout), so it also runs under the header.
     <div className="p-8 max-w-[1500px] mx-auto min-h-full">
       <div className="space-y-6">
         {!status.available && (

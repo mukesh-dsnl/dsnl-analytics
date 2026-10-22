@@ -27,8 +27,8 @@ import { useContentPanel } from '../../../components/ContentPanelSlot';
 import { campaignApi } from '../api';
 import type { AccountInsight, CampaignFilter, InsightAid } from '../api';
 import { downloadCsv } from '../exportCsv';
-import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/voicedrop/HoverTooltip';
-import { useHover } from '../../cdr-dashboard/components/voicedrop/tooltipContext';
+import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
+import { useHover } from '../../cdr-dashboard/components/attempt-analytics/tooltipContext';
 
 interface AccountInsightDialogProps {
   filters: CampaignFilter;

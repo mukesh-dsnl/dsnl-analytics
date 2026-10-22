@@ -43,11 +43,16 @@ import { HoverTooltipProvider, TipBody } from './HoverTooltip';
 import type { TipRow } from './HoverTooltip';
 import { useHover } from './tooltipContext';
 
-interface VoicedropChartsProps {
+interface AttemptChartsProps {
   data: CdrDashboard | undefined;
   cubeRows: CallCubeRow[];
   isLoading: boolean;
   error: Error | null;
+  /**
+   * Whether to show Call activity and Call duration. Their stages (initiated,
+   * rang) are dial-out concepts, so only Voicedrop shows them.
+   */
+  dialOutStages: boolean;
 }
 
 type Tab = 'all' | 'outcomes' | 'routing' | 'capacity' | 'disconnects';
@@ -77,11 +82,11 @@ const TRACK = 'block relative overflow-hidden rounded bg-[#f3f6fa] dark:bg-white
 const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-[#42b9e9] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900';
 
 /**
- * The Voicedrop attempt-metrics charts, in the attempt-analytics redesign:
- * grouped cards, the design's palette and typeface, and a hover readout on
- * every mark. Hover only — nothing opens on click.
+ * The attempt-metrics charts, in the attempt-analytics redesign — for every
+ * service: grouped cards, the design's palette and typeface, and a hover
+ * readout on every mark. Hover only — nothing opens on click.
  */
-export function VoicedropCharts({ data, cubeRows, isLoading, error }: VoicedropChartsProps) {
+export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages }: AttemptChartsProps) {
   const [tab, setTab] = useState<Tab>('all');
   const total = data?.summary.total_calls ?? 0;
   const ready = !isLoading && !error && data;
@@ -92,9 +97,12 @@ export function VoicedropCharts({ data, cubeRows, isLoading, error }: VoicedropC
   return (
     <HoverTooltipProvider>
       <div className="vd-design">
-        {/* Chart groups */}
-        <div className="mb-[23px] flex items-center justify-between gap-3.5 border-b border-[#e2e7f0] dark:border-zinc-800/60">
-          <nav className="flex gap-[23px] overflow-x-auto [scrollbar-width:none]" aria-label="Metric groups">
+        {/* Chart groups — a segmented switch */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <nav
+            className="flex gap-1 overflow-x-auto rounded-xl bg-[#e9eef5]/80 p-1 [scrollbar-width:none] dark:bg-white/[0.05]"
+            aria-label="Metric groups"
+          >
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -102,19 +110,20 @@ export function VoicedropCharts({ data, cubeRows, isLoading, error }: VoicedropC
                 onClick={() => setTab(t.id)}
                 aria-pressed={tab === t.id}
                 className={clsx(
-                  'relative whitespace-nowrap pb-3.5 text-[12px] font-medium transition-colors',
+                  'whitespace-nowrap rounded-lg px-3.5 py-1.5 text-[12px] font-medium transition-colors',
                   tab === t.id
-                    ? 'text-[#212665] dark:text-white'
-                    : 'text-[#738299] hover:text-[#212665] dark:text-zinc-400 dark:hover:text-white',
+                    ? 'bg-white text-[#16213a] shadow-[0_1px_3px_#1c305414] dark:bg-zinc-700 dark:text-white'
+                    : 'text-[#5b6a82] hover:text-[#16213a] dark:text-zinc-400 dark:hover:text-white',
                 )}
               >
                 {t.label}
-                {tab === t.id && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-sm bg-[#212665] dark:bg-[#50a6d5]" />
-                )}
               </button>
             ))}
           </nav>
+          <p className="flex items-center gap-1.5 text-[11px] text-[#7d8da2] dark:text-zinc-500">
+            <MousePointer2 className="h-3 w-3" />
+            Hover a chart to explore
+          </p>
         </div>
 
         {ready && total === 0 ? (
@@ -126,10 +135,10 @@ export function VoicedropCharts({ data, cubeRows, isLoading, error }: VoicedropC
           <>
             {shows('outcomes') && (
               <Section title="Call performance">
-                <ActivityCard {...card} data={data} total={total} />
-                <ConnectionCard {...card} data={data} total={total} cubeRows={cubeRows} />
-                <DurationCard {...card} data={data} />
-                <DirectionCard {...card} data={data} total={total} cubeRows={cubeRows} />
+                {dialOutStages && <ActivityCard {...card} data={data} total={total} />}
+                <ConnectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />
+                {dialOutStages && <DurationCard {...card} data={data} />}
+                <DirectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />
               </Section>
             )}
             {shows('routing') && (
@@ -169,10 +178,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     <>
       <div className="mx-px mb-[13px] flex items-center justify-between gap-3">
         <h2 className="m-0 text-[13px] font-medium text-[#576980] dark:text-zinc-300">{title}</h2>
-        <p className="m-0 flex items-center gap-[5px] text-[11px] text-[#7d8da2] dark:text-zinc-500">
-          <MousePointer2 className="h-3 w-3" />
-          Hover to explore
-        </p>
       </div>
       <div className="mb-7 grid grid-cols-12 gap-[18px]">{children}</div>
     </>
@@ -196,7 +201,7 @@ function Card({
   bodyClassName,
   children,
 }: CardStateProps & {
-  span: 5 | 7 | 12;
+  span: 5 | 6 | 7 | 12;
   title: string;
   subtitle: string;
   extra?: ReactNode;
@@ -208,9 +213,10 @@ function Card({
   return (
     <article
       className={clsx(
-        'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#e7ebf2] bg-white shadow-[0_2px_3px_#1a335003] dark:border-zinc-800/60 dark:bg-surface-dark',
+        'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eef5] bg-white shadow-[0_6px_20px_#1c305408] dark:border-zinc-800/60 dark:bg-surface-dark',
         span === 7 && 'lg:col-span-7',
         span === 5 && 'lg:col-span-5',
+        span === 6 && 'lg:col-span-6',
       )}
     >
       <div className="flex items-start justify-between gap-2 px-[22px] pt-[21px]">
@@ -239,7 +245,7 @@ function Card({
         )}
       </div>
       {footer && !isLoading && !error && !isEmpty && (
-        <div className="flex items-center gap-1.5 border-t border-[#eff2f6] bg-[#fdfefe] px-[22px] py-[11px] text-[10px] text-[#74859d] dark:border-zinc-800/60 dark:bg-white/[0.02] dark:text-zinc-500">
+        <div className="flex items-center gap-1.5 border-t border-[#eff2f6] px-[22px] py-[11px] text-[10px] text-[#74859d] dark:border-zinc-800/60 dark:text-zinc-500">
           <Info className="h-3 w-3 shrink-0" />
           <span>{footer}</span>
         </div>
@@ -304,8 +310,7 @@ function cubeSections(cubeRows: CallCubeRow[], dimension: CubeDimension, value: 
     }
     const rows: TipRow[] = [...totals]
       .map(([label, count]) => ({ label: other === 'provider' ? `Provider ${label}` : label, value: count }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+      .sort((a, b) => b.value - a.value);
     return { title: DIMENSION_TITLE[other], rows };
   });
 }
@@ -388,8 +393,9 @@ function ConnectionCard({
   data,
   total,
   cubeRows,
+  span = 5,
   ...state
-}: CardStateProps & { data?: CdrDashboard; total: number; cubeRows: CallCubeRow[] }) {
+}: CardStateProps & { data?: CdrDashboard; total: number; cubeRows: CallCubeRow[]; span?: 5 | 6 }) {
   const rows = data?.connection_status ?? [];
   const connected = rows.filter((r) => isConnectedLabel(r.label)).reduce((t, r) => t + r.value, 0);
   const notConnected = rows.filter((r) => !isConnectedLabel(r.label)).reduce((t, r) => t + r.value, 0);
@@ -405,14 +411,14 @@ function ConnectionCard({
       title={s.label}
       value={s.value}
       share={`${pct(s.value, base)} of attempts`}
-      sections={cubeSections(cubeRows, 'connection', s.cube).filter((x) => x.title !== 'Service provider')}
+      sections={cubeSections(cubeRows, 'connection', s.cube)}
     />
   );
 
   return (
     <Card
       {...state}
-      span={5}
+      span={span}
       title="Connection overview"
       subtitle="How many attempts reached a participant?"
       footer="Hover an outcome for its direction and location mix."
@@ -561,8 +567,9 @@ function DirectionCard({
   data,
   total,
   cubeRows,
+  span = 5,
   ...state
-}: CardStateProps & { data?: CdrDashboard; total: number; cubeRows: CallCubeRow[] }) {
+}: CardStateProps & { data?: CdrDashboard; total: number; cubeRows: CallCubeRow[]; span?: 5 | 6 }) {
   const rows = [...(data?.call_direction ?? [])].sort((a, b) => b.value - a.value);
   const base = rows.reduce((t, r) => t + r.value, 0) || total;
   const outbound = rows.find((r) => /out/i.test(r.label))?.value ?? 0;
@@ -572,14 +579,14 @@ function DirectionCard({
       title={r.label}
       value={r.value}
       share={`${pct(r.value, base)} of attempts`}
-      sections={cubeSections(cubeRows, 'direction', r.label).filter((x) => x.title !== 'Service provider')}
+      sections={cubeSections(cubeRows, 'direction', r.label)}
     />
   );
 
   return (
     <Card
       {...state}
-      span={5}
+      span={span}
       title="Call direction"
       subtitle="The balance between outbound and inbound calls"
       footer="Hover a direction to see its connection and routing mix."
@@ -791,7 +798,7 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
             cursor={{ stroke: '#8bbbd8', strokeDasharray: '3 3' }}
             content={({ active, payload, label }) =>
               active && payload?.length ? (
-                <div className="vd-design w-[230px] rounded-[11px] border border-white/[0.08] bg-[#1f2b45f7] p-4 text-white shadow-[0_12px_35px_#15253d2d]">
+                <div className="vd-design min-w-[220px] rounded-[10px] border border-white/[0.08] bg-[#1f2b45f7] px-3.5 py-3 text-white shadow-[0_12px_35px_#15253d2d]">
                   <TipBody
                     eyebrow="Peak ports"
                     title={String(label)}
@@ -838,7 +845,17 @@ function aidSections(breakdown: ReblastAidDatum[], label: string) {
         { label: 'Not connected', value: notConnected },
       ],
     },
-    { title: 'AID breakdown', rows: aids.map((a) => ({ label: a.label, value: a.connected + a.not_connected })) },
+    {
+      title: 'AID breakdown',
+      rows: aids.map((a) => ({
+        label: a.label,
+        value: a.connected + a.not_connected,
+        children: [
+          { label: 'Connected', value: a.connected },
+          { label: 'Not connected', value: a.not_connected },
+        ],
+      })),
+    },
   ];
 }
 
