@@ -4,12 +4,13 @@ import { Check, Copy } from 'lucide-react';
 import { AnswerChart } from './AnswerChart';
 
 /**
- * Renders an assistant answer: prose, plus any markdown tables in it.
+ * Renders an assistant answer: a headline figure, bullet points, prose and
+ * markdown tables.
  *
  * Deliberately a tiny hand-rolled parser rather than a markdown library. The
- * model is instructed to emit exactly two things — pipe tables for breakdowns
- * and **bold** for a headline figure — so the surface to support is small and
- * fixed, and pulling in a full markdown renderer (plus a sanitiser, since this
+ * model is instructed to emit a small fixed set of things — a bold headline
+ * figure, "- " bullets, pipe tables for breakdowns and **bold** — so the
+ * surface to support is small and fixed, and pulling in a full markdown renderer (plus a sanitiser, since this
  * is model output) would be a lot of weight and a lot of attack surface for
  * two constructs.
  *
@@ -165,7 +166,22 @@ function Table({ header, rows, tableKey }: { header: string[]; rows: string[][];
 
 type Block =
   | { kind: 'p'; text: string; length: number }
+  | { kind: 'list'; items: string[]; length: number }
   | { kind: 'table'; header: string[]; rows: string[][]; length: number };
+
+/** "- item", "• item" or "* item" — a bullet line. */
+const BULLET = /^\s*(?:[-•]|\*(?!\*))\s+/;
+
+/**
+ * A first line that opens with a bold figure — "**631,839** Voicedrop calls
+ * connected" — is the answer's headline. Returns the figure and its label.
+ */
+function headline(text: string): { figure: string; label: string } | null {
+  if (text.includes('\n')) return null;
+  const match = /^\*\*([^*]{1,40})\*\*\s*(.*)$/.exec(text.trim());
+  if (!match || !/\d/.test(match[1])) return null;
+  return { figure: match[1].trim(), label: match[2].trim() };
+}
 
 /**
  * Split an answer into prose and table blocks.
@@ -215,6 +231,21 @@ function parseBlocks(text: string): Block[] {
       void consumed;
       blocks.push({ kind: 'table', header, rows, length: TABLE_BEAT });
       i = cursor - 1;
+      continue;
+    }
+
+    // A run of bullet lines is one list.
+    if (BULLET.test(lines[i])) {
+      flushParagraph();
+      const items: string[] = [];
+      let consumed = 0;
+      while (i < lines.length && BULLET.test(lines[i])) {
+        items.push(lines[i].replace(BULLET, '').trim());
+        consumed += lines[i].length + 1;
+        i++;
+      }
+      i--;
+      blocks.push({ kind: 'list', items, length: consumed });
       continue;
     }
 
@@ -313,16 +344,62 @@ export function AnswerBody({ text, animate = false, chart = false }: AnswerBodyP
       continue;
     }
 
+    const caret = shouldAnimate && revealed < total && (
+      <span className="inline-block w-[2px] h-4 ml-0.5 -mb-0.5 align-middle bg-blue-500 animate-pulse" />
+    );
+
+    if (block.kind === 'list') {
+      // Items appear one after another as the reveal reaches them.
+      let budget = Math.max(0, revealed - start);
+      const items: string[] = [];
+      for (const item of block.items) {
+        if (budget <= 0) break;
+        items.push(item.slice(0, budget));
+        budget -= item.length + 3;
+      }
+      rendered.push(
+        <ul key={`l${index}`} className="space-y-1.5">
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex} className="flex gap-2.5 leading-relaxed">
+              <span aria-hidden="true" className="mt-[0.6em] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 dark:bg-blue-400" />
+              <span className="min-w-0 break-words">
+                {renderInline(item, `l${index}-${itemIndex}`)}
+                {itemIndex === items.length - 1 && caret}
+              </span>
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
     const visible = block.text.slice(0, Math.max(0, revealed - start));
     if (!visible) break;
+
+    // The opening figure, shown as a figure: large, with its label beside it.
+    const lead = index === 0 ? headline(block.text) : null;
+    if (lead) {
+      const shownFigure = lead.figure.slice(0, visible.length);
+      const shownLabel = visible.length > lead.figure.length + 4 ? lead.label.slice(0, visible.length - lead.figure.length - 4) : '';
+      rendered.push(
+        <p key={`h${index}`} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 pb-1">
+          <span className="text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-zinc-900 dark:text-white">
+            {shownFigure}
+          </span>
+          {shownLabel && (
+            <span className="text-sm text-zinc-600 dark:text-zinc-300">{renderInline(shownLabel, `h${index}`)}</span>
+          )}
+          {caret}
+        </p>,
+      );
+      continue;
+    }
 
     rendered.push(
       <p key={`p${index}`} className="whitespace-pre-wrap break-words leading-relaxed">
         {renderInline(visible, `p${index}`)}
         {/* The caret belongs to the line being written, and goes with it. */}
-        {shouldAnimate && revealed < total && (
-          <span className="inline-block w-[2px] h-4 ml-0.5 -mb-0.5 align-middle bg-blue-500 animate-pulse" />
-        )}
+        {caret}
       </p>,
     );
   }

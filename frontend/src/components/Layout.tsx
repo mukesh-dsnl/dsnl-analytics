@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
+import { BrandMark } from './BrandMark';
 import { ContentPanelContext } from './ContentPanelSlot';
 import { ConversationList } from '../features/ai-chat/components/ConversationList';
 
@@ -212,12 +213,15 @@ export function Layout() {
             top left of the header. */}
         <div className={clsx('flex h-[72px] shrink-0 items-center', isSidebarCollapsed ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
           <Link to="/" title={isSidebarCollapsed ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white transition-opacity group-hover:opacity-90">
-              <img src="/DSNL.png" alt="DSNL" className="h-full w-full object-cover" />
-            </div>
+            {/* The mark straight on the sidebar, no white tile: dark blue on the
+                light brand blue, brand blue on the dark navy. */}
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center transition-opacity group-hover:opacity-90">
+              <BrandMark className="h-9 w-9 text-[#212665] dark:text-[#2ea3dc]" />
+              <span className="sr-only">DSNL</span>
+            </span>
             {!isSidebarCollapsed && (
               <div className="flex min-w-0 flex-col whitespace-nowrap leading-tight">
-                <span className="text-base font-semibold tracking-tight text-white">DSNL Analytics</span>
+                <span className="text-base font-semibold tracking-tight text-white">Analytics</span>
                 <span className="text-[11px] font-medium text-white/70">by DSNL</span>
               </div>
             )}
@@ -355,41 +359,41 @@ export function Layout() {
         )}
         style={{ transitionDuration: `${COLLAPSE_MS}ms` }}
       >
-      {/* No border: against the brand blue the panel edge is already a hard
+        {/* No border: against the brand blue the panel edge is already a hard
           value change, and a light hairline there would read as a halo. */}
-      {/* `relative` is load-bearing: it is what makes this card the containing
+        {/* `relative` is load-bearing: it is what makes this card the containing
           block for the overlays pages portal in, so they cover the panel and
           nothing outside it. */}
-      <div
-        ref={setContentPanel}
-        className={clsx(
-          'vd-edge relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10 dark:shadow-[0_0_32px_-14px_rgba(34,211,238,0.12)]',
-          isRedesigned
-            ? 'vd-canvas'
-            : 'bg-zinc-50 dark:bg-canvas-dark',
-        )}
-      >
-        {/* The date control lives here rather than on the page: it applies to
+        <div
+          ref={setContentPanel}
+          className={clsx(
+            'vd-edge relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10 dark:shadow-[0_0_32px_-14px_rgba(34,211,238,0.12)]',
+            isRedesigned
+              ? 'vd-canvas'
+              : 'bg-zinc-50 dark:bg-canvas-dark',
+          )}
+        >
+          {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
             Metrics gets its own single-date control instead of the analytics
             date range, since the two modules read the lake differently (one day
             vs a range) and hold their selections in separate stores. */}
-        {/* The surface itself stays put while its contents fade, which is the
+          {/* The surface itself stays put while its contents fade, which is the
             sign-in card's exit in reverse — there the card's shell held while
             the form faded as it grew. A dashboard squeezed into a 60%-wide box
             on the way out would read as a layout bug, not as a transition. */}
-        <header
-          className={clsx(
-            'h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 border-b transition-opacity duration-300',
-            // On the redesigned page the header is glass over the gradient, so
-            // the blue runs through it instead of stopping at a white band.
-            isRedesigned
-              ? 'bg-white/45 backdrop-blur-md border-[#dfe7f1] dark:bg-white/[0.03] dark:border-white/[0.06]'
-              : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60',
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          {/* Page-owned controls land here — the per-service filters. Layout
+          <header
+            className={clsx(
+              'h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 border-b transition-opacity duration-300',
+              // On the redesigned page the header is glass over the gradient, so
+              // the blue runs through it instead of stopping at a white band.
+              isRedesigned
+                ? 'bg-white/45 backdrop-blur-md border-[#dfe7f1] dark:bg-white/[0.03] dark:border-white/[0.06]'
+                : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60',
+              isLoggingOut && 'opacity-0 pointer-events-none',
+            )}
+          >
+            {/* Page-owned controls land here — the per-service filters. Layout
               only provides the space; what goes in it is decided by whichever
               page is mounted (see HeaderSlot). It takes the free width so the
               date control and theme toggle stay pinned right.
@@ -403,55 +407,55 @@ export function Layout() {
               focus ring — which paints outside the input's border box — was
               being sliced off top and bottom. The padding gives it somewhere to
               land inside the scroll box. */}
-          {/* Expand lives here, top left of the header: on the rail there is no
+            {/* Expand lives here, top left of the header: on the rail there is no
               room for it beside the logo. Collapse is in the sidebar itself. */}
-          {isSidebarCollapsed && (
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              className="-ml-2 -mr-2 p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
-            >
-              <PanelLeftOpen className="w-5 h-5" />
-            </button>
-          )}
-          <div
-            ref={setHeaderSlot}
-            className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          />
-          {/* The AI chat carries no date control: the range is part of the
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+                className="-ml-2 -mr-2 p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+              >
+                <PanelLeftOpen className="w-5 h-5" />
+              </button>
+            )}
+            <div
+              ref={setHeaderSlot}
+              className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            />
+            {/* The AI chat carries no date control: the range is part of the
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
-          {isAiChat || isMulticallRegistry ? null : location.pathname.endsWith('/campaign-metrics') ? (
-            <HeaderCampaignDate />
-          ) : (
-            <HeaderDateRange />
-          )}
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            className="p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-        </header>
+            {isAiChat || isMulticallRegistry ? null : location.pathname.endsWith('/campaign-metrics') ? (
+              <HeaderCampaignDate />
+            ) : (
+              <HeaderDateRange />
+            )}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              className="p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+          </header>
 
-        {/* Main Content Area */}
-        <main
-          className={clsx(
-            'flex-1 relative transition-opacity duration-300',
-            isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          <HeaderSlotContext.Provider value={headerSlot}>
-            <ContentPanelContext.Provider value={contentPanel}>
-              <Outlet />
-            </ContentPanelContext.Provider>
-          </HeaderSlotContext.Provider>
-        </main>
-      </div>
+          {/* Main Content Area */}
+          <main
+            className={clsx(
+              'flex-1 relative transition-opacity duration-300',
+              isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
+              isLoggingOut && 'opacity-0 pointer-events-none',
+            )}
+          >
+            <HeaderSlotContext.Provider value={headerSlot}>
+              <ContentPanelContext.Provider value={contentPanel}>
+                <Outlet />
+              </ContentPanelContext.Provider>
+            </HeaderSlotContext.Provider>
+          </main>
+        </div>
       </div>
 
     </div>

@@ -1,6 +1,6 @@
 /**
- * Chat slash commands — the one list the "/" menu, the composer chips and the
- * question bubbles all read from.
+ * Chat slash commands — the one list the "/" menu, the composer's inline
+ * highlighting and the question bubbles all read from.
  *
  * Commands travel inside the question text ("/voicedrop /excel top accounts"),
  * and the server is what interprets them (backend/app/ai/commands.py). This
@@ -64,3 +64,26 @@ export function partialCommand(value: string, caret: number): { start: number; q
   if (!match) return null;
   return { start: before.length - match[2].length - 1, query: match[2].toLowerCase() };
 }
+
+/** A question split into plain text and the command tokens within it, in order — what the composer highlights. */
+export function commandSegments(text: string): { text: string; command?: ChatCommand }[] {
+  const segments: { text: string; command?: ChatCommand }[] = [];
+  let last = 0;
+  for (const match of text.matchAll(TOKEN)) {
+    const start = match.index ?? 0;
+    if (start > last) segments.push({ text: text.slice(last, start) });
+    segments.push({ text: match[0], command: COMMAND_BY_NAME[match[1].toLowerCase() as ChatCommand['name']] });
+    last = start + match[0].length;
+  }
+  if (last < text.length) segments.push({ text: text.slice(last) });
+  return segments;
+}
+
+/** The text with every command of one kind taken out. */
+export function withoutCommands(text: string, kind: CommandKind): string {
+  return text
+    .replace(TOKEN, (token, name: string) => (COMMAND_BY_NAME[name.toLowerCase() as ChatCommand['name']]?.kind === kind ? '' : token))
+    .replace(/[ \t]{2,}/g, ' ')
+    .trimStart();
+}
+

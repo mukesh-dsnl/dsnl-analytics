@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
@@ -10,7 +11,7 @@ import { AnswerBody } from '../components/AnswerBody';
 import { ChatComposer } from '../components/ChatComposer';
 import { RoundSteps } from '../components/RoundSteps';
 import { ExportFiles } from '../components/ExportFiles';
-import { parseCommands } from '../commands';
+import { commandSegments } from '../commands';
 
 /**
  * Natural-language questions over the CDR/CODR lake.
@@ -48,16 +49,18 @@ function EmptyState({ onPick }: { onPick: (question: string) => void }) {
       </p>
 
       <ul className="mt-6 grid gap-2 w-full max-w-xl sm:grid-cols-2">
-        {SUGGESTIONS.map((suggestion) => (
+        {SUGGESTIONS.map((suggestion, index) => (
           <li key={suggestion}>
+            {/* ai-orbit: a soft highlight travelling round the edge (index.css),
+                offset per card so the four don't move in step. */}
             <button
               type="button"
               onClick={() => onPick(suggestion)}
-              className="w-full h-full text-left px-3.5 py-2.5 rounded-lg text-sm
+              style={{ '--orbit-delay': `${-index * 1.75}s` } as CSSProperties}
+              className="ai-orbit w-full h-full text-left px-3.5 py-2.5 rounded-lg text-sm
                          bg-white dark:bg-surface-dark
-                         border border-zinc-200 dark:border-zinc-800/60
+                         border
                          text-zinc-700 dark:text-zinc-300
-                         hover:border-blue-300 dark:hover:border-blue-800
                          hover:text-zinc-900 dark:hover:text-zinc-100
                          shadow-sm transition-colors"
             >
@@ -72,29 +75,23 @@ function EmptyState({ onPick }: { onPick: (question: string) => void }) {
 
 function MessageBubble({ message, minHeight }: { message: ChatMessage; minHeight?: number }) {
   if (message.role === 'user') {
-    // Commands are shown as tags, apart from the question, so "/voicedrop
-    // /excel top accounts" reads as a scope and a file and then a question.
-    const { commands, text } = parseCommands(message.text);
+    // Commands stay where they were typed, highlighted in place — the same
+    // inline pills as the composer — so the question reads as it was asked.
     return (
       <li className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm text-white whitespace-pre-wrap break-words shadow-sm">
-          {commands.length > 0 && (
-            <span className={clsx('flex flex-wrap gap-1', text && 'mb-1.5')}>
-              {commands.map((command) => {
-                const Icon = command.icon;
-                return (
-                  <span
-                    key={command.name}
-                    className="inline-flex items-center gap-1 rounded-md bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold"
-                  >
-                    <Icon className="h-3 w-3" />
-                    {command.label}
-                  </span>
-                );
-              })}
-            </span>
+          {commandSegments(message.text).map((segment, index) =>
+            segment.command ? (
+              <span
+                key={index}
+                className="rounded-[5px] bg-white/20 font-medium text-white shadow-[0_0_0_2px_rgba(255,255,255,0.2)]"
+              >
+                {segment.text}
+              </span>
+            ) : (
+              <Fragment key={index}>{segment.text}</Fragment>
+            ),
           )}
-          {text || (commands.length ? null : message.text)}
         </div>
       </li>
     );

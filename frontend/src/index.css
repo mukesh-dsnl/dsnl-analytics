@@ -422,3 +422,59 @@ body {
   border-color: rgba(56, 189, 248, 0.8) !important;
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14) !important;
 }
+
+/* ── Suggestion cards ──────────────────────────────────────────────────────
+   A soft highlight that travels slowly around the card's edge: a conic
+   gradient — faint all round, with one sky-to-violet arc — rotated by an
+   animatable angle and masked down to a 1px border. Each card is offset (see
+   --orbit-delay) so they don't move in step. Still for reduced motion. */
+@property --orbit-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.ai-orbit {
+  position: relative;
+  border-color: transparent !important;
+}
+.ai-orbit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--orbit-angle),
+    rgba(148, 163, 184, 0.28) 0deg,
+    rgba(148, 163, 184, 0.28) 200deg,
+    rgba(56, 189, 248, 0.7) 270deg,
+    rgba(139, 92, 246, 0.6) 320deg,
+    rgba(148, 163, 184, 0.28) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: ai-orbit 7s linear infinite;
+  animation-delay: var(--orbit-delay, 0s);
+  pointer-events: none;
+}
+.dark .ai-orbit::before {
+  background: conic-gradient(
+    from var(--orbit-angle),
+    rgba(148, 163, 184, 0.14) 0deg,
+    rgba(148, 163, 184, 0.14) 200deg,
+    rgba(56, 189, 248, 0.55) 270deg,
+    rgba(139, 92, 246, 0.45) 320deg,
+    rgba(148, 163, 184, 0.14) 360deg
+  );
+}
+@keyframes ai-orbit {
+  to {
+    --orbit-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-orbit::before {
+    animation: none;
+  }
+}
