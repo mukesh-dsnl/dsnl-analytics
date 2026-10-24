@@ -1,0 +1,227 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   DSNL Analytics — design tokens
+   Brand values come from frontend/src/index.css: cyan #00a3e0 as the
+   accent, the indigo-tinted neutral ramp, and a navy (not black) dark mode.
+   Every component reads semantic tokens only; the primitives below are
+   never referenced outside this file.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Primitives ───────────────────────────────────────────────────────── */
+  --neutral-0: #ffffff;
+  --neutral-50: #f6f8fc;
+  --neutral-100: #edf1f8;
+  --neutral-200: #dde3ef;
+  --neutral-300: #c2cadd;
+  --neutral-400: #8f9ab6;
+  --neutral-500: #6a7593;
+  --neutral-600: #515b76;
+  --neutral-700: #3c4560;
+  --neutral-800: #29314a;
+  --neutral-900: #1a2138;
+  --neutral-950: #10152a;
+
+  --navy-600: #2f3a5c;
+  --navy-700: #232d4a;
+  --navy-800: #1a2440;
+  --navy-850: #141d33;
+  --navy-900: #0f1729;
+  --navy-950: #0a1120;
+
+  --brand-50: #e8f7fd;
+  --brand-100: #d4f0fb;
+  --brand-200: #ace2f8;
+  --brand-300: #74cef3;
+  --brand-400: #33b8ed;
+  --brand-500: #00a3e0;
+  --brand-600: #0089bf;
+  --brand-700: #056f9b;
+  --brand-950: #072f45;
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* size / line-height pairs — see the Type scale in styleguide.html */
+  --text-display: 600 30px/38px var(--font-sans);
+  --text-h1: 600 22px/30px var(--font-sans);
+  --text-h2: 600 17px/24px var(--font-sans);
+  --text-h3: 600 14px/20px var(--font-sans);
+  --text-body: 400 14px/20px var(--font-sans);
+  --text-body-strong: 500 14px/20px var(--font-sans);
+  --text-small: 400 13px/18px var(--font-sans);
+  --text-caption: 400 12px/16px var(--font-sans);
+  --text-overline: 600 11px/16px var(--font-sans);
+  --text-kpi: 600 28px/34px var(--font-sans);
+  --text-metric: 600 20px/26px var(--font-sans);
+
+  /* ── Spacing (4px base) ───────────────────────────────────────────────── */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
+  --content-max: 1680px;
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ── Light theme (default) ─────────────────────────────────────────────── */
+:root,
+:root[data-theme='light'],
+.theme-light {
+  color-scheme: light;
+
+  --color-bg-canvas: var(--neutral-50);
+  --color-bg-sidebar: var(--neutral-0);
+  --color-bg-surface: var(--neutral-0);
+  --color-bg-surface-raised: var(--neutral-0);
+  --color-bg-subtle: var(--neutral-100);
+  --color-bg-hover: #f0f3f9;
+  --color-bg-selected: var(--brand-50);
+  --color-bg-inverse: var(--neutral-900);
+  --color-bg-overlay: rgba(16, 21, 42, 0.45);
+  --color-bg-skeleton: var(--neutral-100);
+  --color-bg-skeleton-shine: #f8fafd;
+
+  --color-border-default: #e3e8f2;
+  --color-border-subtle: var(--neutral-100);
+  --color-border-strong: var(--neutral-300);
+  --color-border-focus: var(--brand-500);
+
+  --color-text-primary: var(--neutral-900);
+  --color-text-secondary: var(--neutral-600);
+  --color-text-muted: var(--neutral-500);
+  --color-text-disabled: var(--neutral-400);
+  --color-text-on-brand: var(--neutral-0);
+  --color-text-inverse: var(--neutral-0);
+  --color-text-link: var(--brand-600);
+
+  --color-icon-default: var(--neutral-500);
+  --color-icon-strong: var(--neutral-700);
+
+  --color-brand-primary: var(--brand-600);
+  --color-brand-primary-hover: var(--brand-700);
+  --color-brand-subtle: var(--brand-50);
+  --color-brand-text: var(--brand-700);
+
+  --color-status-success: #1f9a7a;
+  --color-status-success-subtle: #e8f7f1;
+  --color-status-warning: #b8740a;
+  --color-status-warning-subtle: #fdf5e6;
+  --color-status-danger: #d24b3e;
+  --color-status-danger-subtle: #fdeeee;
+  --color-status-info: var(--brand-600);
+  --color-status-info-subtle: var(--brand-50);
+
+  /* Categorical series, in the order charts assign them. Picked to stay
+     distinguishable for the common colour-vision deficiencies and to keep
+     ≥3:1 against the card surface. */
+  --chart-1: #3f9fd3;
+  --chart-2: #8580d4;
+  --chart-3: #2fa58c;
+  --chart-4: #d39a3f;
+  --chart-5: #d9748a;
+  --chart-6: #6880b8;
+  --chart-7: #aab7cc;
+  --chart-positive: #2fa58c;
+  --chart-negative: #de6b55;
+  --chart-grid: #edf1f8;
+  --chart-axis: var(--neutral-500);
+  --chart-track: var(--neutral-100);
+  --chart-area: rgba(63, 159, 211, 0.14);
+
+  --shadow-1: 0 1px 2px rgba(26, 33, 56, 0.05);
+  --shadow-2: 0 4px 16px -4px rgba(26, 33, 56, 0.12), 0 1px 3px rgba(26, 33, 56, 0.06);
+  --shadow-3: 0 24px 48px -12px rgba(16, 21, 42, 0.28);
+  --focus-ring: 0 0 0 3px rgba(0, 163, 224, 0.18);
+}
+
+/* ── Dark theme ────────────────────────────────────────────────────────── */
+:root[data-theme='dark'],
+.theme-dark {
+  color-scheme: dark;
+
+  --color-bg-canvas: var(--navy-950);
+  --color-bg-sidebar: #0c1424;
+  --color-bg-surface: var(--navy-900);
+  --color-bg-surface-raised: var(--navy-850);
+  --color-bg-subtle: var(--navy-800);
+  --color-bg-hover: #172038;
+  --color-bg-selected: rgba(0, 163, 224, 0.12);
+  --color-bg-inverse: var(--neutral-50);
+  --color-bg-overlay: rgba(0, 0, 0, 0.6);
+  --color-bg-skeleton: var(--navy-800);
+  --color-bg-skeleton-shine: #202b4a;
+
+  --color-border-default: var(--navy-700);
+  --color-border-subtle: var(--navy-800);
+  --color-border-strong: var(--navy-600);
+  --color-border-focus: var(--brand-400);
+
+  --color-text-primary: var(--neutral-50);
+  --color-text-secondary: var(--neutral-300);
+  --color-text-muted: var(--neutral-400);
+  --color-text-disabled: var(--neutral-600);
+  --color-text-on-brand: var(--navy-950);
+  --color-text-inverse: var(--neutral-900);
+  --color-text-link: var(--brand-300);
+
+  --color-icon-default: var(--neutral-400);
+  --color-icon-strong: var(--neutral-200);
+
+  --color-brand-primary: var(--brand-500);
+  --color-brand-primary-hover: var(--brand-400);
+  --color-brand-subtle: rgba(0, 163, 224, 0.12);
+  --color-brand-text: var(--brand-300);
+
+  --color-status-success: #4cc4aa;
+  --color-status-success-subtle: rgba(76, 196, 170, 0.12);
+  --color-status-warning: #f0b54f;
+  --color-status-warning-subtle: rgba(240, 181, 79, 0.12);
+  --color-status-danger: #f2877a;
+  --color-status-danger-subtle: rgba(242, 135, 122, 0.12);
+  --color-status-info: var(--brand-300);
+  --color-status-info-subtle: rgba(0, 163, 224, 0.12);
+
+  --chart-1: #5fb6e6;
+  --chart-2: #a3a0ea;
+  --chart-3: #4cc4aa;
+  --chart-4: #e8b96a;
+  --chart-5: #ee97a8;
+  --chart-6: #8aa0d6;
+  --chart-7: #55637f;
+  --chart-positive: #4cc4aa;
+  --chart-negative: #f0866f;
+  --chart-grid: #1a2440;
+  --chart-axis: var(--neutral-400);
+  --chart-track: var(--navy-800);
+  --chart-area: rgba(95, 182, 230, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 8px 24px -6px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-3: 0 24px 64px -12px rgba(0, 0, 0, 0.7);
+  --focus-ring: 0 0 0 3px rgba(51, 184, 237, 0.22);
+}

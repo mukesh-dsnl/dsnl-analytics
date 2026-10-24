@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DSNL Style Guide</title>
+  <meta name="description" content="Foundations and components of the DSNL Analytics redesign.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/tokens.css">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/components.css">
+  <link rel="stylesheet" href="assets/css/screens.css">
+  <style>
+    body { overflow: auto; height: auto; }
+    .sg { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+    .sg-nav { position: sticky; top: 0; height: 100vh; padding: 24px 16px; border-right: 1px solid var(--color-border-default); background: var(--color-bg-sidebar); overflow-y: auto; }
+    .sg-nav a { display: block; padding: 6px 10px; border-radius: 6px; color: var(--color-text-secondary); font-size: 13px; }
+    .sg-nav a:hover { background: var(--color-bg-hover); color: var(--color-text-primary); text-decoration: none; }
+    .sg-main { padding: 40px 48px 96px; max-width: 1280px; }
+    .sg-section { padding-top: 48px; scroll-margin-top: 16px; }
+    .sg-section > h2 { font: var(--text-h1); margin-bottom: 4px; }
+    .sg-section > p { color: var(--color-text-secondary); margin-bottom: 20px; max-width: 720px; }
+    .sg-label { font: var(--text-overline); text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); margin: 24px 0 10px; }
+    .sg-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .sg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .swatch { border: 1px solid var(--color-border-default); border-radius: 10px; overflow: hidden; background: var(--color-bg-surface); }
+    .swatch-chip { height: 56px; border-bottom: 1px solid var(--color-border-subtle); }
+    .swatch-meta { padding: 8px 10px; font-size: 11px; line-height: 16px; }
+    .swatch-meta strong { display: block; font-size: 12px; font-weight: 500; color: var(--color-text-primary); }
+    .swatch-meta code { font-family: var(--font-mono); color: var(--color-text-muted); font-size: 10.5px; }
+    .theme-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .theme-pane { padding: 20px; border-radius: 14px; border: 1px solid var(--color-border-default); background: var(--color-bg-canvas); color: var(--color-text-primary); }
+    .type-row { display: grid; grid-template-columns: 160px 1fr 200px; gap: 16px; align-items: baseline; padding: 14px 0; border-bottom: 1px solid var(--color-border-subtle); }
+    .type-row code { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); }
+    .space-row { display: grid; grid-template-columns: 90px 60px 1fr; gap: 12px; align-items: center; padding: 6px 0; font-size: 12px; }
+    .space-bar { height: 12px; border-radius: 3px; background: var(--color-brand-primary); opacity: .7; }
+    .demo { padding: 20px; border: 1px dashed var(--color-border-strong); border-radius: 12px; background: var(--color-bg-canvas); }
+    .demo-static .popover { position: static; animation: none; }
+  </style>
+</head>
+<body>
+  <div id="sg"></div>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script src="assets/js/styleguide.js"></script>
+</body>
+</html>

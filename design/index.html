@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DSNL Analytics</title>
+  <meta name="description" content="Clickable UI/UX prototype of DSNL Analytics — CDR reporting for Voicedrop, Conference and MultiCall.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/tokens.css">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/components.css">
+  <link rel="stylesheet" href="assets/css/screens.css">
+  <script>
+    // Apply the saved theme before first paint so dark mode never flashes white.
+    try {
+      var t = JSON.parse(localStorage.getItem('dsnl-proto:theme'));
+      if (t) document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <noscript><p style="padding:24px">This prototype needs JavaScript.</p></noscript>
+  <script src="assets/js/icons.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script src="assets/js/screens.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
