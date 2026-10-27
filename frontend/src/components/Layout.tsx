@@ -9,7 +9,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
   Sun,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -19,6 +18,7 @@ import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDate
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
 import { BrandMark } from './BrandMark';
+import { AnalyticsAiIcon } from './AnalyticsAiIcon';
 import { ContentPanelContext } from './ContentPanelSlot';
 import { ConversationList } from '../features/ai-chat/components/ConversationList';
 
@@ -73,10 +73,10 @@ const COLLAPSE_MS = 550;
  * Where the panel's left edge collapses to: 40% of the viewport, which is
  * where the sign-in card's own left edge sits. The padding is what moves, so
  * the figure is that mark less the sidebar the panel is already offset by —
- * w-64 open, w-20 collapsed.
+ * w-60 open, w-20 collapsed.
  */
 const COLLAPSE_PADDING = {
-  open: 'lg:pl-[calc(40vw-256px)]',
+  open: 'lg:pl-[calc(40vw-240px)]',
   collapsed: 'lg:pl-[calc(40vw-80px)]',
 };
 
@@ -92,18 +92,18 @@ function NavLink({ item, section, active, collapsed }: { item: NavItem; section:
       title={collapsed ? railLabel : undefined}
       aria-label={collapsed ? railLabel : undefined}
       className={clsx(
-        'relative flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors',
+        'relative flex items-center gap-2.5 rounded-lg py-2 text-sm transition-colors',
         collapsed ? 'justify-center px-0' : 'px-3',
         // Pure white ink either way: the sidebar scrim (see .app-sidebar-scrim)
         // is what buys white its contrast on the cyan ground, with none to spare.
-        active ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-sm' : 'text-white hover:bg-white/15',
+        active ? 'bg-white/20 font-medium text-white ring-1 ring-white/25' : 'text-white/90 hover:bg-white/10 hover:text-white',
       )}
     >
       {/* The marker sits on the sidebar's own left edge, outside the pill. */}
       {active && (
-        <span aria-hidden="true" className="absolute -left-3 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        <span aria-hidden="true" className="absolute -left-3 top-1/2 h-[22px] w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
       )}
-      <item.icon className="h-5 w-5 shrink-0" />
+      <item.icon className="h-[18px] w-[18px] shrink-0" />
       {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
     </Link>
   );
@@ -131,6 +131,23 @@ export function Layout() {
   /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
+  // Collapsed, the rail opens while the pointer is over it and closes when it
+  // leaves — as an overlay over the content, so nothing behind it moves. A
+  // short delay each way keeps a pointer passing across it from flickering it.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
+  const openPeek = () => {
+    if (!isSidebarCollapsed) return;
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(true), 120);
+  };
+  const closePeek = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(false), 180);
+  };
+  // What the sidebar draws: the icon rail only when collapsed and not hovered.
+  const narrow = isSidebarCollapsed && !peek;
   /** The corner button's opening/closing circle — null when nothing is moving. */
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
@@ -192,49 +209,64 @@ export function Layout() {
     // edge of the gutter, putting a seam exactly where the two are continuous.
     <div className="app-ground app-shell flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
 
-      {/* Left Sidebar — flush to the edge, full height; w-64, or a w-20 icon
+      {/* Left Sidebar — flush to the edge, full height; w-60, or a w-20 icon
           rail when collapsed. No fill
           of its own: it is the ground showing through, plus a scrim that fades
           out by its right edge to buy the nav text contrast without drawing a
           line between the sidebar and the gutter. On logout it fades out the
           way the sign-in page fades its own left region. */}
+      {/* The space the sidebar takes in the layout: the rail's width when
+          collapsed, so a hovered rail opens over the content instead of
+          pushing it. */}
+      <div
+        className={clsx('relative z-50 shrink-0', isSidebarCollapsed ? 'w-20' : 'w-60')}
+        style={{ transition: 'width 300ms' }}
+      >
       <aside
+        onMouseEnter={openPeek}
+        onMouseLeave={closePeek}
         className={clsx(
-          'app-sidebar-scrim flex shrink-0 flex-col overflow-hidden z-20',
-          isSidebarCollapsed ? 'w-20' : 'w-64',
+          'app-sidebar-scrim absolute inset-y-0 left-0 flex flex-col overflow-hidden',
+          narrow ? 'w-20' : 'w-60',
+          // Opened by hover: it floats over the panel, so it takes the shell's
+          // own ground (fixed, so it lines up with the field behind) and a shadow.
+          peek && 'app-ground app-shell shadow-[8px_0_32px_rgba(0,0,0,0.35)]',
           isLoggingOut && 'opacity-0 pointer-events-none',
         )}
         // Width for the collapse, opacity for the logout fade — each at its own
         // speed, written out so neither is left to stylesheet order.
-        style={{ transitionProperty: 'width, opacity', transitionDuration: '300ms, 500ms' }}
+        style={{ transitionProperty: 'width, opacity', transitionDuration: '200ms, 500ms' }}
       >
         {/* Logo, with the collapse control at the row's right end. Collapsed,
             only the tile is left; the way back out is the expand button at the
             top left of the header. */}
-        <div className={clsx('flex h-[72px] shrink-0 items-center', isSidebarCollapsed ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
-          <Link to="/" title={isSidebarCollapsed ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
-            {/* The mark straight on the sidebar, no white tile: dark blue on the
-                light brand blue, brand blue on the dark navy. */}
+        <div className={clsx('flex h-[72px] shrink-0 items-center', narrow ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
+          <Link to="/" title={narrow ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
+            {/* The mark straight on the sidebar, no white tile, in brand blue
+                on the navy shell (the same in both themes). */}
             <span className="flex h-9 w-9 shrink-0 items-center justify-center transition-opacity group-hover:opacity-90">
-              <BrandMark className="h-9 w-9 text-[#212665] dark:text-[#2ea3dc]" />
+              <BrandMark className="h-9 w-9 text-[#2ea3dc]" />
               <span className="sr-only">DSNL</span>
             </span>
-            {!isSidebarCollapsed && (
+            {!narrow && (
               <div className="flex min-w-0 flex-col whitespace-nowrap leading-tight">
                 <span className="text-base font-semibold tracking-tight text-white">Analytics</span>
                 <span className="text-[11px] font-medium text-white/70">by DSNL</span>
               </div>
             )}
           </Link>
-          {!isSidebarCollapsed && (
+          {!narrow && (
             <button
               type="button"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
+              onClick={() => {
+                toggleSidebar();
+                setPeek(false);
+              }}
+              aria-label={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
+              title={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
               className="ml-auto shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
             >
-              <PanelLeftClose className="h-5 w-5" />
+              {peek ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
             </button>
           )}
         </div>
@@ -243,14 +275,14 @@ export function Layout() {
             floating corner button: a switch you can see, where navigation
             already lives, rather than a round icon that had to be learned. */}
         {aiPermission && (
-          isSidebarCollapsed ? (
+          narrow ? (
             <Link
               to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
               title={isAiChat ? 'Analytics' : 'Chat'}
               aria-label={isAiChat ? 'Switch to Analytics' : 'Switch to Chat'}
               className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 text-white transition-colors hover:bg-white/25"
             >
-              {isAiChat ? <LayoutGrid className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+              {isAiChat ? <LayoutGrid className="h-4 w-4" /> : <AnalyticsAiIcon className="h-4 w-4" />}
             </Link>
           ) : (
             <div className="mx-3 mb-2 flex shrink-0 rounded-xl bg-white/15 p-1" role="tablist" aria-label="Analytics or Chat">
@@ -282,16 +314,16 @@ export function Layout() {
               instead of analytics destinations. The chat list scrolls itself so
               "New chat" stays put while threads move under it. */}
           {isAiChat ? (
-            <ConversationList isCollapsed={isSidebarCollapsed} />
+            <ConversationList isCollapsed={narrow} />
           ) : (
-            <nav className="space-y-5 px-3 py-4" aria-label="Analytics">
+            <nav className="space-y-4 px-3 py-3" aria-label="Analytics">
               {NAV.map((section) => (
-                <div key={section.title} className="space-y-1">
+                <div key={section.title} className="space-y-0.5">
                   {/* On the rail a short rule stands in for the section name. */}
-                  {isSidebarCollapsed ? (
+                  {narrow ? (
                     <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
                   ) : (
-                    <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
                       {section.title}
                     </div>
                   )}
@@ -301,7 +333,7 @@ export function Layout() {
                       item={item}
                       section={section.title}
                       active={isActivePath(item.path)}
-                      collapsed={isSidebarCollapsed}
+                      collapsed={narrow}
                     />
                   ))}
                 </div>
@@ -311,14 +343,14 @@ export function Layout() {
         </div>
 
         {/* Footer: identity + sign out. Stacked on the rail. */}
-        <div className={clsx('flex shrink-0 items-center gap-3 border-t border-white/10 p-3', isSidebarCollapsed ? 'flex-col' : 'px-4')}>
+        <div className={clsx('flex shrink-0 items-center gap-3 border-t border-white/10 p-3', narrow ? 'flex-col' : 'px-4')}>
           <div
-            title={isSidebarCollapsed && username ? `Signed in as ${username}` : undefined}
+            title={narrow && username ? `Signed in as ${username}` : undefined}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white"
           >
             {initials(username)}
           </div>
-          {!isSidebarCollapsed && (
+          {!narrow && (
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-sm font-semibold text-white">{username}</div>
               <div className="text-[11px] text-white/65">Signed in</div>
@@ -336,6 +368,7 @@ export function Layout() {
           </button>
         </div>
       </aside>
+      </div>
 
       {/* Main content — the one floating panel. The gutter lives on this
           wrapper rather than on the row, so the sidebar stays flush left while

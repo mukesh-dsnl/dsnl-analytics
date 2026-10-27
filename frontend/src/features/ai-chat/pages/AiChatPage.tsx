@@ -3,8 +3,10 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { Loader2, Sparkles, Square, TriangleAlert } from 'lucide-react';
+import { Loader2, Square, TriangleAlert } from 'lucide-react';
+import { AnalyticsAiIcon } from '@/components/AnalyticsAiIcon';
 import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { useAuthStore } from '../../../store';
 import { useChat } from '../hooks';
 import type { ChatMessage } from '../hooks';
 import { AnswerBody } from '../components/AnswerBody';
@@ -12,6 +14,7 @@ import { ChatComposer } from '../components/ChatComposer';
 import { RoundSteps } from '../components/RoundSteps';
 import { ExportFiles } from '../components/ExportFiles';
 import { commandSegments } from '../commands';
+import { CopyButton } from '../components/CopyButton';
 
 /**
  * Natural-language questions over the CDR/CODR lake.
@@ -32,53 +35,81 @@ const SUGGESTIONS = [
   'What were the top 5 disconnect reasons yesterday?',
 ];
 
-function EmptyState({ onPick }: { onPick: (question: string) => void }) {
+/** "admin" -> "Admin", "mukesh kumar" -> "Mukesh Kumar". */
+const displayName = (name: string | null) =>
+  (name ?? '').replace(/[._]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+
+/** The greeting above the composer on a new chat. */
+function Welcome() {
+  const username = useAuthStore((state) => state.username);
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const name = displayName(username);
   return (
-    <div className="h-full flex flex-col items-center justify-center px-6 py-10 text-center">
-      <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 flex items-center justify-center">
-        <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-      </div>
-      <h2 className="mt-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-        Ask about the DSNL call data
+    <div className="flex flex-col items-center px-6 pb-2 text-center">
+      <h2 className="flex items-center gap-3 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+        <AnalyticsAiIcon className="h-8 w-8 shrink-0 text-blue-600 dark:text-blue-400" />
+        {name ? `${part}, ${name}` : part}
       </h2>
-      <p className="mt-1.5 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-        {/* Questions are answered from the CDR and CODR exports — call legs, connection
-        outcomes, durations, reblasts and disconnect reasons. There is no billing or
-        network-health data, and the assistant will say so rather than guess. */}
-
+      <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+        What would you like to know about your calls today?
       </p>
-
-      <ul className="mt-6 grid gap-2 w-full max-w-xl sm:grid-cols-2">
-        {SUGGESTIONS.map((suggestion, index) => (
-          <li key={suggestion}>
-            {/* ai-orbit: a soft highlight travelling round the edge (index.css),
-                offset per card so the four don't move in step. */}
-            <button
-              type="button"
-              onClick={() => onPick(suggestion)}
-              style={{ '--orbit-delay': `${-index * 1.75}s` } as CSSProperties}
-              className="ai-orbit w-full h-full text-left px-3.5 py-2.5 rounded-lg text-sm
-                         bg-white dark:bg-surface-dark
-                         border
-                         text-zinc-700 dark:text-zinc-300
-                         hover:text-zinc-900 dark:hover:text-zinc-100
-                         shadow-sm transition-colors"
-            >
-              {suggestion}
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
 
-function MessageBubble({ message, minHeight }: { message: ChatMessage; minHeight?: number }) {
+/** The four starting points under the composer, one per line. */
+function Suggestions({ onPick }: { onPick: (question: string) => void }) {
+  return (
+    <ul className="flex flex-col items-center gap-2 px-4 sm:px-6 lg:px-8">
+      {SUGGESTIONS.map((suggestion, index) => (
+        <li key={suggestion} className="max-w-full">
+          {/* ai-orbit: a soft highlight travelling round the edge (index.css),
+              offset per box so the four don't move in step. */}
+          <button
+            type="button"
+            onClick={() => onPick(suggestion)}
+            style={{ '--orbit-delay': `${-index * 1.75}s` } as CSSProperties}
+            className="ai-orbit max-w-full truncate rounded-lg border px-4 py-2 text-sm
+                       bg-white dark:bg-surface-dark
+                       text-zinc-700 dark:text-zinc-300
+                       hover:text-zinc-900 dark:hover:text-zinc-100
+                       shadow-sm transition-colors"
+          >
+            {suggestion}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "Today, 3:42 PM" / "Yesterday, 3:42 PM" / "21 Oct 2026, 3:42 PM". */
+function readableTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(new Date()) - day(at)) / 86_400_000);
+  if (days === 0) return `Today, ${time}`;
+  if (days === 1) return `Yesterday, ${time}`;
+  return `${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
+}
+
+/** The answer as plain text — the bold markers dropped, everything else as written. */
+const plainAnswer = (text: string) => text.replace(/\*\*/g, '');
+
+function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     // Commands stay where they were typed, highlighted in place — the same
     // inline pills as the composer — so the question reads as it was asked.
     return (
-      <li className="flex justify-end">
+      <li data-role="question" className="group flex items-center justify-end gap-1.5">
+        <CopyButton
+          text={message.text}
+          label="Copy question"
+          className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        />
         <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm text-white whitespace-pre-wrap break-words shadow-sm">
           {commandSegments(message.text).map((segment, index) =>
             segment.command ? (
@@ -103,9 +134,7 @@ function MessageBubble({ message, minHeight }: { message: ChatMessage; minHeight
   // An error is the exception: it needs to read as a thing that went wrong,
   // so it keeps a tinted panel.
   return (
-    // scroll-mt: when an answer lands it is scrolled to the top of the panel,
-    // and this keeps a little air above its first line.
-    <li data-message-id={message.id} className="flex justify-start" style={minHeight ? { minHeight } : undefined}>
+    <li data-message-id={message.id} className="flex justify-start">
       <div className="w-full min-w-0 text-sm text-zinc-800 dark:text-zinc-200">
         {/* The steps stay at the top through both phases: they are written
             there while the answer is being worked out, and they stay there
@@ -144,6 +173,14 @@ function MessageBubble({ message, minHeight }: { message: ChatMessage; minHeight
             <>
               <AnswerBody text={message.text} animate={message.animate} chart={message.chart} />
               {!!message.exports?.length && <ExportFiles exports={message.exports} />}
+              <div className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+                {message.createdAt && (
+                  <time dateTime={message.createdAt} title={new Date(message.createdAt).toLocaleString()}>
+                    {readableTime(message.createdAt)}
+                  </time>
+                )}
+                <CopyButton text={plainAnswer(message.text)} label="Copy answer" />
+              </div>
             </>
           ))}
       </div>
@@ -174,16 +211,17 @@ export function AiChatPage() {
   const streamingIds = useRef<Set<string>>(new Set());
 
   /**
-   * The answer that just arrived, held at least one panel tall.
+   * The answer that just arrived, while the view still follows it.
    *
-   * It lands nearly empty — it types itself in from its first line — so on its
-   * own there is not enough page below it to scroll its top up to the top of
-   * the panel; the browser clamps the scroll and the answer is left starting
-   * near the bottom, which is exactly the problem being fixed. The minimum
-   * height is that room. It lasts until the next question, so no gap is ever
-   * left behind in the history.
+   * The transcript stays one continuous page, filled to the bottom — no empty
+   * room is ever added below the last answer. While the answer types itself
+   * in, the view keeps its end in sight, until the question it answers reaches
+   * the top of the panel; from there it holds still, so a long answer is read
+   * from its question downward. Any scroll or click of the reader's own ends
+   * the following.
    */
-  const [pinned, setPinned] = useState<{ id: string; height: number } | null>(null);
+  const [following, setFollowing] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     const landed = messages.find(
@@ -195,14 +233,13 @@ export function AiChatPage() {
     if (!scroller) return;
 
     if (landed) {
-      // Scrolled once the room exists — see the layout effect below.
-      setPinned({ id: landed.id, height: scroller.clientHeight - 32 });
+      setFollowing(landed.id);
       return;
     }
 
     // Anything else — a question sent, a step reported, a thread opened —
-    // follows the bottom. A newer turn than the pinned answer ends its pin.
-    if (pinned && messages[messages.length - 1]?.id !== pinned.id) setPinned(null);
+    // follows the bottom, and ends following an earlier answer.
+    if (following && messages[messages.length - 1]?.id !== following) setFollowing(null);
     // Instant, by position. A smooth scroll is cancelled by the browser when
     // the content under it changes, and here it always does: the steps tick
     // while an answer is worked out. Smooth scrolls stopped hundreds of
@@ -214,19 +251,37 @@ export function AiChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, stepCount, isPending]);
 
-  // An answer has just arrived: bring its start — its steps, then its first
-  // lines — to the top of the panel, to be read downward. Following the bottom
-  // here is what used to strand the reader at the answer's first line with the
-  // rest of it typing in below the fold. A layout effect, so it runs after the
-  // pin's height is in the DOM and before the frame is painted.
+  // A layout effect, so the first placement happens before the frame is painted.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
-    if (!pinned || !scroller) return;
-    const element = scroller.querySelector(`[data-message-id="${pinned.id}"]`);
-    if (!element) return;
-    const offset = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    scroller.scrollTop += offset - 16;
-  }, [pinned]);
+    const list = listRef.current;
+    if (!following || !scroller || !list) return;
+
+    const place = () => {
+      const answer = scroller.querySelector(`[data-message-id="${following}"]`);
+      if (!answer) return;
+      const question = answer.previousElementSibling;
+      const start = question?.getAttribute('data-role') === 'question' ? question : answer;
+      const top =
+        start.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 16;
+      // The bottom while the turn still fits; the question at the top once it doesn't.
+      scroller.scrollTop = Math.min(top, scroller.scrollHeight - scroller.clientHeight);
+    };
+    place();
+
+    const observer = new ResizeObserver(place);
+    observer.observe(list);
+    const release = () => setFollowing(null);
+    scroller.addEventListener('wheel', release, { passive: true });
+    scroller.addEventListener('touchmove', release, { passive: true });
+    scroller.addEventListener('pointerdown', release);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('wheel', release);
+      scroller.removeEventListener('touchmove', release);
+      scroller.removeEventListener('pointerdown', release);
+    };
+  }, [following]);
 
   const headerSlot = useHeaderSlot();
   const isLoading = isRestoring && messages.length === 0;
@@ -245,8 +300,8 @@ export function AiChatPage() {
   const title = headerSlot
     ? createPortal(
       <div className="min-w-0 flex items-center gap-2">
-        <Sparkles className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
-        <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+        <AnalyticsAiIcon className="w-[18px] h-[18px] shrink-0 text-blue-600 dark:text-blue-400" />
+        <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 truncate">
           Analytics AI
         </h1>
       </div>,
@@ -277,7 +332,7 @@ export function AiChatPage() {
           // or a thread this account cannot open. They looked identical until
           // the notice below existed — which is how a link to someone else's
           // conversation used to present as an ordinary new chat.
-          <div className="h-full flex flex-col items-center justify-end pb-2">
+          <div className="h-full flex flex-col items-center justify-end">
             {loadError && (
               <div
                 role="status"
@@ -290,16 +345,12 @@ export function AiChatPage() {
                 <span>{loadError}</span>
               </div>
             )}
-            <EmptyState onPick={send} />
+            <Welcome />
           </div>
         ) : (
-          <ul className="space-y-5 max-w-4xl mx-auto">
+          <ul ref={listRef} className="space-y-5 max-w-4xl mx-auto">
             {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                minHeight={pinned?.id === message.id ? pinned.height : undefined}
-              />
+              <MessageBubble key={message.id} message={message} />
             ))}
 
             {/* No separate spinner row: the in-flight assistant message is
@@ -317,18 +368,24 @@ export function AiChatPage() {
         />
       </div>
 
-      {/* The spacer that does the moving. On a blank page it holds the composer
-          up near the middle; when the first question lands it collapses to
-          nothing and the composer slides to the foot of the page. Animating a
-          height is what makes that a movement rather than a jump — flex
-          alignment, the obvious alternative, does not transition. */}
+      {/* The space below the composer, which does the moving. On a blank page
+          it grows as much as the transcript above it, so the composer sits in
+          the middle with the greeting over it and the suggestions under it;
+          when the first question lands it shrinks to nothing and the composer
+          slides to the foot of the page. flex-grow is animated, which is what
+          makes that a movement rather than a jump. */}
       <div
-        aria-hidden
         className={clsx(
-          'shrink-0 transition-[height] duration-500 ease-in-out motion-reduce:transition-none',
-          isBlank ? 'h-[32vh]' : 'h-0',
+          'min-h-0 basis-0 transition-[flex-grow] duration-500 ease-in-out motion-reduce:transition-none',
+          isBlank ? 'grow' : 'grow-0',
         )}
-      />
+      >
+        {isBlank && (
+          <div className="mx-auto -mt-8 max-w-4xl">
+            <Suggestions onPick={send} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

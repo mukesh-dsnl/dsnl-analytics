@@ -342,30 +342,23 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* The attempt-analytics redesign's page canvas: a pale blue-grey ground with a
-   soft blue glow from the top right (and a fainter one bottom left). Painted on
-   the content panel, so it stays still while the page scrolls over it. */
+/* The redesigned pages' canvas: one flat, light blue tone — no gradient, no
+   glow — painted on the content panel. Dark mode keeps a flat navy. */
 .vd-canvas {
-  background-color: #f1f5fa;
-  background-image:
-    radial-gradient(ellipse 55% 45% at 96% 0%, rgba(158, 200, 238, 0.55), rgba(158, 200, 238, 0) 70%),
-    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(196, 215, 244, 0.45), rgba(196, 215, 244, 0) 70%);
-  background-repeat: no-repeat;
+  background-color: #eef4fb;
 }
 .dark .vd-canvas {
   background-color: #0f1729;
-  background-image:
-    radial-gradient(ellipse 55% 45% at 96% 0%, rgba(56, 120, 200, 0.22), rgba(56, 120, 200, 0) 70%),
-    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(80, 110, 190, 0.14), rgba(80, 110, 190, 0) 70%);
 }
 
-/* ── Dark-mode shell ───────────────────────────────────────────────────────
-   In dark mode the app shell's field (sidebar + gutter) is a deep navy, built
-   the same way as the light mode's brand field — a flat fill, a broad diagonal
-   sheen and a fine halftone (see .app-ground) — just re-coloured. Scoped to
-   .app-shell so the sign-in page keeps its own ground. */
-.dark .app-ground.app-shell,
-.dark .app-ground.app-ground-hero {
+/* ── The app shell ─────────────────────────────────────────────────────────
+   The sidebar and the gutter around the content panel are a deep navy in both
+   themes — switching theme changes only the floating content panel. Built the
+   same way as the brand field (see .app-ground): a flat fill, a broad diagonal
+   sheen and a fine halftone, re-coloured. The sign-in page's left side is the
+   same navy, also in both themes. */
+.app-ground.app-shell,
+.app-ground.app-ground-hero {
   --ground-dot: rgba(255, 255, 255, 0.05);
 
   background-color: #0b1628;

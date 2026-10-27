@@ -36,8 +36,7 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
   // place. The server reads them from anywhere in the question.
   const parsed = useMemo(() => parseCommands(value), [value]);
 
-  // Scope is sticky within a thread — "and yesterday?" stays a Voicedrop
-  // question — but must not leak into a different conversation.
+  // A scope typed into a draft must not leak into a different conversation.
   useEffect(() => {
     const previous = lastThread.current;
     lastThread.current = threadId;
@@ -84,11 +83,9 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
     });
   };
 
-  // A scope command is a setting, not a question: it stays in the box after a
-  // send, so letting it send on its own meant an empty Enter — or a click that
-  // landed on the button just as it turned from Stop back into Send — asked
-  // "/voicedrop" and nothing else. Only a file or a chart may go without text,
-  // as "do that to the previous answer".
+  // A scope command is a setting, not a question: "/voicedrop" with nothing
+  // after it is not something to ask. Only a file or a chart may go without
+  // text, as "do that to the previous answer".
   const canSend = parsed.text.length > 0 || parsed.commands.some((c) => c.kind !== 'scope');
 
   const submit = () => {
@@ -98,10 +95,9 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
     // mean. A beat after a stop, the button does nothing.
     if (Date.now() - stoppedAt.current < 1000) return;
     onSend(value.trim());
-    // Scope carries on to the next question; a file or a chart was asked for
-    // this one only.
-    const scopes = parsed.commands.filter((c) => c.kind === 'scope').map((c) => `/${c.name}`);
-    setValue(scopes.length ? `${scopes.join(' ')} ` : '');
+    // The box empties completely, commands included: each question carries
+    // its own.
+    setValue('');
   };
 
   // The text as the highlight layer shows it: plain words, and each command
@@ -121,11 +117,13 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
         {/* Soft ambient glow surrounding the input */}
         <div className="absolute -inset-16 -z-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-100 via-blue-50/50 to-transparent blur-2xl pointer-events-none dark:from-blue-900/30 dark:via-blue-900/10" />
 
+        {/* The command list sits right above the bar, as wide as it — one
+            command per line: the command dark, what it does lighter beside it. */}
         {menuOpen && (
           <div
             role="listbox"
             aria-label="Commands"
-            className="absolute bottom-full left-0 mb-2 z-20 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+            className="absolute bottom-full inset-x-0 mb-2 z-20 overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
           >
             <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Commands
@@ -146,14 +144,14 @@ export function ChatComposer({ onSend, onStop, isPending, threadId = null }: Cha
                   }}
                   onMouseEnter={() => setMenuIndex(index)}
                   className={clsx(
-                    'flex w-full items-center gap-2.5 px-3 py-2 text-left',
+                    'flex w-full items-center gap-3 px-4 py-2 text-left',
                     active ? 'bg-blue-50 dark:bg-blue-500/10' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800',
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">/{command.name}</span>
-                    <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{command.description}</span>
+                  <span className="flex min-w-0 items-baseline gap-3">
+                    <span className="shrink-0 text-sm font-semibold text-zinc-900 dark:text-zinc-100">/{command.name}</span>
+                    <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">{command.description}</span>
                   </span>
                 </button>
               );

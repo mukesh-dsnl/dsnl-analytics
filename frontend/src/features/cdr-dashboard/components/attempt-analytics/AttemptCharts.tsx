@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react';
+import { createContext, createElement, useContext, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   Area,
@@ -13,7 +13,6 @@ import {
   AlertTriangle,
   BellRing,
   CheckCircle2,
-  Info,
   Loader2,
   MapPin,
   MousePointer2,
@@ -55,15 +54,34 @@ interface AttemptChartsProps {
   dialOutStages: boolean;
 }
 
-type Tab = 'all' | 'outcomes' | 'routing' | 'capacity' | 'disconnects';
+/** One tab per card, by the card's own title — plus Overview, every card at once. */
+type Tab =
+  | 'all'
+  | 'activity'
+  | 'connection'
+  | 'duration'
+  | 'direction'
+  | 'providers'
+  | 'location'
+  | 'peak'
+  | 'retries'
+  | 'reasons';
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; dialOutOnly?: boolean }[] = [
   { id: 'all', label: 'Overview' },
-  { id: 'outcomes', label: 'Call performance' },
-  { id: 'routing', label: 'Traffic & routing' },
-  { id: 'capacity', label: 'Capacity & retries' },
-  { id: 'disconnects', label: 'Disconnects' },
+  { id: 'activity', label: 'Call activity', dialOutOnly: true },
+  { id: 'connection', label: 'Connection overview' },
+  { id: 'duration', label: 'Call duration', dialOutOnly: true },
+  { id: 'direction', label: 'Call direction' },
+  { id: 'providers', label: 'Service providers' },
+  { id: 'location', label: 'Location' },
+  { id: 'peak', label: 'Peak ports' },
+  { id: 'retries', label: 'Repeat attempts' },
+  { id: 'reasons', label: 'Disconnect reasons' },
 ];
+
+/** Set when a single card is shown on its own: it then takes the full row. */
+const FullWidth = createContext(false);
 
 const BUCKET_LABEL: Record<string, string> = {
   minute: 'Highest concurrent ports per minute',
@@ -87,12 +105,28 @@ const FOCUS = 'outline-none focus-visible:ring-2 focus-visible:ring-[#42b9e9] fo
  * readout on every mark. Hover only — nothing opens on click.
  */
 export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages }: AttemptChartsProps) {
-  const [tab, setTab] = useState<Tab>('all');
+  const [chosen, setTab] = useState<Tab>('all');
   const total = data?.summary.total_calls ?? 0;
   const ready = !isLoading && !error && data;
 
+  const tabs = TABS.filter((t) => !t.dialOutOnly || dialOutStages);
+  // A card that this service doesn't have (after switching service) falls back to Overview.
+  const tab = tabs.some((t) => t.id === chosen) ? chosen : 'all';
+
   const card = { isLoading, error };
-  const shows = (t: Tab) => tab === 'all' || tab === t;
+
+  // Each card, by its tab id — shared by Overview and the single-card view.
+  const cards: Record<Exclude<Tab, 'all'>, ReactNode> = {
+    activity: <ActivityCard {...card} data={data} total={total} />,
+    connection: <ConnectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />,
+    duration: <DurationCard {...card} data={data} />,
+    direction: <DirectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />,
+    providers: <ProviderCard {...card} data={data} total={total} cubeRows={cubeRows} />,
+    location: <LocationCard {...card} data={data} total={total} cubeRows={cubeRows} />,
+    peak: <PeakCard {...card} data={data} />,
+    retries: <RetryCard {...card} data={data} total={total} />,
+    reasons: <ReasonsCard {...card} data={data} total={total} />,
+  };
 
   return (
     <HoverTooltipProvider>
@@ -101,9 +135,9 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <nav
             className="flex gap-1 overflow-x-auto rounded-xl bg-[#e9eef5]/80 p-1 [scrollbar-width:none] dark:bg-white/[0.05]"
-            aria-label="Metric groups"
+            aria-label="Charts"
           >
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -132,39 +166,30 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
             <p className="mt-1 text-[12px] text-[#95a3b5] dark:text-zinc-500">Try a different date range or fewer filters.</p>
           </div>
         ) : (
-          <>
-            {shows('outcomes') && (
+          tab === 'all' ? (
+            <>
               <Section title="Call performance">
-                {dialOutStages && <ActivityCard {...card} data={data} total={total} />}
-                <ConnectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />
-                {dialOutStages && <DurationCard {...card} data={data} />}
-                <DirectionCard {...card} data={data} total={total} cubeRows={cubeRows} span={dialOutStages ? 5 : 6} />
+                {dialOutStages && cards.activity}
+                {cards.connection}
+                {dialOutStages && cards.duration}
+                {cards.direction}
               </Section>
-            )}
-            {shows('routing') && (
               <Section title="Traffic & routing">
-                <ProviderCard {...card} data={data} total={total} cubeRows={cubeRows} />
-                <LocationCard {...card} data={data} total={total} cubeRows={cubeRows} />
+                {cards.providers}
+                {cards.location}
               </Section>
-            )}
-            {(tab === 'all' || tab === 'capacity') && (
-              <Section title="Capacity & follow-up">
-                <PeakCard {...card} data={data} />
-                {tab === 'capacity' && <RetryCard {...card} data={data} total={total} wide />}
-              </Section>
-            )}
-            {tab === 'all' && (
+              <Section title="Capacity & follow-up">{cards.peak}</Section>
               <Section title="What happened next">
-                <RetryCard {...card} data={data} total={total} />
-                <ReasonsCard {...card} data={data} total={total} />
+                {cards.retries}
+                {cards.reasons}
               </Section>
-            )}
-            {tab === 'disconnects' && (
-              <Section title="Disconnect analysis">
-                <ReasonsCard {...card} data={data} total={total} wide />
-              </Section>
-            )}
-          </>
+            </>
+          ) : (
+            // One card, on its own, across the full width.
+            <FullWidth.Provider value={true}>
+              <div className="mb-6 grid grid-cols-12 gap-4">{cards[tab]}</div>
+            </FullWidth.Provider>
+          )
         )}
       </div>
     </HoverTooltipProvider>
@@ -194,7 +219,6 @@ function Card({
   title,
   subtitle,
   extra,
-  footer,
   isLoading,
   error,
   isEmpty,
@@ -205,11 +229,12 @@ function Card({
   title: string;
   subtitle: string;
   extra?: ReactNode;
-  footer?: string;
   isEmpty?: boolean;
   bodyClassName?: string;
   children: ReactNode;
 }) {
+  const full = useContext(FullWidth);
+  if (full) span = 12;
   return (
     <article
       className={clsx(
@@ -244,12 +269,6 @@ function Card({
           children
         )}
       </div>
-      {footer && !isLoading && !error && !isEmpty && (
-        <div className="flex items-center gap-1.5 border-t border-[#eff2f6] px-[18px] py-2.5 text-[10px] text-[#74859d] dark:border-zinc-800/60 dark:text-zinc-500">
-          <Info className="h-3 w-3 shrink-0" />
-          <span>{footer}</span>
-        </div>
-      )}
     </article>
   );
 }
@@ -278,7 +297,7 @@ function Fill({ width, color, className }: { width: number; color: string; class
   return (
     <span
       className={clsx('block h-full rounded transition-[filter] duration-150 group-hover:brightness-[.93]', className)}
-      style={{ width: `${Math.min(Math.max(width, 0), 100)}%`, background: color }}
+      style={{ width: `${Math.min(Math.max(width, 0), 100)}%`, minWidth: width > 0 ? 3 : 0, background: color }}
     />
   );
 }
@@ -344,7 +363,6 @@ function ActivityCard({ data, total, ...state }: CardStateProps & { data?: CdrDa
       span={7}
       title="Call activity"
       subtitle="A view of each stage in the call lifecycle"
-      footer="Event counts can overlap. Each percentage is a share of total attempts."
       isEmpty={funnel.length === 0}
     >
       <div className="flex flex-col gap-3.5 pt-px">
@@ -421,7 +439,6 @@ function ConnectionCard({
       span={span}
       title="Connection overview"
       subtitle="How many attempts reached a participant?"
-      footer="Hover an outcome for its direction and location mix."
       isEmpty={rows.length === 0}
       extra={
         <span className="whitespace-nowrap rounded-[5px] border border-[#e5f3ed] bg-[#ecf8f4] px-[7px] py-1 text-[10px] text-[#2b9d85] dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
@@ -589,7 +606,6 @@ function DirectionCard({
       span={span}
       title="Call direction"
       subtitle="The balance between outbound and inbound calls"
-      footer="Hover a direction to see its connection and routing mix."
       isEmpty={rows.length === 0}
       bodyClassName="pt-5"
     >
@@ -675,7 +691,6 @@ function ProviderCard({
       span={7}
       title="Service providers"
       subtitle="Attempt volume across your provider network"
-      footer="Provider IDs are preserved from the source data."
       isEmpty={rows.length === 0}
       bodyClassName="pb-[25px]"
     >
@@ -718,7 +733,6 @@ function LocationCard({
       span={5}
       title="Location"
       subtitle="How call traffic is distributed"
-      footer="Hover for the connection and direction breakdown."
       isEmpty={rows.length === 0}
       bodyClassName="pt-5"
     >
@@ -862,21 +876,20 @@ function aidSections(breakdown: ReblastAidDatum[], label: string) {
 function RetryCard({
   data,
   total,
-  wide,
   ...state
-}: CardStateProps & { data?: CdrDashboard; total: number; wide?: boolean }) {
+}: CardStateProps & { data?: CdrDashboard; total: number }) {
+  // Every blast on one chart, Blast 0 (the first dial) included, on one scale.
   const stages = [...(data?.reblast.stages ?? [])].sort((a, b) => blastNumber(a.label) - blastNumber(b.label));
-  const initial = stages.find((s) => blastNumber(s.label) === 0);
   const retries = stages.filter((s) => blastNumber(s.label) > 0);
   const repeat = data?.reblast.total ?? retries.reduce((t, s) => t + s.value, 0);
-  const max = Math.max(...retries.map((s) => s.value), 1);
+  const max = Math.max(...stages.map((s) => s.value), 1);
   const breakdown = data?.reblast_aid ?? [];
   const tip = (s: CategoryDatum) => () => (
     <TipBody
       eyebrow="Repeat attempts"
-      title={blastNumber(s.label) === 0 ? 'Initial attempt · Blast 0' : s.label}
+      title={blastNumber(s.label) === 0 ? 'Blast 0 · first dial' : s.label}
       value={s.value}
-      share={blastNumber(s.label) === 0 ? `${pct(s.value, total)} of attempts` : `${pct(s.value, repeat)} of retries`}
+      share={`${pct(s.value, total)} of attempts`}
       sections={aidSections(breakdown, s.label)}
     />
   );
@@ -884,10 +897,9 @@ function RetryCard({
   return (
     <Card
       {...state}
-      span={wide ? 12 : 5}
+      span={5}
       title="Repeat attempts"
       subtitle="Make every follow-up count"
-      footer="Hover a blast for its connection and AID breakdown."
       isEmpty={stages.length === 0}
     >
       <div className="mb-5 flex items-baseline gap-[13px] border-b border-[#e7ebf2] pb-[19px] dark:border-zinc-800/60">
@@ -897,36 +909,20 @@ function RetryCard({
           {pct(repeat, total)} of attempts
         </small>
       </div>
-      {retries.length > 0 ? (
-        <div className="flex flex-col gap-[15px]">
-          {retries.map((s, i) => (
-            <BarRow
-              key={s.label}
-              label={s.label}
-              value={s.value}
-              max={max}
-              base={repeat}
-              color={colorAt(BLAST_COLORS, i)}
-              tip={tip(s)}
-              columns="grid-cols-[78px_1fr_60px_44px]"
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="text-[12px] text-[#95a3b5] dark:text-zinc-500">No reblasts in this scope.</p>
-      )}
-      {initial && (
-        <Hoverable
-          tip={tip(initial)}
-          className="mt-6 flex w-full items-center justify-between gap-2 rounded-[7px] border border-[#edf1f6] bg-[#f8fafd] p-[11px] text-[11px] text-[#8a99af] dark:border-zinc-800 dark:bg-white/[0.03] dark:text-zinc-400"
-        >
-          <span>Initial attempt · Blast 0</span>
-          <strong className="text-[11px] font-medium tabular-nums text-[#6e7f97] dark:text-zinc-200">{fmt(initial.value)}</strong>
-        </Hoverable>
-      )}
-      <p className="mt-[13px] mb-0 text-[10px] text-[#8a9cb3] dark:text-zinc-500">
-        Reblasts use their own scale so small counts stay visible.
-      </p>
+      <div className="flex flex-col gap-[15px]">
+        {stages.map((s) => (
+          <BarRow
+            key={s.label}
+            label={s.label}
+            value={s.value}
+            max={max}
+            base={total}
+            color={blastNumber(s.label) === 0 ? COLORS.pale : colorAt(BLAST_COLORS, Math.max(retries.indexOf(s), 0))}
+            tip={tip(s)}
+            columns="grid-cols-[78px_1fr_70px_44px]"
+          />
+        ))}
+      </div>
     </Card>
   );
 }
@@ -934,19 +930,17 @@ function RetryCard({
 function ReasonsCard({
   data,
   total,
-  wide,
   ...state
-}: CardStateProps & { data?: CdrDashboard; total: number; wide?: boolean }) {
+}: CardStateProps & { data?: CdrDashboard; total: number }) {
   const rows = [...(data?.disconnect_reason ?? [])].sort((a, b) => b.value - a.value);
   const max = Math.max(...rows.map((r) => r.value), 1);
 
   return (
     <Card
       {...state}
-      span={wide ? 12 : 7}
+      span={7}
       title="Disconnect reasons"
       subtitle="Reported reasons across all attempts"
-      footer="Reason labels and counts are preserved. “Unknown” is a reported category."
       isEmpty={rows.length === 0}
     >
       <div className="flex flex-col gap-3.5">
