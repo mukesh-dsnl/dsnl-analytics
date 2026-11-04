@@ -19,8 +19,14 @@ const CampaignMetricsPage = lazy(() =>
     default: m.CampaignMetricsPage,
   })),
 );
+const HomePage = lazy(() => import('./features/home/pages/HomePage').then((m) => ({ default: m.HomePage })));
 const SummaryPage = lazy(() =>
   import('./features/summary/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })),
+);
+const ConferenceSummaryPage = lazy(() =>
+  import('./features/conference-summary/pages/ConferenceSummaryPage').then((m) => ({
+    default: m.ConferenceSummaryPage,
+  })),
 );
 const MulticallRegistryPage = lazy(() =>
   import('./features/multicall-registry/pages/MulticallRegistryPage').then((m) => ({
@@ -76,7 +82,17 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<RequireAuth />}>
             <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to={DEFAULT_VIEW} replace />} />
+              {/* Home is the landing page: the three services at a glance.
+                  Their pages are under the sidebar's service switcher. */}
+              <Route
+                index
+                element={
+                  <Suspense fallback={<RouteFallback />}>
+                    <HomePage />
+                  </Suspense>
+                }
+              />
+              <Route path="home/*" element={<Navigate to="/" replace />} />
 
               {/* /analytics/<service>/<view> — service first, matching the
                   sidebar, so Back and the nav tree never disagree about where
@@ -120,11 +136,21 @@ function App() {
                   />
                 ))}
 
+                <Route path="summary" element={<Navigate to="/analytics/voicedrop/summary" replace />} />
                 <Route
-                  path="summary"
+                  path="voicedrop/summary"
                   element={
                     <Suspense fallback={<RouteFallback />}>
                       <SummaryPage />
+                    </Suspense>
+                  }
+                />
+
+                <Route
+                  path="conference/summary"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <ConferenceSummaryPage />
                     </Suspense>
                   }
                 />

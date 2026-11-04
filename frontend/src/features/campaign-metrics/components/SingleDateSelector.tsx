@@ -15,7 +15,10 @@ interface SingleDateSelectorProps {
   /** Inclusive ISO `YYYY-MM-DD`. */
   date: string;
   onChange: (date: string) => void;
-  status: CdrStatus;
+  /** The lake's span bounds the calendar — or `min`/`max`, for a page not read from the lake. */
+  status?: CdrStatus;
+  min?: string | null;
+  max?: string | null;
   variant?: 'brand' | 'outline';
 }
 
@@ -44,9 +47,16 @@ const toDisplay = (date: Date): string =>
  * here, passed as a classNames override on this one usage rather than
  * touching the shared component and risking the range picker's look.
  */
-export function SingleDateSelector({ date, onChange, status, variant = 'outline' }: SingleDateSelectorProps) {
-  const min = status.cdr.date_min;
-  const max = status.cdr.date_max;
+export function SingleDateSelector({
+  date,
+  onChange,
+  status,
+  min: minDate,
+  max: maxDate,
+  variant = 'outline',
+}: SingleDateSelectorProps) {
+  const min = minDate ?? status?.cdr.date_min;
+  const max = maxDate ?? status?.cdr.date_max;
 
   const handleSelect = (next: Date | undefined) => {
     if (!next) return;

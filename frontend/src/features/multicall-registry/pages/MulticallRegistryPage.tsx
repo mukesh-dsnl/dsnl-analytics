@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { AlertTriangle, ContactRound, Info, SearchX } from 'lucide-react';
@@ -10,6 +11,16 @@ import { ResultsTable } from '../components/ResultsTable';
 import { SearchPanel } from '../components/SearchPanel';
 import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { EMPTY_DRAFTS, FIELD_BY_KEY, SEARCH_FIELDS, isDuplicateRegNum, surface, toCriteria } from '../lookup';
+
+/** The search, as the URL carries it: one parameter per box (?cpins=…&phones=…). */
+function draftsFromUrl(params: URLSearchParams): Record<SearchField, string> {
+  return {
+    reg_nums: params.get('reg_nums') ?? '',
+    phones: params.get('phones') ?? '',
+    emails: params.get('emails') ?? '',
+    cpins: params.get('cpins') ?? '',
+  };
+}
 
 function matchesFilter(row: RegistrationMatch, needle: string): boolean {
   return [row.name, row.phone, row.email, row.reg_num]
@@ -25,10 +36,26 @@ function matchesFilter(row: RegistrationMatch, needle: string): boolean {
  * is opened; both are single read-only SELECTs.
  */
 export function MulticallRegistryPage() {
-  const [drafts, setDrafts] = useState<Record<SearchField, string>>(EMPTY_DRAFTS);
-  const [submitted, setSubmitted] = useState<SearchCriteria | null>(null);
+  // The search and the open account live in the URL — so a link (a CPIN
+  // from Campaign Metrics, say) opens the page already searched, and Back
+  // walks back through searches and accounts.
+  const [params, setParams] = useSearchParams();
+  const urlKey = SEARCH_FIELDS.map((f) => params.get(f.key) ?? '').join('|');
+  const submitted = useMemo((): SearchCriteria | null => {
+    const criteria = toCriteria(draftsFromUrl(params));
+    return SEARCH_FIELDS.some((f) => criteria[f.key].length) ? criteria : null;
+    // urlKey is the search part of params; the open account is not part of it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKey]);
+  const openReg = params.get('reg');
+  const [drafts, setDrafts] = useState<Record<SearchField, string>>(() => draftsFromUrl(params));
+  const [draftsFor, setDraftsFor] = useState(urlKey);
+  // A search arriving through the URL (a link, Back) fills the boxes too.
+  if (draftsFor !== urlKey) {
+    setDraftsFor(urlKey);
+    setDrafts(draftsFromUrl(params));
+  }
   const [filter, setFilter] = useState('');
-  const [openReg, setOpenReg] = useState<string | null>(null);
   const [recent, setRecent] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const headerSlot = useHeaderSlot();
@@ -59,29 +86,41 @@ export function MulticallRegistryPage() {
     const criteria = toCriteria(drafts);
     // The same search again is a deliberate refresh, not a cache hit.
     if (JSON.stringify(criteria) === JSON.stringify(submitted)) void search.refetch();
-    else setSubmitted(criteria);
+    const next = new URLSearchParams();
+    for (const field of SEARCH_FIELDS) if (criteria[field.key].length) next.set(field.key, criteria[field.key].join(','));
+    setParams(next);
     setFilter('');
-    setOpenReg(null);
     setRecent(null);
   }
 
   function reset() {
     setDrafts(EMPTY_DRAFTS);
-    setSubmitted(null);
+    setParams({});
     setFilter('');
-    setOpenReg(null);
     setRecent(null);
   }
 
   const openAccount = useCallback((reg: string) => {
-    setOpenReg(reg);
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('reg', reg);
+      return next;
+    });
     setRecent(reg);
-  }, []);
+  }, [setParams]);
   const navigate = useCallback((index: number) => {
     const row = accountList[index];
     if (row) openAccount(String(row.reg_num));
   }, [accountList, openAccount]);
-  const back = useCallback(() => setOpenReg(null), []);
+  const back = useCallback(
+    () =>
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete('reg');
+        return next;
+      }),
+    [setParams],
+  );
 
   // Switching view keeps the reader oriented: the top of an account, or the
   // row they came back from in the results.

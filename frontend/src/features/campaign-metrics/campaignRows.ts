@@ -21,11 +21,11 @@ export function isIncomplete(row: VoicedropCampaignRow): boolean {
 }
 
 export const CAMPAIGN_COLUMNS: { key: CampaignSortKey; label: string; align: 'left' | 'right' }[] = [
+  { key: 'account_id', label: 'Account', align: 'left' },
+  { key: 'client_id', label: 'Client', align: 'left' },
   { key: 'start_time', label: 'Start Time', align: 'left' },
   { key: 'end_time', label: 'End Time', align: 'left' },
   { key: 'crn', label: 'CRN', align: 'left' },
-  { key: 'account_id', label: 'Account', align: 'left' },
-  { key: 'client_id', label: 'Client', align: 'left' },
   { key: 'name', label: 'Name', align: 'left' },
   { key: 'booking_reference', label: 'Booking Ref', align: 'left' },
   { key: 'phone_number_count', label: 'Phone Numbers', align: 'right' },

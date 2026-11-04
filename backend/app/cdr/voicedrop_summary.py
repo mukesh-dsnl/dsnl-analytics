@@ -33,11 +33,11 @@ def _engine():
 
 _CAMPAIGNS_SQL = text(
     """
-    SELECT `Date`, Account_ID, Client_ID, Name, Start_Time, End_Time,
+    SELECT Call_Date, Account_ID, Client_ID, Name, Start_Time, End_Time,
            Booking_Reference, CRN, PhoneNumber_Count, DND_Count, Dialout_Count,
            Blast_Count, UnBlast_Count, Connected, Not_Connected, Connected_Duration
     FROM voicedrop_summary
-    WHERE `Date` = :day
+    WHERE Call_Date = :day
     ORDER BY Start_Time, CRN
     """
 )
@@ -61,7 +61,7 @@ def campaigns_for(day: date) -> list[dict[str, Any]]:
         rows = connection.execute(_CAMPAIGNS_SQL, {"day": day}).mappings().all()
     return [
         {
-            "date": row["Date"].isoformat() if row["Date"] else None,
+            "date": row["Call_Date"].isoformat() if row["Call_Date"] else None,
             "account_id": row["Account_ID"],
             "client_id": row["Client_ID"],
             "name": row["Name"],

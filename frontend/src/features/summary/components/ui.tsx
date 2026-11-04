@@ -60,12 +60,20 @@ export function Change({ now, before, className }: { now: number; before: number
   );
 }
 
-/** An account as the page names it: the id, with its client ids quietly after. */
-export function AccountName({ id, clients }: { id: number; clients?: number[] }) {
+/**
+ * An account as the page names it: the id, with its client ids — or, where
+ * the table has one, its name — quietly after.
+ */
+export function AccountName({ id, clients, name }: { id: number; clients?: number[]; name?: string | null }) {
   return (
-    <span className="min-w-0">
-      <span className="font-medium tabular-nums text-[#35415a] dark:text-zinc-100">{id}</span>
-      {!!clients?.length && (
+    <span className="flex min-w-0 items-baseline">
+      <span className="shrink-0 font-medium tabular-nums text-[#35415a] dark:text-zinc-100">{id}</span>
+      {name && (
+        <span className="ml-1.5 min-w-0 truncate text-[11px] text-[#8a99ad] dark:text-zinc-500" title={name}>
+          {name}
+        </span>
+      )}
+      {!name && !!clients?.length && (
         <span className="ml-1.5 truncate text-[11px] tabular-nums text-[#8a99ad] dark:text-zinc-500">
           client {clients.slice(0, 2).join(', ')}
           {clients.length > 2 && ` +${clients.length - 2}`}

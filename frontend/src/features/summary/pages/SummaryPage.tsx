@@ -1,15 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  AlertTriangle,
   CalendarCheck,
   CalendarClock,
   Clock,
-  Download,
   Layers,
   Loader2,
   PhoneOutgoing,
@@ -26,19 +23,65 @@ import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCh
 import { Kpi } from '../../cdr-dashboard/components/attempt-analytics/AttemptKpis';
 import { TONES, compact, fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { summaryApi } from '../api';
-import type { AccountHistory, Overview } from '../api';
+import type { AccountHistory, DayTotals, MonthTotals, Overview } from '../api';
 import { dayLabel, daysAgo, hourLabel, monthLabel, spanLabel } from '../format';
-import { downloadStatement } from '../statement';
-import type { StatementLine } from '../statement';
+import { VOICEDROP_COLUMNS, downloadStatement } from '../statement';
+import type { VoicedropStatementLine } from '../statement';
 import { ActivityCalendar } from '../components/ActivityCalendar';
-import type { CalendarMetric } from '../components/ActivityCalendar';
 import { WeekHourHeatmap } from '../components/WeekHourHeatmap';
-import type { HourMetric } from '../components/WeekHourHeatmap';
-import { MonthlyTrend } from '../components/MonthlyTrend';
-import type { TrendView } from '../components/MonthlyTrend';
+import { MonthlyTrend, TrendNote } from '../components/MonthlyTrend';
 import { BusiestDays, Movers, SleepingAccounts } from '../components/AccountLists';
+import { DailyVolume } from '../components/DailyVolume';
+import { AccountDirectory } from '../components/AccountDirectory';
 import { StatementTable } from '../components/StatementTable';
 import { Change, Toggle } from '../components/ui';
+import { AccountSelect, Centered, DownloadButton, Problem, SectionTitle } from '../components/PageParts';
+
+type CalendarMetric = 'dialed' | 'minutes';
+type HourMetric = 'campaigns' | 'dialed';
+type TrendView = 'usage' | 'quality';
+
+const CALENDAR_LABEL: Record<CalendarMetric, string> = { dialed: 'Numbers dialed', minutes: 'Connected minutes' };
+const HOUR_LABELS: { id: HourMetric; label: string }[] = [
+  { id: 'campaigns', label: 'Campaigns started' },
+  { id: 'dialed', label: 'Numbers dialed' },
+];
+
+/** A calendar day's readout: the chosen figure, then the day's campaigns. */
+function dayTip(metric: CalendarMetric) {
+  return function VoicedropDayTip(day: DayTotals, eyebrow: string) {
+    return (
+      <TipBody
+        eyebrow={eyebrow}
+        title={CALENDAR_LABEL[metric]}
+        value={day[metric]}
+        share={`${fmt(day.campaigns)} campaign${day.campaigns === 1 ? '' : 's'}${day.accounts ? ` · ${day.accounts} account${day.accounts === 1 ? '' : 's'}` : ''}`}
+        sections={[
+          {
+            title: 'That day',
+            base: day.dialed,
+            rows: [
+              { label: 'Numbers dialed', value: day.dialed, share: '' },
+              { label: 'Connected', value: day.connected, share: pct(day.connected, day.dialed) },
+              { label: 'Connected minutes', value: day.minutes, share: '' },
+              { label: 'DND', value: day.dnd, share: pct(day.dnd, day.phone_numbers) },
+            ],
+          },
+        ]}
+      />
+    );
+  };
+}
+
+const monthTipRows = (m: MonthTotals): [string, string][] => [
+  ['Campaigns', fmt(m.campaigns)],
+  ['Active days', fmt(m.active_days)],
+  ['Numbers dialed', fmt(m.dialed)],
+  ['Connected', fmt(m.connected)],
+  ['Connect rate', `${m.connect_rate}%`],
+  ['Connected minutes', fmt(m.minutes)],
+  ['DND', `${fmt(m.dnd)} (${m.dnd_rate}%)`],
+];
 
 const CALENDAR_METRICS: { id: CalendarMetric; label: string }[] = [
   { id: 'dialed', label: 'Dialed' },
@@ -59,6 +102,8 @@ const HOUR_METRICS: { id: HourMetric; label: string }[] = [
 export function SummaryPage() {
   const [params, setParams] = useSearchParams();
   const accountId = Number(params.get('account')) || null;
+  // One client of the account (?client=): the same history, that client's campaigns alone.
+  const clientId = (accountId && Number(params.get('client'))) || null;
   const scope: 'all' | 'account' = accountId || params.get('scope') === 'account' ? 'account' : 'all';
   const headerSlot = useHeaderSlot();
 
@@ -72,7 +117,7 @@ export function SummaryPage() {
   const navigate = useNavigate();
   const openDay = (iso: string, account?: number) => {
     setCampaignDate(iso);
-    navigate(`/analytics/voicedrop/campaign-metrics?view=campaigns${account ? `&search=${account}` : ''}`);
+    navigate(`/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}${account ? `&search=${account}` : ''}`);
   };
   const openAccount = (id: number) => setParams({ account: String(id) });
 
@@ -90,19 +135,14 @@ export function SummaryPage() {
           ]}
         />
         {scope === 'account' && overview.data && (
-          <select
-            aria-label="Account"
-            value={accountId ?? ''}
-            onChange={(e) => (e.target.value ? openAccount(Number(e.target.value)) : setParams({ scope: 'account' }))}
-            className="field-focus h-9 min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            <option value="">Choose an account…</option>
-            {overview.data.accounts.map((a) => (
-              <option key={a.account_id} value={a.account_id}>
-                {a.account_id} — {compact(a.dialed)} dialed{a.days_idle >= 15 ? ` · quiet ${a.days_idle}d` : ''}
-              </option>
-            ))}
-          </select>
+          <AccountSelect
+            value={accountId}
+            onChange={(id) => (id ? openAccount(id) : setParams({ scope: 'account' }))}
+            options={overview.data.accounts.map((a) => ({
+              id: a.account_id,
+              label: `${a.account_id}${a.name ? ` — ${a.name}` : ''} · ${compact(a.dialed)} dialed${a.days_idle >= 15 ? ` · quiet ${a.days_idle}d` : ''}`,
+            }))}
+          />
         )}
         {overview.data?.as_of && (
           <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline dark:text-zinc-400">
@@ -122,45 +162,45 @@ export function SummaryPage() {
             <Loader2 className="h-8 w-8 animate-spin text-[#50a6d5]" />
           </Centered>
         ) : overview.error ? (
-          <Problem message={overview.error.message} onRetry={() => overview.refetch()} />
+          <Problem title="Couldn't read voicedrop_summary." message={overview.error.message} onRetry={() => overview.refetch()} />
         ) : !overview.data.as_of ? (
           <Centered>voicedrop_summary has no rows yet.</Centered>
         ) : scope === 'all' ? (
           <AllAccounts data={overview.data} onDay={(iso) => openDay(iso)} onAccount={openAccount} />
         ) : accountId ? (
-          <AccountView key={accountId} accountId={accountId} onDay={(iso) => openDay(iso, accountId)} />
+          <AccountView
+            key={`${accountId}-${clientId}`}
+            accountId={accountId}
+            clientId={clientId}
+            onDay={(iso) => openDay(iso, clientId ?? accountId)}
+          />
         ) : (
-          <PickAccount data={overview.data} onAccount={openAccount} />
+          <AccountDirectory
+            rows={overview.data.accounts.map((a) => ({
+              account_id: a.account_id,
+              name: a.name,
+              total: a.dialed,
+              detail: `${fmt(a.campaigns)} campaigns`,
+              last_date: a.last_date,
+              days_idle: a.days_idle,
+            }))}
+            totalLabel="Total dialed"
+            query={params.get('q') ?? ''}
+            onQuery={(q) => setParams(q ? { scope: 'account', q } : { scope: 'account' })}
+            onAccount={openAccount}
+          />
         )}
       </div>
     </HoverTooltipProvider>
   );
 }
 
-function Centered({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-[50vh] items-center justify-center text-sm text-zinc-500">{children}</div>;
-}
-
-function Problem({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="mx-auto flex max-w-3xl items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-900/20 dark:text-red-400">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">Couldn't read voicedrop_summary.</p>
-        <p className="mt-0.5 break-words">{message}</p>
-        <button onClick={onRetry} className="mt-2 text-xs font-semibold underline">
-          Retry
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="mx-px mb-[13px] text-[13px] font-medium text-[#576980] dark:text-zinc-300">{children}</h2>;
-}
-
 const NONE = { isLoading: false, error: null };
+
+const CLIENT_CHIP = 'rounded-full border px-2.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#42b9e9]';
+const CLIENT_OFF =
+  'border-[#dfe7f1] bg-white text-[#5b6a82] hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:text-sky-300';
+const CLIENT_ON = 'border-[#2563eb] bg-[#2563eb] text-white dark:border-sky-400 dark:bg-sky-500/80';
 
 // ── All accounts ────────────────────────────────────────────────────────────
 
@@ -178,6 +218,7 @@ function AllAccounts({
   const [idleDays, setIdleDays] = useState<'15' | '30'>('15');
   const { this_month: now, last_month_same_days: before } = data.kpis;
   const { movers } = data;
+  const names = new Map(data.accounts.map((a) => [a.account_id, a.name]));
   const thisMonth = data.as_of!.slice(0, 7);
   const newThisMonth = data.new_accounts.find((n) => n.month === thisMonth && !n.is_table_start)?.accounts ?? [];
   const sameDays = `${spanLabel(movers.previous_from, movers.previous_to)}`;
@@ -311,6 +352,17 @@ function AllAccounts({
         />
       </div>
 
+      <div className="mb-6 grid grid-cols-12 gap-4">
+        <Card {...NONE} span={12} title="Daily volume" subtitle="Dial out and connected, all accounts — every day, the latest in view">
+          <DailyVolume
+            days={data.daily.map((d) => ({ date: d.date, total: d.dialout, connected: d.connected }))}
+            asOf={data.as_of!}
+            totalLabel="dialed"
+            onDay={onDay}
+          />
+        </Card>
+      </div>
+
       <SectionTitle>Activity</SectionTitle>
       <div className="mb-6 grid grid-cols-12 gap-4">
         <Card
@@ -326,12 +378,19 @@ function AllAccounts({
                 days={data.daily}
                 asOf={data.as_of!}
                 firstDate={data.first_date!}
-                metric={calendarMetric}
+                valueOf={(d) => d[calendarMetric]}
+                renderTip={dayTip(calendarMetric)}
+                emptyLabel="No campaigns."
                 onDay={onDay}
               />
             </div>
             <div className="lg:w-64 lg:shrink-0 lg:border-l lg:border-[#eef2f7] lg:pl-6 dark:lg:border-white/[0.06]">
-              <BusiestDays days={data.daily} onDay={onDay} />
+              <BusiestDays
+                days={data.daily}
+                valueOf={(d) => d.dialed}
+                describe={(d) => `${fmt(d.dialed)} dialed · ${d.campaigns} campaigns · ${d.accounts} accounts`}
+                onDay={onDay}
+              />
             </div>
           </div>
         </Card>
@@ -356,7 +415,12 @@ function AllAccounts({
             />
           }
         >
-          <SleepingAccounts accounts={data.accounts} idleDays={Number(idleDays)} onAccount={onAccount} />
+          <SleepingAccounts
+            accounts={data.accounts.map((a) => ({ ...a, recent: a.dialed_last_90_active }))}
+            idleDays={Number(idleDays)}
+            unit="dialed"
+            onAccount={onAccount}
+          />
         </Card>
         <Card
           {...NONE}
@@ -364,7 +428,16 @@ function AllAccounts({
           title="Rising and falling"
           subtitle={`Numbers dialed, ${spanLabel(movers.current_from, movers.current_to)} against ${sameDays}`}
         >
-          <Movers movers={movers.accounts} onAccount={onAccount} />
+          <Movers
+            movers={movers.accounts.map((m) => ({
+              ...m,
+              name: names.get(m.account_id),
+              current: m.current_dialed,
+              previous: m.previous_dialed,
+            }))}
+            unit="dialed"
+            onAccount={onAccount}
+          />
         </Card>
       </div>
 
@@ -377,7 +450,7 @@ function AllAccounts({
           subtitle="Campaigns by weekday and start hour, all accounts since the table began — the share of the week is on the right"
           extra={<Toggle label="Colour by" options={HOUR_METRICS} value={hourMetric} onChange={setHourMetric} />}
         >
-          <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} />
+          <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
         </Card>
       </div>
 
@@ -397,7 +470,7 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
     queryFn: () => summaryApi.statement(month === 'all' ? null : month),
     staleTime: 5 * 60_000,
   });
-  const lines: StatementLine[] = query.data?.rows ?? [];
+  const lines: VoicedropStatementLine[] = query.data?.rows ?? [];
   return (
     <div className="mb-6 grid grid-cols-12 gap-4">
       <Card
@@ -423,60 +496,30 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
               ))}
               <option value="all">All months</option>
             </select>
-            <DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${month}.csv`, lines)} />
+            <DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${month}.csv`, lines, VOICEDROP_COLUMNS)} />
           </div>
         }
       >
-        <StatementTable lines={lines} showMonth={month === 'all'} showAccount />
+        <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth={month === 'all'} showAccount />
       </Card>
     </div>
   );
 }
 
-function DownloadButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-    >
-      <Download className="h-3.5 w-3.5" />
-      CSV
-    </button>
-  );
-}
-
 // ── One account ─────────────────────────────────────────────────────────────
 
-function PickAccount({ data, onAccount }: { data: Overview; onAccount: (id: number) => void }) {
-  return (
-    <div className="mx-auto max-w-2xl">
-      <p className="mb-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-        Choose an account above, or one of the biggest senders:
-      </p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {data.accounts.slice(0, 12).map((a) => (
-          <button
-            key={a.account_id}
-            type="button"
-            onClick={() => onAccount(a.account_id)}
-            className="flex items-center justify-between rounded-xl border border-[#e9eef5] bg-white px-4 py-3 text-left text-sm shadow-[0_6px_20px_#1c305408] transition-colors hover:border-[#bcd6ef] dark:border-[#1c2a42] dark:bg-[#0e192c]"
-          >
-            <span className="font-medium tabular-nums text-[#35415a] dark:text-zinc-100">{a.account_id}</span>
-            <span className="text-xs tabular-nums text-[#7a899f]">
-              {compact(a.dialed)} dialed · last {dayLabel(a.last_date)}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AccountView({ accountId, onDay }: { accountId: number; onDay: (iso: string) => void }) {
+function AccountView({
+  accountId,
+  clientId,
+  onDay,
+}: {
+  accountId: number;
+  clientId: number | null;
+  onDay: (iso: string) => void;
+}) {
   const query = useQuery({
-    queryKey: ['summary', 'account', accountId],
-    queryFn: () => summaryApi.account(accountId),
+    queryKey: ['summary', 'account', accountId, clientId],
+    queryFn: () => summaryApi.account(accountId, clientId),
     staleTime: 5 * 60_000,
   });
   if (query.isPending) {
@@ -486,7 +529,7 @@ function AccountView({ accountId, onDay }: { accountId: number; onDay: (iso: str
       </Centered>
     );
   }
-  if (query.error) return <Problem message={query.error.message} onRetry={() => query.refetch()} />;
+  if (query.error) return <Problem title="Couldn't read voicedrop_summary." message={query.error.message} onRetry={() => query.refetch()} />;
   return <AccountHistoryView data={query.data} onDay={onDay} />;
 }
 
@@ -496,7 +539,7 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
   const [hourMetric, setHourMetric] = useState<HourMetric>('campaigns');
   const h = data.habits;
   const period = h.scope === '90d' ? 'last 90 days' : 'whole history';
-  const lines = useMemo<StatementLine[]>(
+  const lines = useMemo<VoicedropStatementLine[]>(
     () =>
       [...data.monthly].reverse().map((m) => ({ ...m, account_id: data.account_id, client_ids: data.client_ids })),
     [data],
@@ -506,11 +549,45 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
   return (
     <>
       <div className="mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="text-xl font-semibold tabular-nums text-[#16213a] dark:text-white">Account {data.account_id}</h1>
+        <h1 className="text-xl font-semibold text-[#16213a] dark:text-white">
+          <span className="tabular-nums">{data.account_id}</span>
+          {data.name && <span className="ml-2 font-medium text-[#35415a] dark:text-zinc-200">{data.name}</span>}
+        </h1>
         <span className="text-sm text-[#6a7d96] dark:text-zinc-400">
-          {data.client_ids.length > 0 && <>Client {data.client_ids.join(', ')} · </>}
+          {data.client && (
+            <>
+              client <strong className="font-semibold text-[#35415a] dark:text-zinc-100">{data.client.id}</strong>
+              {data.client.name && <> {data.client.name}</>} ·{' '}
+            </>
+          )}
           first campaign {dayLabel(data.first_date)} · {fmt(activeDays)} active days
         </span>
+        {/* Each client opens the same page with that client's campaigns alone. */}
+        {data.clients.length > 0 && (
+          <nav className="flex w-full flex-wrap gap-1.5" aria-label="Clients">
+            {data.clients.length > 1 && (
+              <Link
+                to={`?account=${data.account_id}`}
+                aria-current={!data.client ? 'page' : undefined}
+                className={clsx(CLIENT_CHIP, !data.client ? CLIENT_ON : CLIENT_OFF)}
+              >
+                All clients
+              </Link>
+            )}
+            {data.clients.map((c) => (
+              <Link
+                key={c.id}
+                to={`?account=${data.account_id}&client=${c.id}`}
+                aria-current={data.client?.id === c.id ? 'page' : undefined}
+                title={`Show client ${c.id} alone`}
+                className={clsx(CLIENT_CHIP, data.client?.id === c.id ? CLIENT_ON : CLIENT_OFF)}
+              >
+                <span className={clsx('tabular-nums', data.client?.id !== c.id && 'text-[#8a99ad]')}>{c.id}</span>
+                {c.name && <span className="ml-1">{c.name}</span>}
+              </Link>
+            ))}
+          </nav>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
@@ -599,6 +676,17 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
         />
       </div>
 
+      <div className="mb-6 grid grid-cols-12 gap-4">
+        <Card {...NONE} span={12} title="Daily volume" subtitle="Dial out and connected — every day, the latest in view">
+          <DailyVolume
+            days={data.daily.map((d) => ({ date: d.date, total: d.dialout, connected: d.connected }))}
+            asOf={data.as_of}
+            totalLabel="dialed"
+            onDay={onDay}
+          />
+        </Card>
+      </div>
+
       <SectionTitle>History</SectionTitle>
       <div className="mb-6 grid grid-cols-12 gap-4">
         <Card
@@ -608,7 +696,15 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
           subtitle="Every day of the last 12 months — click a day to open this account's campaigns that day"
           extra={<Toggle label="Colour by" options={CALENDAR_METRICS} value={calendarMetric} onChange={setCalendarMetric} />}
         >
-          <ActivityCalendar days={data.daily} asOf={data.as_of} firstDate={data.first_date} metric={calendarMetric} onDay={onDay} />
+          <ActivityCalendar
+            days={data.daily}
+            asOf={data.as_of}
+            firstDate={data.first_date}
+            valueOf={(d) => d[calendarMetric]}
+            renderTip={dayTip(calendarMetric)}
+            emptyLabel="No campaigns."
+            onDay={onDay}
+          />
         </Card>
         <Card
           {...NONE}
@@ -628,7 +724,27 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
             />
           }
         >
-          <MonthlyTrend months={data.monthly} view={trend} />
+          <MonthlyTrend
+            months={data.monthly}
+            bar={trend === 'usage' ? { key: 'minutes', label: 'Connected minutes' } : undefined}
+            lines={
+              trend === 'usage'
+                ? [{ key: 'connect_rate', label: 'Connect rate' }]
+                : [
+                    { key: 'connect_rate', label: 'Connect rate' },
+                    { key: 'dnd_rate', label: 'DND %' },
+                  ]
+            }
+            tipRows={monthTipRows}
+            note={
+              <TrendNote
+                months={data.monthly}
+                rate={{ key: 'connect_rate', label: 'connect rate' }}
+                risk={{ key: 'dnd_rate', label: 'DND' }}
+                advice="the number lists may be getting stale. Worth raising with the client."
+              />
+            }
+          />
         </Card>
         <Card
           {...NONE}
@@ -637,7 +753,7 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
           subtitle="Campaigns by weekday and start hour"
           extra={<Toggle label="Colour by" options={HOUR_METRICS} value={hourMetric} onChange={setHourMetric} />}
         >
-          <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} />
+          <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
         </Card>
       </div>
 
@@ -648,9 +764,9 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
           span={12}
           title="Monthly statement"
           subtitle={`Account ${data.account_id}, month by month`}
-          extra={<DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${data.account_id}.csv`, lines)} />}
+          extra={<DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${data.account_id}.csv`, lines, VOICEDROP_COLUMNS)} />}
         >
-          <StatementTable lines={lines} showMonth showAccount={false} />
+          <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth showAccount={false} />
         </Card>
       </div>
     </>

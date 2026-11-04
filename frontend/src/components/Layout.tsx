@@ -1,12 +1,9 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
-  Activity,
-  CalendarRange,
-  ContactRound,
+  House,
   LayoutGrid,
   LogOut,
-  Megaphone,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +19,9 @@ import { BrandMark } from './BrandMark';
 import { AnalyticsAiIcon } from './AnalyticsAiIcon';
 import { ContentPanelContext } from './ContentPanelSlot';
 import { ConversationList } from '../features/ai-chat/components/ConversationList';
+import { ServiceSwitcher } from './ServiceSwitcher';
+import { SERVICES, serviceOfPath } from './services';
+import type { ServiceId } from './services';
 
 interface NavItem {
   label: string;
@@ -35,34 +35,18 @@ interface NavSection {
 }
 
 /**
- * The two views every service offers: Attempt Metrics is the per-service
- * analytics dashboard, Campaign Metrics the single-day account/provider/
- * location tables. MultiCall adds its registration lookup.
+ * The overview pages sit at the top. Under them, the service switcher picks
+ * one service and the sidebar lists that service's pages — Summary, Attempt
+ * Metrics, Campaign Metrics (MultiCall: Registration Lookup instead of
+ * Summary). See ./services.ts.
  */
-const serviceItems = (service: 'voicedrop' | 'conference' | 'multicall'): NavItem[] => [
-  { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
-  { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
-  ...(service === 'multicall'
-    ? [{ label: 'Registration Lookup', path: '/analytics/multicall/registry', icon: ContactRound }]
-    : []),
-];
-
-/**
- * Always-open, labelled groups: every destination is one click away and the
- * service it belongs to is the heading above it, so nothing needs expanding.
- */
-const NAV: NavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
-      { label: 'Summary', path: '/analytics/summary', icon: CalendarRange },
-    ],
-  },
-  { title: 'Voicedrop', items: serviceItems('voicedrop') },
-  { title: 'Conference', items: serviceItems('conference') },
-  { title: 'MultiCall', items: serviceItems('multicall') },
-];
+const OVERVIEW: NavSection = {
+  title: 'Overview',
+  items: [
+    { label: 'Home', path: '/', icon: House },
+    { label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
+  ],
+};
 // The assistant is deliberately not a nav entry: the floating button in the
 // corner is its way in, and two controls for one destination in the same
 // column is one too many.
@@ -124,7 +108,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export function Layout() {
-  const { theme, toggleTheme, isSidebarCollapsed, toggleSidebar } = useUIStore();
+  const { theme, toggleTheme, isSidebarCollapsed, toggleSidebar, navService, setNavService } = useUIStore();
   const { username, aiPermission, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -167,22 +151,43 @@ export function Layout() {
   }, [theme]);
 
   const isActivePath = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`);
+    path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`);
+
+  const routeService = serviceOfPath(location.pathname);
+  const shownService: ServiceId = routeService ?? navService;
+  useEffect(() => {
+    if (routeService && routeService !== navService) setNavService(routeService);
+  }, [routeService, navService, setNavService]);
+  // Switching service on one of a service's pages opens the same page of the
+  // new one (Campaign Metrics stays Campaign Metrics), or its first page when
+  // it has no such page; anywhere else it only changes the list.
+  const switchService = (next: ServiceId) => {
+    setNavService(next);
+    if (!routeService || next === routeService) return;
+    const here = SERVICES[routeService].pages.find((p) => isActivePath(p.path));
+    const there = SERVICES[next].pages.find((p) => p.key === here?.key) ?? SERVICES[next].pages[0];
+    navigate(there.path);
+  };
 
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/assistant');
   const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
+  // Home, the services overview, has no date control: each card says its own day.
+  const isHome = location.pathname === '/';
   // The attempt-metrics and campaign-metrics pages (every service) use the
   // redesign, which paints the whole panel — header included — with its blue
   // canvas (see .vd-canvas).
-  const isSummary = location.pathname.startsWith('/analytics/summary');
+  // Both Summary pages carry their own controls in the header slot.
+  const isSummary = /^\/analytics\/(voicedrop|conference)\/summary/.test(location.pathname);
   const isRedesigned =
-    isSummary || /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
+    isHome ||
+    isSummary ||
+    /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
   // not to a default one you then have to navigate away from.
-  const lastAnalyticsPath = useRef('/analytics/all/attempt-metrics');
+  const lastAnalyticsPath = useRef('/');
   if (!isAiChat) lastAnalyticsPath.current = location.pathname;
 
   /**
@@ -326,27 +331,40 @@ export function Layout() {
             <ConversationList isCollapsed={narrow} />
           ) : (
             <nav className="space-y-4 px-3 py-3" aria-label="Analytics">
-              {NAV.map((section) => (
-                <div key={section.title} className="space-y-0.5">
-                  {/* On the rail a short rule stands in for the section name. */}
-                  {narrow ? (
-                    <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
-                  ) : (
-                    <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
-                      {section.title}
-                    </div>
-                  )}
-                  {section.items.map((item) => (
-                    <NavLink
-                      key={item.path}
-                      item={item}
-                      section={section.title}
-                      active={isActivePath(item.path)}
-                      collapsed={narrow}
-                    />
-                  ))}
+              <div className="space-y-0.5">
+                {/* On the rail a short rule stands in for the section name. */}
+                {narrow ? (
+                  <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
+                ) : (
+                  <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+                    {OVERVIEW.title}
+                  </div>
+                )}
+                {OVERVIEW.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    item={item}
+                    section={OVERVIEW.title}
+                    active={isActivePath(item.path)}
+                    collapsed={narrow}
+                  />
+                ))}
+              </div>
+              <div className="space-y-0.5">
+                {narrow && <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />}
+                <div className="pb-1.5">
+                  <ServiceSwitcher value={shownService} onChange={switchService} collapsed={narrow} />
                 </div>
-              ))}
+                {SERVICES[shownService].pages.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    item={item}
+                    section={SERVICES[shownService].name}
+                    active={isActivePath(item.path)}
+                    collapsed={narrow}
+                  />
+                ))}
+              </div>
             </nav>
           )}
         </div>
@@ -470,7 +488,7 @@ export function Layout() {
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
             {/* Summary covers the whole table; its own header says how far the data runs. */}
-            {isAiChat || isMulticallRegistry || isSummary ? null : location.pathname.endsWith('/campaign-metrics') ? (
+            {isAiChat || isMulticallRegistry || isSummary || isHome ? null : location.pathname.endsWith('/campaign-metrics') ? (
               <HeaderCampaignDate />
             ) : (
               <HeaderDateRange />

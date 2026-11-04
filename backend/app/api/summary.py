@@ -3,7 +3,7 @@ Voicedrop Summary API — the Overview › Summary page, from voicedrop_summary.
 
     GET /api/summary/overview             all accounts: KPIs, calendar, hours,
                                           accounts (sleeping), movers, new accounts
-    GET /api/summary/account/{account_id} one account's history
+    GET /api/summary/account/{account_id} one account's history (?client= for one client of it)
     GET /api/summary/statement?month=     per account per month, for billing
 
 Read-only, like the Campaigns tab it shares the table with; see
@@ -39,10 +39,11 @@ def summary_overview() -> dict[str, Any]:
 
 
 @router.get("/summary/account/{account_id}")
-def summary_account(account_id: int) -> dict[str, Any]:
-    result = _read(insights.account, account_id)
+def summary_account(account_id: int, client: Optional[int] = Query(default=None)) -> dict[str, Any]:
+    result = _read(insights.account, account_id, client)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"No campaigns for account {account_id}.")
+        who = f"client {client} of account {account_id}" if client is not None else f"account {account_id}"
+        raise HTTPException(status_code=404, detail=f"No campaigns for {who}.")
     return result
 
 

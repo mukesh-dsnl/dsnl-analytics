@@ -8,6 +8,8 @@ import { ConnectedBar } from './ConnectedBar';
 import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
 import { campaignApi } from '../api';
 import { downloadCsv } from '../exportCsv';
+import { SummaryLink } from './SummaryLink';
+import { summaryPath } from '../links';
 
 interface CampaignsTableProps {
   rows: CampaignTableRow[] | undefined;
@@ -52,6 +54,8 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
           <table className="w-full border-collapse">
             <thead>
               <tr>
+                <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
+                <SortableHeader label="Client" sortKey="client_id" sort={sort} onSort={onSort} />
                 <SortableHeader label="Time" sortKey="start_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
                 <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
@@ -107,14 +111,28 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
       )}
     >
       {/* The red stripe on the leading edge keeps an incomplete row findable
-          even while scanning only the left of the table. */}
+          even while scanning only the left of the table. Account and client
+          open their Summary — the client alone, for the client. */}
       <td
         className={clsx(
           CELL,
-          'whitespace-nowrap',
+          'whitespace-nowrap text-sm font-semibold tabular-nums text-zinc-900 dark:text-white',
           incomplete && 'shadow-[inset_3px_0_0_theme(colors.red.500)]',
         )}
       >
+        <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
+          {row.account_id}
+        </SummaryLink>
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums text-zinc-700 dark:text-zinc-300')}>
+        <SummaryLink
+          to={summaryPath('voicedrop', row.account_id, row.client_id)!}
+          title={`Open client ${row.client_id} of account ${row.account_id}`}
+        >
+          {row.client_id}
+        </SummaryLink>
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap')}>
         <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">
           {short(row.start_time)} – {short(row.end_time)}
         </span>
@@ -132,10 +150,11 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
             {row.name ?? '—'}
           </span>
         </span>
-        <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-          AC {row.account_id} · Client {row.client_id}
-          {row.booking_reference != null && ` · Ref ${row.booking_reference}`}
-        </span>
+        {row.booking_reference != null && (
+          <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+            Ref {row.booking_reference}
+          </span>
+        )}
       </td>
 
       <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300')}>

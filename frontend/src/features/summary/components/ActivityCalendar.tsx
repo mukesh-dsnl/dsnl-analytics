@@ -3,47 +3,44 @@ import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
 import { useHover } from '../../cdr-dashboard/components/attempt-analytics/tooltipContext';
-import { TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
-import { fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
-import type { DayTotals } from '../api';
+import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { RAMP, addDays, dayLabel, isoDay, levels, parseDay, weekdayDay } from '../format';
-
-export type CalendarMetric = 'dialed' | 'minutes';
-
-const METRIC_LABEL: Record<CalendarMetric, string> = {
-  dialed: 'Numbers dialed',
-  minutes: 'Connected minutes',
-};
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-interface Cell {
+interface Cell<T> {
   iso: string;
   /** Before the table's first day: unknown, not zero. */
   beforeData: boolean;
   /** After `asOf`: not drawn. */
   future: boolean;
-  day?: DayTotals;
+  day?: T;
 }
 
 /**
  * Twelve months of days, one square each, GitHub-style: a column per week,
- * Monday at the top. The colour is the day's numbers dialed (or connected
- * minutes), by quintile; days before the table's first load are drawn
- * hatched, since "no data" and "no campaigns" are different things.
+ * Monday at the top. The colour is whatever `valueOf` reads off a day, by
+ * quintile; days before the table's first load are drawn hatched, since "no
+ * data" and "nothing that day" are different things. Shared by the Voicedrop
+ * and Conference summaries — each says what a day is and how to describe it.
  */
-export function ActivityCalendar({
+export function ActivityCalendar<T extends { date: string }>({
   days,
   asOf,
   firstDate,
-  metric,
+  valueOf,
+  renderTip,
+  emptyLabel = 'Nothing that day.',
   onDay,
 }: {
-  days: DayTotals[];
+  days: T[];
   asOf: string;
   firstDate: string;
-  metric: CalendarMetric;
-  /** Clicking a day — opens that day's campaigns. */
+  valueOf: (day: T) => number;
+  /** The hover readout for a day that has data; `eyebrow` is its date. */
+  renderTip: (day: T, eyebrow: string) => ReactNode;
+  emptyLabel?: string;
+  /** Clicking a day — opens that day's records. */
   onDay?: (iso: string) => void;
 }) {
   const { weeks, monthMarks, levelOf } = useMemo(() => {
@@ -52,10 +49,10 @@ export function ActivityCalendar({
     const start = addDays(end, -364);
     // Back to the Monday of the first week, so every column is a whole week.
     const firstMonday = addDays(start, -((start.getDay() + 6) % 7));
-    const columns: Cell[][] = [];
+    const columns: Cell<T>[][] = [];
     const marks: { column: number; label: string }[] = [];
     for (let cursor = firstMonday, column = 0; cursor <= end; column += 1) {
-      const week: Cell[] = [];
+      const week: Cell<T>[] = [];
       for (let row = 0; row < 7; row += 1, cursor = addDays(cursor, 1)) {
         const iso = isoDay(cursor);
         week.push({ iso, beforeData: iso < firstDate, future: cursor > end || cursor < start, day: byDate.get(iso) });
@@ -64,8 +61,8 @@ export function ActivityCalendar({
       }
       columns.push(week);
     }
-    return { weeks: columns, monthMarks: marks, levelOf: levels(days.map((d) => d[metric])) };
-  }, [days, asOf, firstDate, metric]);
+    return { weeks: columns, monthMarks: marks, levelOf: levels(days.map(valueOf)) };
+  }, [days, asOf, firstDate, valueOf]);
 
   return (
     <div className="min-w-0">
@@ -92,7 +89,15 @@ export function ActivityCalendar({
           {weeks.map((week, column) => (
             <div key={column} className="grid grid-rows-7 gap-[3px]">
               {week.map((cell) => (
-                <DayCell key={cell.iso} cell={cell} metric={metric} level={cell.day ? levelOf(cell.day[metric]) : -1} onDay={onDay} />
+                <DayCell
+                  key={cell.iso}
+                  cell={cell}
+                  value={cell.day ? valueOf(cell.day) : 0}
+                  level={cell.day ? levelOf(valueOf(cell.day)) : -1}
+                  renderTip={renderTip}
+                  emptyLabel={emptyLabel}
+                  onDay={onDay}
+                />
               ))}
             </div>
           ))}
@@ -103,18 +108,27 @@ export function ActivityCalendar({
   );
 }
 
-function DayCell({
+function DayCell<T>({
   cell,
-  metric,
+  value,
   level,
+  renderTip,
+  emptyLabel,
   onDay,
 }: {
-  cell: Cell;
-  metric: CalendarMetric;
+  cell: Cell<T>;
+  value: number;
   level: number;
+  renderTip: (day: T, eyebrow: string) => ReactNode;
+  emptyLabel: string;
   onDay?: (iso: string) => void;
 }) {
-  const hover = useHover(() => <DayTip cell={cell} metric={metric} />);
+  const hover = useHover(() => {
+    const eyebrow = weekdayDay(cell.iso);
+    if (cell.beforeData) return <Note eyebrow={eyebrow}>Before the table's first load — no data.</Note>;
+    if (!cell.day) return <Note eyebrow={eyebrow}>{emptyLabel}</Note>;
+    return renderTip(cell.day, eyebrow);
+  });
   if (cell.future) return <span aria-hidden className="aspect-square" />;
   const style = level >= 0 ? { background: RAMP[level] } : undefined;
   const className = clsx(
@@ -129,39 +143,12 @@ function DayCell({
       type="button"
       {...hover}
       onClick={() => onDay(cell.iso)}
-      aria-label={`${dayLabel(cell.iso)}: ${fmt(cell.day[metric])}`}
+      aria-label={`${dayLabel(cell.iso)}: ${fmt(value)}`}
       className={className}
       style={style}
     />
   ) : (
     <span {...hover} className={className} style={style} />
-  );
-}
-
-function DayTip({ cell, metric }: { cell: Cell; metric: CalendarMetric }) {
-  const eyebrow = weekdayDay(cell.iso);
-  if (cell.beforeData) return <Note eyebrow={eyebrow}>Before the table's first load — no data.</Note>;
-  const day = cell.day;
-  if (!day) return <Note eyebrow={eyebrow}>No campaigns.</Note>;
-  return (
-    <TipBody
-      eyebrow={eyebrow}
-      title={METRIC_LABEL[metric]}
-      value={day[metric]}
-      share={`${fmt(day.campaigns)} campaign${day.campaigns === 1 ? '' : 's'}${day.accounts ? ` · ${day.accounts} account${day.accounts === 1 ? '' : 's'}` : ''}`}
-      sections={[
-        {
-          title: 'That day',
-          base: day.dialed,
-          rows: [
-            { label: 'Numbers dialed', value: day.dialed, share: '' },
-            { label: 'Connected', value: day.connected, share: pct(day.connected, day.dialed) },
-            { label: 'Connected minutes', value: day.minutes, share: '' },
-            { label: 'DND', value: day.dnd, share: pct(day.dnd, day.phone_numbers) },
-          ],
-        },
-      ]}
-    />
   );
 }
 

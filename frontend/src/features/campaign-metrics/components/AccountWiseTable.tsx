@@ -6,6 +6,8 @@ import { campaignApi } from '../api';
 import type { CampaignFilter, AccountMetricsRow } from '../api';
 import type { SortState } from '../useSortableRows';
 import { usePagination } from '../usePagination';
+import { SummaryLink } from './SummaryLink';
+import { summaryPath } from '../links';
 import { ConnectedBar } from './ConnectedBar';
 import {
   ROW_ACTION_CLASS,
@@ -204,7 +206,13 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
               AC
             </span>
             <span className="text-sm font-semibold text-zinc-900 dark:text-white">
-              {row.account}
+              {summaryPath(filters.service, row.account) ? (
+                <SummaryLink to={summaryPath(filters.service, row.account)!} title={`Open account ${row.account}'s summary`}>
+                  {row.account}
+                </SummaryLink>
+              ) : (
+                row.account
+              )}
             </span>
           </span>
         </td>
@@ -286,7 +294,17 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
               </td>
               {showCpin && (
                 <td className="px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-400 tabular-nums">
-                  {child.cpin ?? '—'}
+                  {/* On MultiCall a CPIN opens its registrations, searched for it. */}
+                  {child.cpin && filters.service === 'multicall' ? (
+                    <SummaryLink
+                      to={`/analytics/multicall/registry?cpins=${encodeURIComponent(child.cpin)}`}
+                      title={`Look up CPIN ${child.cpin} in the registration lookup`}
+                    >
+                      {child.cpin}
+                    </SummaryLink>
+                  ) : (
+                    (child.cpin ?? '—')
+                  )}
                 </td>
               )}
               <td className={NUM_CHILD}>{child.total_size.toLocaleString()}</td>

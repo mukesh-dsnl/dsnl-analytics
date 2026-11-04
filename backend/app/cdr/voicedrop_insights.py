@@ -25,6 +25,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy import text
 
+from app.cdr import directory
 from app.cdr.voicedrop_summary import _engine
 
 
@@ -32,9 +33,10 @@ from app.cdr.voicedrop_summary import _engine
 
 # One row per account per day — everything else is folded from these.
 _DAILY_SQL = """
-    SELECT `Date` AS day, Account_ID AS account_id,
+    SELECT Call_Date AS day, Account_ID AS account_id,
            COUNT(*) AS campaigns,
            COALESCE(SUM(PhoneNumber_Count), 0) AS phone_numbers,
+           COALESCE(SUM(Dialout_Count), 0) AS dialout,
            COALESCE(SUM(DND_Count), 0) AS dnd,
            COALESCE(SUM(Connected), 0) AS connected,
            COALESCE(SUM(Not_Connected), 0) AS not_connected,
@@ -42,8 +44,8 @@ _DAILY_SQL = """
            COALESCE(SUM(UnBlast_Count), 0) AS unblast
     FROM voicedrop_summary
     {where}
-    GROUP BY `Date`, Account_ID
-    ORDER BY `Date`
+    GROUP BY Call_Date, Account_ID
+    ORDER BY Call_Date
 """
 
 _CLIENTS_SQL = """
@@ -56,18 +58,18 @@ _CLIENTS_SQL = """
 
 # MySQL WEEKDAY(): 0 = Monday … 6 = Sunday.
 _WEEKDAY_HOUR_SQL = """
-    SELECT WEEKDAY(`Date`) AS weekday, HOUR(Start_Time) AS hour,
+    SELECT WEEKDAY(Call_Date) AS weekday, HOUR(Start_Time) AS hour,
            COUNT(*) AS campaigns,
            COALESCE(SUM(Connected), 0) + COALESCE(SUM(Not_Connected), 0) AS dialed
     FROM voicedrop_summary
     WHERE Start_Time IS NOT NULL {and_where}
-    GROUP BY WEEKDAY(`Date`), HOUR(Start_Time)
+    GROUP BY WEEKDAY(Call_Date), HOUR(Start_Time)
 """
 
 _START_TIMES_SQL = """
-    SELECT `Date` AS day, TIME_TO_SEC(Start_Time) AS seconds
+    SELECT Call_Date AS day, TIME_TO_SEC(Start_Time) AS seconds
     FROM voicedrop_summary
-    WHERE Account_ID = :account_id AND Start_Time IS NOT NULL
+    WHERE Account_ID = :account_id AND Start_Time IS NOT NULL {and_client}
 """
 
 
@@ -76,11 +78,21 @@ def _fetch(sql: str, params: Optional[dict] = None) -> list[dict[str, Any]]:
         return [dict(row) for row in connection.execute(text(sql), params or {}).mappings().all()]
 
 
-def _daily_rows(account_id: Optional[int] = None) -> list[dict[str, Any]]:
-    where = "WHERE Account_ID = :account_id" if account_id is not None else ""
-    rows = _fetch(_DAILY_SQL.format(where=where), {"account_id": account_id})
+def _scope(account_id: Optional[int], client_id: Optional[int]) -> tuple[str, dict[str, Any]]:
+    """The WHERE terms for an account, or one client of it — nothing for all."""
+    terms = []
+    if account_id is not None:
+        terms.append("Account_ID = :account_id")
+    if client_id is not None:
+        terms.append("Client_ID = :client_id")
+    return " AND ".join(terms), {"account_id": account_id, "client_id": client_id}
+
+
+def _daily_rows(account_id: Optional[int] = None, client_id: Optional[int] = None) -> list[dict[str, Any]]:
+    terms, params = _scope(account_id, client_id)
+    rows = _fetch(_DAILY_SQL.format(where=f"WHERE {terms}" if terms else ""), params)
     for row in rows:
-        for key in ("campaigns", "phone_numbers", "dnd", "connected", "not_connected", "minutes", "unblast"):
+        for key in ("campaigns", "phone_numbers", "dnd", "dialout", "connected", "not_connected", "minutes", "unblast"):
             row[key] = int(row[key] or 0)
         row["dialed"] = row["connected"] + row["not_connected"]
     return rows
@@ -95,9 +107,9 @@ def _client_ids(account_id: Optional[int] = None) -> dict[int, list[int]]:
     }
 
 
-def _weekday_hour(account_id: Optional[int] = None) -> list[dict[str, int]]:
-    and_where = "AND Account_ID = :account_id" if account_id is not None else ""
-    rows = _fetch(_WEEKDAY_HOUR_SQL.format(and_where=and_where), {"account_id": account_id})
+def _weekday_hour(account_id: Optional[int] = None, client_id: Optional[int] = None) -> list[dict[str, int]]:
+    terms, params = _scope(account_id, client_id)
+    rows = _fetch(_WEEKDAY_HOUR_SQL.format(and_where=f"AND {terms}" if terms else ""), params)
     return [
         {"weekday": int(r["weekday"]), "hour": int(r["hour"]), "campaigns": int(r["campaigns"]), "dialed": int(r["dialed"] or 0)}
         for r in rows
@@ -106,7 +118,9 @@ def _weekday_hour(account_id: Optional[int] = None) -> list[dict[str, int]]:
 
 # ── Arithmetic ─────────────────────────────────────────────────────────────
 
-_SUMMED = ("campaigns", "phone_numbers", "dnd", "connected", "not_connected", "dialed", "minutes", "unblast")
+# `dialout` is the table's own Dialout_Count — what the daily volume bars show;
+# `dialed` (connected + not connected) stays the connect rate's denominator.
+_SUMMED = ("campaigns", "phone_numbers", "dnd", "dialout", "connected", "not_connected", "dialed", "minutes", "unblast")
 
 
 def _rate(part: float, whole: float, digits: int = 1) -> float:
@@ -172,12 +186,18 @@ def monthly_totals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def account_list(rows: list[dict[str, Any]], clients: dict[int, list[int]], as_of: date) -> list[dict[str, Any]]:
+def account_list(
+    rows: list[dict[str, Any]],
+    clients: dict[int, list[int]],
+    as_of: date,
+    names: Optional[dict[int, str]] = None,
+) -> list[dict[str, Any]]:
     """
     Every account with its lifetime figures, when it was last seen, and what it
     "used to send": the numbers it dialed in the 90 days up to its last active
     day — the size of what goes quiet when it stops.
     """
+    names = names or {}
     by_account: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         by_account[row["account_id"]].append(row)
@@ -189,6 +209,7 @@ def account_list(rows: list[dict[str, Any]], clients: dict[int, list[int]], as_o
         recent = _totals(_between(account_rows, last - timedelta(days=89), last))
         out.append({
             "account_id": account_id,
+            "name": names.get(account_id),
             "client_ids": clients.get(account_id, []),
             "first_date": first.isoformat(),
             "last_date": last.isoformat(),
@@ -341,30 +362,46 @@ def overview() -> dict[str, Any]:
         },
         "daily": daily_totals(rows),
         "weekday_hour": _weekday_hour(),
-        "accounts": account_list(rows, _client_ids(), as_of),
+        "accounts": account_list(rows, _client_ids(), as_of, directory.accounts()),
         "movers": movers(rows, as_of),
         "new_accounts": new_accounts(rows, first_day),
         "months": sorted({_month_key(r["day"]) for r in rows}),
     }
 
 
-def account(account_id: int) -> Optional[dict[str, Any]]:
-    """One account's history: its calendar, months, habits and hours."""
-    rows = _daily_rows(account_id)
+def account(account_id: int, client_id: Optional[int] = None) -> Optional[dict[str, Any]]:
+    """
+    One account's history: its calendar, months, habits and hours — or, with
+    `client_id`, the same for that one client of it. `clients` always lists
+    every client of the account, so the page can switch between them.
+    """
+    rows = _daily_rows(account_id, client_id)
     if not rows:
         return None
-    as_of_row = _fetch("SELECT MAX(`Date`) AS as_of FROM voicedrop_summary")
+    as_of_row = _fetch("SELECT MAX(Call_Date) AS as_of FROM voicedrop_summary")
     as_of = as_of_row[0]["as_of"] if as_of_row and as_of_row[0]["as_of"] else max(r["day"] for r in rows)
+    client_ids = _client_ids(account_id).get(account_id, [])
+    client_names = directory.clients()
     return {
         "account_id": account_id,
-        "client_ids": _client_ids(account_id).get(account_id, []),
+        "name": directory.account_name(account_id),
+        "client_ids": client_ids,
+        "clients": [{"id": c, "name": client_names.get(c)} for c in client_ids],
+        "client": {"id": client_id, "name": client_names.get(client_id)} if client_id is not None else None,
         "as_of": as_of.isoformat(),
         "first_date": min(r["day"] for r in rows).isoformat(),
         "last_date": max(r["day"] for r in rows).isoformat(),
         "daily": _daily_out(rows),
         "monthly": monthly_totals(rows),
-        "habits": habits(rows, _fetch(_START_TIMES_SQL, {"account_id": account_id}), as_of),
-        "weekday_hour": _weekday_hour(account_id),
+        "habits": habits(
+            rows,
+            _fetch(
+                _START_TIMES_SQL.format(and_client="AND Client_ID = :client_id" if client_id is not None else ""),
+                {"account_id": account_id, "client_id": client_id},
+            ),
+            as_of,
+        ),
+        "weekday_hour": _weekday_hour(account_id, client_id),
     }
 
 
@@ -375,6 +412,7 @@ def statement(month: Optional[str] = None) -> list[dict[str, Any]]:
     """
     rows = _daily_rows()
     clients = _client_ids()
+    names = directory.accounts()
     by_key: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         key = _month_key(row["day"])
@@ -386,6 +424,7 @@ def statement(month: Optional[str] = None) -> list[dict[str, Any]]:
         out.append({
             "month": key,
             "account_id": account_id,
+            "name": names.get(account_id),
             "client_ids": clients.get(account_id, []),
             **totals,
             "connect_rate": _rate(totals["connected"], totals["dialed"]),

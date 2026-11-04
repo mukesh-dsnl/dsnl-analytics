@@ -4,30 +4,44 @@ import clsx from 'clsx';
 import { useHover } from '../../cdr-dashboard/components/attempt-analytics/tooltipContext';
 import { TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { pct } from '../../cdr-dashboard/components/attempt-analytics/design';
-import type { WeekdayHour } from '../api';
 import { RAMP, WEEKDAYS, hourLabel, levels } from '../format';
+import { HScroll } from './HScroll';
 
-export type HourMetric = 'campaigns' | 'dialed';
+interface HourCell {
+  /** 0 = Monday … 6 = Sunday. */
+  weekday: number;
+  hour: number;
+}
 
 /**
- * Monday to Sunday down, campaign start hour across: when the platform (or
- * one account) is busiest. Colour by quintile, as the calendar.
+ * Monday to Sunday down, start hour across: when the platform (or one
+ * account) is busiest. Coloured by `metric`, by quintile, as the calendar;
+ * the readout lists every one of `metrics` for the hour.
  */
-export function WeekHourHeatmap({ cells, metric }: { cells: WeekdayHour[]; metric: HourMetric }) {
+export function WeekHourHeatmap<T extends HourCell, K extends keyof T & string>({
+  cells,
+  metric,
+  metrics,
+}: {
+  cells: T[];
+  metric: K;
+  metrics: { id: K; label: string }[];
+}) {
   const { grid, total, levelOf, rowTotals } = useMemo(() => {
-    const g = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ campaigns: 0, dialed: 0 })));
-    for (const c of cells) g[c.weekday][c.hour] = { campaigns: c.campaigns, dialed: c.dialed };
-    const values = g.flat().map((v) => v[metric]);
+    const g: (T | undefined)[][] = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => undefined));
+    for (const c of cells) g[c.weekday][c.hour] = c;
+    const values = g.flat().map((c) => read(c, metric));
     return {
       grid: g,
       total: values.reduce((a, b) => a + b, 0),
       levelOf: levels(values),
-      rowTotals: g.map((row) => row.reduce((a, v) => a + v[metric], 0)),
+      rowTotals: g.map((row) => row.reduce((a, c) => a + read(c, metric), 0)),
     };
   }, [cells, metric]);
+  const label = metrics.find((m) => m.id === metric)?.label ?? metric;
 
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <HScroll>
       <div className="min-w-[460px]">
         <div className="ml-[43px] mr-[59px] grid gap-[3px]" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
           {Array.from({ length: 24 }, (_, h) => (
@@ -40,15 +54,16 @@ export function WeekHourHeatmap({ cells, metric }: { cells: WeekdayHour[]; metri
           <div key={weekday} className="mt-[3px] flex items-center gap-[3px]">
             <span className="w-10 shrink-0 text-[10px] text-[#7a899f] dark:text-zinc-500">{WEEKDAYS[weekday].slice(0, 3)}</span>
             <div className="grid flex-1 gap-[3px]" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
-              {row.map((value, hour) => (
-                <HourCell
+              {row.map((cell, hour) => (
+                <Square
                   key={hour}
                   weekday={weekday}
                   hour={hour}
-                  value={value}
-                  metric={metric}
+                  value={read(cell, metric)}
+                  label={label}
                   total={total}
-                  level={levelOf(value[metric])}
+                  level={levelOf(read(cell, metric))}
+                  rows={metrics.map((m) => ({ label: m.label, value: read(cell, m.id), share: '' }))}
                 />
               ))}
             </div>
@@ -58,40 +73,36 @@ export function WeekHourHeatmap({ cells, metric }: { cells: WeekdayHour[]; metri
           </div>
         ))}
       </div>
-    </div>
+    </HScroll>
   );
 }
 
-function HourCell({
+const read = <T,>(cell: T | undefined, key: keyof T) => (cell ? Number(cell[key]) || 0 : 0);
+
+function Square({
   weekday,
   hour,
   value,
-  metric,
+  label,
   total,
   level,
+  rows,
 }: {
   weekday: number;
   hour: number;
-  value: { campaigns: number; dialed: number };
-  metric: HourMetric;
+  value: number;
+  label: string;
   total: number;
   level: number;
+  rows: { label: string; value: number; share: string }[];
 }) {
   const hover = useHover(() => (
     <TipBody
       eyebrow={`${WEEKDAYS[weekday]} · ${hourLabel(hour)}–${hourLabel((hour + 1) % 24)}`}
-      title={metric === 'campaigns' ? 'Campaigns started' : 'Numbers dialed'}
-      value={value[metric]}
-      share={`${pct(value[metric], total)} of the week`}
-      sections={[
-        {
-          title: 'In this hour',
-          rows: [
-            { label: 'Campaigns started', value: value.campaigns, share: '' },
-            { label: 'Numbers dialed', value: value.dialed, share: '' },
-          ],
-        },
-      ]}
+      title={label}
+      value={value}
+      share={`${pct(value, total)} of the week`}
+      sections={[{ title: 'In this hour', rows }]}
     />
   ));
   return (

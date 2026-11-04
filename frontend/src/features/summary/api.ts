@@ -14,6 +14,8 @@ export interface Totals {
   campaigns: number;
   phone_numbers: number;
   dnd: number;
+  /** The table's own Dialout_Count — what the daily volume bars show. */
+  dialout: number;
   connected: number;
   not_connected: number;
   dialed: number;
@@ -44,6 +46,8 @@ export interface WeekdayHour {
 
 export interface AccountSummary {
   account_id: number;
+  /** From the account master list (accounts.parquet); null when it has none. */
+  name: string | null;
   client_ids: number[];
   first_date: string;
   last_date: string;
@@ -112,7 +116,12 @@ export interface Habits {
 
 export interface AccountHistory {
   account_id: number;
+  name: string | null;
   client_ids: number[];
+  /** The account's clients, named from the client master list (clients.parquet). */
+  clients: { id: number; name: string | null }[];
+  /** Set when the history is one client's alone (?client=). */
+  client: { id: number; name: string | null } | null;
   as_of: string;
   first_date: string;
   last_date: string;
@@ -125,6 +134,7 @@ export interface AccountHistory {
 export interface StatementRow extends Totals {
   month: string;
   account_id: number;
+  name: string | null;
   client_ids: number[];
   active_days: number;
   connect_rate: number;
@@ -147,7 +157,8 @@ async function get<T>(path: string): Promise<T> {
 
 export const summaryApi = {
   overview: () => get<Overview>('overview'),
-  account: (accountId: number) => get<AccountHistory>(`account/${accountId}`),
+  account: (accountId: number, clientId?: number | null) =>
+    get<AccountHistory>(`account/${accountId}${clientId ? `?client=${clientId}` : ''}`),
   statement: (month: string | null) =>
     get<{ month: string | null; rows: StatementRow[] }>(
       `statement${month ? `?month=${encodeURIComponent(month)}` : ''}`,

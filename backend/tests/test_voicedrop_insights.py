@@ -17,6 +17,7 @@ def row(day, account_id, campaigns=1, phones=100, dnd=10, connected=30, not_conn
         "campaigns": campaigns,
         "phone_numbers": phones,
         "dnd": dnd,
+        "dialout": connected + not_connected,
         "connected": connected,
         "not_connected": not_connected,
         "dialed": connected + not_connected,
@@ -116,7 +117,7 @@ def test_statement_month_must_be_yyyy_mm_and_a_missing_source_is_503(monkeypatch
 
 
 def test_an_unknown_account_is_404(monkeypatch):
-    monkeypatch.setattr(insights, "account", lambda account_id: None)
+    monkeypatch.setattr(insights, "account", lambda account_id, client=None: None)
     with pytest.raises(HTTPException) as exc:
-        summary.summary_account(1)
+        summary.summary_account(1, None)
     assert exc.value.status_code == 404
