@@ -209,12 +209,13 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-interface CardStateProps {
+export interface CardStateProps {
   isLoading: boolean;
   error: Error | null;
 }
 
-function Card({
+/** The chart card shell — also used by the Summary page. */
+export function Card({
   span,
   title,
   subtitle,

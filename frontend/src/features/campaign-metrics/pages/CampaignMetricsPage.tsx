@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin, Megaphone } from 'lucide-react';
 import clsx from 'clsx';
@@ -115,8 +116,13 @@ export function CampaignMetricsPage({ service }: CampaignMetricsPageProps) {
 
 function Metrics({ service, status }: { service: CampaignService; status: CdrStatus }) {
   const { date } = useCampaignDate(status);
-  const [view, setView] = useState<View>('account');
-  const [search, setSearch] = useState('');
+  // Summary's calendar links here as ?view=campaigns&search=<account>, having
+  // set the day; read once, on arrival.
+  const [params] = useSearchParams();
+  const [view, setView] = useState<View>(() =>
+    params.get('view') === 'campaigns' && service === 'voicedrop' ? 'campaigns' : 'account',
+  );
+  const [search, setSearch] = useState(() => params.get('search') ?? '');
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it

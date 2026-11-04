@@ -19,6 +19,9 @@ const CampaignMetricsPage = lazy(() =>
     default: m.CampaignMetricsPage,
   })),
 );
+const SummaryPage = lazy(() =>
+  import('./features/summary/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })),
+);
 const MulticallRegistryPage = lazy(() =>
   import('./features/multicall-registry/pages/MulticallRegistryPage').then((m) => ({
     default: m.MulticallRegistryPage,
@@ -116,6 +119,15 @@ function App() {
                     }
                   />
                 ))}
+
+                <Route
+                  path="summary"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <SummaryPage />
+                    </Suspense>
+                  }
+                />
 
                 <Route
                   path="multicall/registry"

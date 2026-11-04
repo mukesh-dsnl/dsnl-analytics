@@ -4,7 +4,8 @@ import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
 import type { CdrDashboard } from '../../api';
-import { fmt, pct } from './design';
+import { TONES, fmt, pct } from './design';
+import type { Tone } from './design';
 import { TipBody } from './HoverTooltip';
 import { useHover } from './tooltipContext';
 
@@ -213,50 +214,8 @@ export function AttemptKpis({ data, isLoading, error, showConferences }: Attempt
   );
 }
 
-interface Tone {
-  card: string;
-  tile: string;
-  bar: string;
-  /** The dark-mode gradient edge, start and end. */
-  edge: [string, string];
-}
-
-// Each card's tint, icon tile and bar — the light values from the mockup,
-// with dark equivalents.
-const TONES: Record<'blue' | 'violet' | 'sky' | 'teal' | 'orange', Tone> = {
-  blue: {
-    card: 'border-[#cfe1f6] from-white to-[#f1f7fe] dark:border-sky-500/25 dark:from-[#0d1729] dark:to-sky-500/[0.06]',
-    tile: 'bg-[#e6f1fd] text-[#3a86d8] dark:bg-sky-500/15 dark:text-sky-300',
-    bar: 'bg-[#3a86d8]',
-    edge: ['rgba(59,130,246,0.45)', 'rgba(34,211,238,0.28)'],
-  },
-  violet: {
-    card: 'border-[#e2d7f6] from-white to-[#faf4fd] dark:border-violet-500/25 dark:from-[#0d1729] dark:to-violet-500/[0.06]',
-    tile: 'bg-[#f1eafd] text-[#8b6fd8] dark:bg-violet-500/15 dark:text-violet-300',
-    bar: 'bg-gradient-to-r from-[#8b6fd8] to-[#e35d92]',
-    edge: ['rgba(139,92,246,0.45)', 'rgba(236,72,153,0.32)'],
-  },
-  sky: {
-    card: 'border-[#c8e4f4] from-white to-[#eff8fd] dark:border-cyan-500/25 dark:from-[#0d1729] dark:to-cyan-500/[0.06]',
-    tile: 'bg-[#e0f2fb] text-[#1f93c4] dark:bg-cyan-500/15 dark:text-cyan-300',
-    bar: 'bg-[#29a3d6]',
-    edge: ['rgba(14,165,233,0.45)', 'rgba(99,102,241,0.28)'],
-  },
-  teal: {
-    card: 'border-[#c9ece2] from-white to-[#f0fbf7] dark:border-emerald-500/25 dark:from-[#0d1729] dark:to-emerald-500/[0.06]',
-    tile: 'bg-[#e2f6ef] text-[#25a883] dark:bg-emerald-500/15 dark:text-emerald-300',
-    bar: 'bg-[#2fb58f]',
-    edge: ['rgba(16,185,129,0.45)', 'rgba(34,211,238,0.28)'],
-  },
-  orange: {
-    card: 'border-[#f6dcc4] from-white to-[#fff6ee] dark:border-orange-500/25 dark:from-[#0d1729] dark:to-orange-500/[0.06]',
-    tile: 'bg-[#fdeedd] text-[#e07d2c] dark:bg-orange-500/15 dark:text-orange-300',
-    bar: 'bg-[#ee8a3c]',
-    edge: ['rgba(249,115,22,0.45)', 'rgba(234,179,8,0.28)'],
-  },
-};
-
-function Kpi({
+/** One headline figure card — also used by the Summary page. */
+export function Kpi({
   tone,
   icon: Icon,
   label,

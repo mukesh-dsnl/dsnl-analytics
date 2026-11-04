@@ -2,6 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
   Activity,
+  CalendarRange,
   ContactRound,
   LayoutGrid,
   LogOut,
@@ -51,7 +52,13 @@ const serviceItems = (service: 'voicedrop' | 'conference' | 'multicall'): NavIte
  * service it belongs to is the heading above it, so nothing needs expanding.
  */
 const NAV: NavSection[] = [
-  { title: 'Overview', items: [{ label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid }] },
+  {
+    title: 'Overview',
+    items: [
+      { label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
+      { label: 'Summary', path: '/analytics/summary', icon: CalendarRange },
+    ],
+  },
   { title: 'Voicedrop', items: serviceItems('voicedrop') },
   { title: 'Conference', items: serviceItems('conference') },
   { title: 'MultiCall', items: serviceItems('multicall') },
@@ -168,7 +175,9 @@ export function Layout() {
   // The attempt-metrics and campaign-metrics pages (every service) use the
   // redesign, which paints the whole panel — header included — with its blue
   // canvas (see .vd-canvas).
-  const isRedesigned = /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
+  const isSummary = location.pathname.startsWith('/analytics/summary');
+  const isRedesigned =
+    isSummary || /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
@@ -460,7 +469,8 @@ export function Layout() {
             {/* The AI chat carries no date control: the range is part of the
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
-            {isAiChat || isMulticallRegistry ? null : location.pathname.endsWith('/campaign-metrics') ? (
+            {/* Summary covers the whole table; its own header says how far the data runs. */}
+            {isAiChat || isMulticallRegistry || isSummary ? null : location.pathname.endsWith('/campaign-metrics') ? (
               <HeaderCampaignDate />
             ) : (
               <HeaderDateRange />
