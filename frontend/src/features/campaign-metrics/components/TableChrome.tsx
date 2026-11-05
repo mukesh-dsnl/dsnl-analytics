@@ -6,9 +6,9 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronsUpDown,
-  Loader2,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { ProcessingChip, ProgressSweep } from '../../../components/Loading';
 import type { SortState } from '../useSortableRows';
 import { PAGE_SIZE } from '../usePagination';
 
@@ -33,8 +33,9 @@ export function TableCard({ children }: { children: ReactNode }) {
 export function TableStatus({ isLoading, error, isEmpty }: { isLoading: boolean; error: Error | null; isEmpty: boolean }) {
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      <div className="relative h-56">
+        <ProgressSweep />
+        <ProcessingChip />
       </div>
     );
   }

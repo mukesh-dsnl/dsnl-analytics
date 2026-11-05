@@ -1,32 +1,55 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
+import { LoadingBlock } from '../../../components/Loading';
 import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCharts';
 import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { ActivityCalendar } from '../../summary/components/ActivityCalendar';
+import { DailyStatement } from '../../summary/components/DailyStatement';
+import type { DailyColumn } from '../../summary/components/DailyStatement';
 import { DailyVolume } from '../../summary/components/DailyVolume';
 import { BusiestDays, Movers, SleepingAccounts } from '../../summary/components/AccountLists';
-import { DownloadButton, SectionTitle } from '../../summary/components/PageParts';
+import { DownloadButton } from '../../summary/components/PageParts';
 import { StatementTable } from '../../summary/components/StatementTable';
 import { WeekHourHeatmap } from '../../summary/components/WeekHourHeatmap';
 import { Toggle } from '../../summary/components/ui';
 import { dayLabel, monthLabel, spanLabel } from '../../summary/format';
 import { downloadStatement } from '../../summary/statement';
 import { conferenceSummaryApi } from '../api';
-import type { ConferenceOverview } from '../api';
+import type { ConferenceDayTotals, ConferenceOverview } from '../api';
 import { CONFERENCE_COLUMNS } from '../statement';
 import { CALENDAR_METRICS, HOUR_LABELS, HOUR_METRICS, conferenceDayTip } from './shared';
 import type { CalendarMetric, HourMetric } from './shared';
 
 const NONE = { isLoading: false, error: null };
 
-/** Every account together: this month, the calendar, who to watch, the load, billing. */
-export function AllAccountsView({
+export type ConferenceTab = 'daily' | 'hours' | 'monthly' | 'statement' | 'watch';
+
+type DayLine = ConferenceDayTotals & { connect_rate: number };
+const sum = (days: DayLine[], key: keyof DayLine) => days.reduce((t, d) => t + (Number(d[key]) || 0), 0);
+const rate = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
+
+const DAILY_COLUMNS: DailyColumn<DayLine>[] = [
+  { key: 'conferences', label: 'Conferences' },
+  { key: 'accounts', label: 'Accounts', total: () => NaN },
+  { key: 'ringed', label: 'Ringed' },
+  { key: 'connected', label: 'Connected' },
+  { key: 'connect_rate', label: 'Connect %', percent: true, total: (d) => rate(sum(d, 'connected'), sum(d, 'ringed')) },
+  { key: 'empty_rooms', label: 'Empty rooms' },
+  { key: 'attended_minutes', label: 'Attended minutes' },
+  { key: 'call_minutes', label: 'Call minutes' },
+  { key: 'peak_port', label: 'Peak port', total: (d) => Math.max(0, ...d.map((x) => x.peak_port)) },
+];
+
+/** Every account together, one section at a time — the Summary page's tabs. */
+export function ConferenceSections({
   data,
+  tab,
   onDay,
   onAccount,
 }: {
   data: ConferenceOverview;
+  tab: ConferenceTab;
   onDay: (iso: string) => void;
   onAccount: (id: number) => void;
 }) {
@@ -38,9 +61,9 @@ export function AllAccountsView({
   const sameDays = spanLabel(movers.previous_from, movers.previous_to);
   const thisSpan = spanLabel(movers.current_from, movers.current_to);
 
-  return (
-    <>
-      <div className="mb-6 grid grid-cols-12 gap-4">
+  if (tab === 'daily') {
+    return (
+      <div className="grid grid-cols-12 gap-4">
         <Card {...NONE} span={12} title="Daily volume" subtitle="Parties ringed and connected, all accounts — every day, the latest in view">
           <DailyVolume
             days={data.daily.map((d) => ({ date: d.date, total: d.ringed, connected: d.connected }))}
@@ -49,10 +72,6 @@ export function AllAccountsView({
             onDay={onDay}
           />
         </Card>
-      </div>
-
-      <SectionTitle>Activity</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
         <Card
           {...NONE}
           span={12}
@@ -83,49 +102,12 @@ export function AllAccountsView({
           </div>
         </Card>
       </div>
+    );
+  }
 
-      <SectionTitle>Accounts to watch</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
-        <Card
-          {...NONE}
-          span={6}
-          title="Sleeping accounts"
-          subtitle={`Held conferences before, none in the last ${idleDays} days — biggest users first`}
-          extra={
-            <Toggle
-              label="Quiet for"
-              value={idleDays}
-              onChange={setIdleDays}
-              options={[
-                { id: '15', label: '15 days' },
-                { id: '30', label: '30 days' },
-              ]}
-            />
-          }
-        >
-          <SleepingAccounts
-            accounts={data.accounts.map((a) => ({ ...a, recent: a.attended_last_90_active }))}
-            idleDays={Number(idleDays)}
-            unit="attended minutes"
-            onAccount={onAccount}
-          />
-        </Card>
-        <Card
-          {...NONE}
-          span={6}
-          title="Rising and falling"
-          subtitle={`Attended minutes, ${thisSpan} against ${sameDays}`}
-        >
-          <Movers
-            movers={movers.accounts.map((m) => ({ ...m, name: names.get(m.account_id) }))}
-            unit="attended minutes"
-            onAccount={onAccount}
-          />
-        </Card>
-      </div>
-
-      <SectionTitle>Load</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
+  if (tab === 'hours') {
+    return (
+      <div className="grid grid-cols-12 gap-4">
         <Card
           {...NONE}
           span={12}
@@ -136,10 +118,53 @@ export function AllAccountsView({
           <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
         </Card>
       </div>
+    );
+  }
 
-      <SectionTitle>Billing</SectionTitle>
-      <MonthlyStatement months={data.months} asOf={data.as_of!} />
-    </>
+  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} />;
+
+  if (tab === 'statement') {
+    return (
+      <DailyStatement
+        days={data.daily.map((d) => ({ ...d, connect_rate: rate(d.connected, d.ringed) }))}
+        months={data.months}
+        asOf={data.as_of!}
+        columns={DAILY_COLUMNS}
+        service="conference"
+      />
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-4">
+      <Card
+        {...NONE}
+        span={6}
+        title="Sleeping accounts"
+        subtitle={`Held conferences before, none in the last ${idleDays} days — biggest users first`}
+        extra={
+          <Toggle
+            label="Quiet for"
+            value={idleDays}
+            onChange={setIdleDays}
+            options={[
+              { id: '15', label: '15 days' },
+              { id: '30', label: '30 days' },
+            ]}
+          />
+        }
+      >
+        <SleepingAccounts
+          accounts={data.accounts.map((a) => ({ ...a, recent: a.attended_last_90_active }))}
+          idleDays={Number(idleDays)}
+          unit="attended minutes"
+          onAccount={onAccount}
+        />
+      </Card>
+      <Card {...NONE} span={6} title="Rising and falling" subtitle={`Attended minutes, ${thisSpan} against ${sameDays}`}>
+        <Movers movers={movers.accounts.map((m) => ({ ...m, name: names.get(m.account_id) }))} unit="attended minutes" onAccount={onAccount} />
+      </Card>
+    </div>
   );
 }
 
@@ -152,13 +177,15 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
     queryKey: ['conference-summary', 'statement', month],
     queryFn: () => conferenceSummaryApi.statement(month === 'all' ? null : month),
     staleTime: 5 * 60_000,
+    placeholderData: (previous) => previous,
   });
   const lines = query.data?.rows ?? [];
+  if (query.isPending) return <LoadingBlock height={360} />;
   return (
-    <div className="mb-6 grid grid-cols-12 gap-4">
+    <div className="grid grid-cols-12 gap-4">
       <Card
         span={12}
-        isLoading={query.isPending}
+        isLoading={false}
         error={query.error}
         isEmpty={!lines.length}
         title="Monthly statement"
@@ -183,7 +210,9 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
           </div>
         }
       >
-        <StatementTable lines={lines} columns={CONFERENCE_COLUMNS} showMonth={month === 'all'} showAccount />
+        <div className={query.isFetching ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+          <StatementTable lines={lines} columns={CONFERENCE_COLUMNS} showMonth={month === 'all'} showAccount />
+        </div>
       </Card>
     </div>
   );

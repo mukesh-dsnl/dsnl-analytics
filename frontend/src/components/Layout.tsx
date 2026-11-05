@@ -189,7 +189,7 @@ export function Layout() {
   // redesign, which paints the whole panel — header included — with its blue
   // canvas (see .vd-canvas).
   // Both Summary pages carry their own controls in the header slot.
-  const isSummary = /^\/analytics\/(voicedrop|conference)\/summary/.test(location.pathname);
+  const isSummary = /^\/analytics\/(voicedrop|conference)\/(summary|accounts)/.test(location.pathname);
   const isRedesigned =
     isHome ||
     location.pathname.startsWith('/analytics/ports') ||

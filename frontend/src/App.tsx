@@ -23,6 +23,12 @@ const HomePage = lazy(() => import('./features/home/pages/HomePage').then((m) =>
 const SummaryPage = lazy(() =>
   import('./features/summary/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })),
 );
+const AccountsPage = lazy(() =>
+  import('./features/summary/pages/AccountsPage').then((m) => ({ default: m.AccountsPage })),
+);
+const ConferenceAccountsPage = lazy(() =>
+  import('./features/conference-summary/pages/ConferenceAccountsPage').then((m) => ({ default: m.ConferenceAccountsPage })),
+);
 const ConferenceSummaryPage = lazy(() =>
   import('./features/conference-summary/pages/ConferenceSummaryPage').then((m) => ({
     default: m.ConferenceSummaryPage,
@@ -149,6 +155,22 @@ function App() {
                   }
                 />
 
+                <Route
+                  path="voicedrop/accounts"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <AccountsPage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="conference/accounts"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <ConferenceAccountsPage />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="conference/summary"
                   element={

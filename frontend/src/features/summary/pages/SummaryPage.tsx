@@ -1,145 +1,91 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import clsx from 'clsx';
-import { Loader2 } from 'lucide-react';
+import { CalendarDays, Clock, FileSpreadsheet, ReceiptText, UserRoundSearch } from 'lucide-react';
 
 import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { LoadingBlock } from '../../../components/Loading';
 import { useCampaignDateStore } from '../../../store';
-import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
+import { HoverTooltipProvider } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCharts';
-import { compact, fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
+import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { summaryApi } from '../api';
-import type { AccountHistory, DayTotals, MonthTotals, Overview } from '../api';
+import type { Overview } from '../api';
 import { dayLabel, monthLabel, spanLabel } from '../format';
 import { VOICEDROP_COLUMNS, downloadStatement } from '../statement';
 import type { VoicedropStatementLine } from '../statement';
 import { ActivityCalendar } from '../components/ActivityCalendar';
 import { WeekHourHeatmap } from '../components/WeekHourHeatmap';
-import { MonthlyTrend, TrendNote } from '../components/MonthlyTrend';
 import { BusiestDays, Movers, SleepingAccounts } from '../components/AccountLists';
 import { DailyVolume } from '../components/DailyVolume';
-import { AccountDirectory } from '../components/AccountDirectory';
+import { DailyStatement } from '../components/DailyStatement';
+import { SectionTabs } from '../components/SectionTabs';
 import { StatementTable } from '../components/StatementTable';
 import { Toggle } from '../components/ui';
-import { AccountSelect, Centered, DownloadButton, Problem, SectionTitle } from '../components/PageParts';
+import { Centered, DownloadButton, Problem } from '../components/PageParts';
+import {
+  CALENDAR_METRICS,
+  HOUR_LABELS,
+  HOUR_METRICS,
+  VOICEDROP_DAILY_COLUMNS,
+  voicedropDayTip,
+  withRate,
+} from '../voicedrop';
+import type { CalendarMetric, HourMetric } from '../voicedrop';
 
-type CalendarMetric = 'dialed' | 'minutes';
-type HourMetric = 'campaigns' | 'dialed';
-type TrendView = 'usage' | 'quality';
+type SummaryTab = 'daily' | 'hours' | 'monthly' | 'statement' | 'watch';
 
-const CALENDAR_LABEL: Record<CalendarMetric, string> = { dialed: 'Numbers dialed', minutes: 'Connected minutes' };
-const HOUR_LABELS: { id: HourMetric; label: string }[] = [
-  { id: 'campaigns', label: 'Campaigns started' },
-  { id: 'dialed', label: 'Numbers dialed' },
+const SUMMARY_TABS: { id: SummaryTab; label: string; icon: typeof Clock }[] = [
+  { id: 'daily', label: 'Daily Activity', icon: CalendarDays },
+  { id: 'hours', label: 'Busiest Hours', icon: Clock },
+  { id: 'monthly', label: 'Monthly Statement', icon: ReceiptText },
+  { id: 'statement', label: 'Daily Statement', icon: FileSpreadsheet },
+  { id: 'watch', label: 'Accounts to Watch', icon: UserRoundSearch },
 ];
 
-/** A calendar day's readout: the chosen figure, then the day's campaigns. */
-function dayTip(metric: CalendarMetric) {
-  return function VoicedropDayTip(day: DayTotals, eyebrow: string) {
-    return (
-      <TipBody
-        eyebrow={eyebrow}
-        title={CALENDAR_LABEL[metric]}
-        value={day[metric]}
-        share={`${fmt(day.campaigns)} campaign${day.campaigns === 1 ? '' : 's'}${day.accounts ? ` · ${day.accounts} account${day.accounts === 1 ? '' : 's'}` : ''}`}
-        sections={[
-          {
-            title: 'That day',
-            base: day.dialed,
-            rows: [
-              { label: 'Numbers dialed', value: day.dialed, share: '' },
-              { label: 'Connected', value: day.connected, share: pct(day.connected, day.dialed) },
-              { label: 'Connected minutes', value: day.minutes, share: '' },
-              { label: 'DND', value: day.dnd, share: pct(day.dnd, day.phone_numbers) },
-            ],
-          },
-        ]}
-      />
-    );
-  };
-}
+const summaryTab = (value: string | null): SummaryTab =>
+  SUMMARY_TABS.some((t) => t.id === value) ? (value as SummaryTab) : 'daily';
 
-const monthTipRows = (m: MonthTotals): [string, string][] => [
-  ['Campaigns', fmt(m.campaigns)],
-  ['Active days', fmt(m.active_days)],
-  ['Numbers dialed', fmt(m.dialed)],
-  ['Connected', fmt(m.connected)],
-  ['Connect rate', `${m.connect_rate}%`],
-  ['Connected minutes', fmt(m.minutes)],
-  ['DND', `${fmt(m.dnd)} (${m.dnd_rate}%)`],
-];
-
-const CALENDAR_METRICS: { id: CalendarMetric; label: string }[] = [
-  { id: 'dialed', label: 'Dialed' },
-  { id: 'minutes', label: 'Minutes' },
-];
-const HOUR_METRICS: { id: HourMetric; label: string }[] = [
-  { id: 'campaigns', label: 'Campaigns' },
-  { id: 'dialed', label: 'Dialed' },
-];
+const NONE = { isLoading: false, error: null };
 
 /**
- * Overview › Summary: Voicedrop usage over time, from voicedrop_summary.
- *
- * Two scopes, one URL: /analytics/summary is every account together;
- * ?account=109889 is one account's history. Clicking a day anywhere opens
- * that day's Campaigns tab in Voicedrop › Campaign Metrics.
+ * Voicedrop › Summary: every account together, from voicedrop_summary, in
+ * five sections under one strip (?tab=). One account's history is the
+ * Accounts page; links to either open there. Clicking a day opens its
+ * campaigns in Voicedrop › Campaign Metrics.
  */
 export function SummaryPage() {
   const [params, setParams] = useSearchParams();
-  const accountId = Number(params.get('account')) || null;
-  // One client of the account (?client=): the same history, that client's campaigns alone.
-  const clientId = (accountId && Number(params.get('client'))) || null;
-  const scope: 'all' | 'account' = accountId || params.get('scope') === 'account' ? 'account' : 'all';
-  const headerSlot = useHeaderSlot();
-
-  const overview = useQuery({
-    queryKey: ['summary', 'overview'],
-    queryFn: summaryApi.overview,
-    staleTime: 5 * 60_000,
-  });
-
-  const setCampaignDate = useCampaignDateStore((s) => s.setDate);
+  const location = useLocation();
   const navigate = useNavigate();
-  // A clicked day opens its campaigns — the account's alone (and within it,
-  // the client's) when one is chosen.
-  const openDay = (iso: string, account?: number, client?: number | null) => {
+  const headerSlot = useHeaderSlot();
+  const tab = summaryTab(params.get('tab'));
+  const setCampaignDate = useCampaignDateStore((s) => s.setDate);
+
+  const overview = useQuery({ queryKey: ['summary', 'overview'], queryFn: summaryApi.overview, staleTime: 5 * 60_000 });
+
+  // One account's history moved to the Accounts page; old links follow it.
+  if (params.get('account') || params.get('scope') === 'account') {
+    const next = new URLSearchParams(location.search);
+    next.delete('scope');
+    const rest = next.toString();
+    return <Navigate to={`/analytics/voicedrop/accounts${rest ? `?${rest}` : ''}`} replace />;
+  }
+
+  const openDay = (iso: string) => {
     setCampaignDate(iso);
-    navigate(
-      `/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}${account ? `&account=${account}` : ''}${client ? `&search=${client}` : ''}`,
-    );
+    navigate(`/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}`);
   };
-  const openAccount = (id: number) => setParams({ account: String(id) });
+  const openAccount = (id: number) => navigate(`/analytics/voicedrop/accounts?account=${id}`);
 
   const header =
     headerSlot &&
     createPortal(
-      <div className="flex min-w-0 items-center gap-4">
-        <Toggle
-          label="Scope"
-          value={scope}
-          onChange={(next) => setParams(next === 'all' ? {} : { scope: 'account' })}
-          options={[
-            { id: 'all', label: 'All accounts' },
-            { id: 'account', label: 'Account' },
-          ]}
-        />
-        {scope === 'account' && overview.data && (
-          <AccountSelect
-            value={accountId}
-            onChange={(id) => (id ? openAccount(id) : setParams({ scope: 'account' }))}
-            options={overview.data.accounts.map((a) => ({
-              id: a.account_id,
-              label: `${a.account_id}${a.name ? ` — ${a.name}` : ''} · ${compact(a.dialed)} dialed${a.days_idle >= 15 ? ` · quiet ${a.days_idle}d` : ''}`,
-            }))}
-          />
-        )}
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+        <h1 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">Voicedrop Summary</h1>
         {overview.data?.as_of && (
-          <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline dark:text-zinc-400">
-            Data to {dayLabel(overview.data.as_of)}
-          </span>
+          <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">Data to {dayLabel(overview.data.as_of)}</span>
         )}
       </div>,
       headerSlot,
@@ -149,59 +95,29 @@ export function SummaryPage() {
     <HoverTooltipProvider>
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
+        <SectionTabs tabs={SUMMARY_TABS} active={tab} onTab={(next) => setParams(next === 'daily' ? {} : { tab: next })} />
         {overview.isPending ? (
-          <Centered>
-            <Loader2 className="h-8 w-8 animate-spin text-[#50a6d5]" />
-          </Centered>
+          <LoadingBlock />
         ) : overview.error ? (
           <Problem title="Couldn't read voicedrop_summary." message={overview.error.message} onRetry={() => overview.refetch()} />
         ) : !overview.data.as_of ? (
           <Centered>voicedrop_summary has no rows yet.</Centered>
-        ) : scope === 'all' ? (
-          <AllAccounts data={overview.data} onDay={(iso) => openDay(iso)} onAccount={openAccount} />
-        ) : accountId ? (
-          <AccountView
-            key={`${accountId}-${clientId}`}
-            accountId={accountId}
-            clientId={clientId}
-            onDay={(iso) => openDay(iso, accountId, clientId)}
-          />
         ) : (
-          <AccountDirectory
-            rows={overview.data.accounts.map((a) => ({
-              account_id: a.account_id,
-              name: a.name,
-              total: a.dialed,
-              detail: `${fmt(a.campaigns)} campaigns`,
-              last_date: a.last_date,
-              days_idle: a.days_idle,
-            }))}
-            totalLabel="Total dialed"
-            query={params.get('q') ?? ''}
-            onQuery={(q) => setParams(q ? { scope: 'account', q } : { scope: 'account' })}
-            onAccount={openAccount}
-          />
+          <Sections data={overview.data} tab={tab} onDay={openDay} onAccount={openAccount} />
         )}
       </div>
     </HoverTooltipProvider>
   );
 }
 
-const NONE = { isLoading: false, error: null };
-
-const CLIENT_CHIP = 'rounded-full border px-2.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#42b9e9]';
-const CLIENT_OFF =
-  'border-[#dfe7f1] bg-white text-[#5b6a82] hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:text-sky-300';
-const CLIENT_ON = 'border-[#2563eb] bg-[#2563eb] text-white dark:border-sky-400 dark:bg-sky-500/80';
-
-// ── All accounts ────────────────────────────────────────────────────────────
-
-function AllAccounts({
+function Sections({
   data,
+  tab,
   onDay,
   onAccount,
 }: {
   data: Overview;
+  tab: SummaryTab;
   onDay: (iso: string) => void;
   onAccount: (id: number) => void;
 }) {
@@ -210,11 +126,11 @@ function AllAccounts({
   const [idleDays, setIdleDays] = useState<'15' | '30'>('15');
   const { movers } = data;
   const names = new Map(data.accounts.map((a) => [a.account_id, a.name]));
-  const sameDays = `${spanLabel(movers.previous_from, movers.previous_to)}`;
+  const sameDays = spanLabel(movers.previous_from, movers.previous_to);
 
-  return (
-    <>
-      <div className="mb-6 grid grid-cols-12 gap-4">
+  if (tab === 'daily') {
+    return (
+      <div className="grid grid-cols-12 gap-4">
         <Card {...NONE} span={12} title="Daily volume" subtitle="Dial out and connected, all accounts — every day, the latest in view">
           <DailyVolume
             days={data.daily.map((d) => ({ date: d.date, total: d.dialout, connected: d.connected }))}
@@ -223,10 +139,6 @@ function AllAccounts({
             onDay={onDay}
           />
         </Card>
-      </div>
-
-      <SectionTitle>Activity</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
         <Card
           {...NONE}
           span={12}
@@ -241,7 +153,7 @@ function AllAccounts({
                 asOf={data.as_of!}
                 firstDate={data.first_date!}
                 valueOf={(d) => d[calendarMetric]}
-                renderTip={dayTip(calendarMetric)}
+                renderTip={voicedropDayTip(calendarMetric)}
                 emptyLabel="No campaigns."
                 onDay={onDay}
               />
@@ -257,54 +169,12 @@ function AllAccounts({
           </div>
         </Card>
       </div>
+    );
+  }
 
-      <SectionTitle>Accounts to watch</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
-        <Card
-          {...NONE}
-          span={6}
-          title="Sleeping accounts"
-          subtitle={`Ran campaigns before, none in the last ${idleDays} days — biggest senders first`}
-          extra={
-            <Toggle
-              label="Quiet for"
-              value={idleDays}
-              onChange={setIdleDays}
-              options={[
-                { id: '15', label: '15 days' },
-                { id: '30', label: '30 days' },
-              ]}
-            />
-          }
-        >
-          <SleepingAccounts
-            accounts={data.accounts.map((a) => ({ ...a, recent: a.dialed_last_90_active }))}
-            idleDays={Number(idleDays)}
-            unit="dialed"
-            onAccount={onAccount}
-          />
-        </Card>
-        <Card
-          {...NONE}
-          span={6}
-          title="Rising and falling"
-          subtitle={`Numbers dialed, ${spanLabel(movers.current_from, movers.current_to)} against ${sameDays}`}
-        >
-          <Movers
-            movers={movers.accounts.map((m) => ({
-              ...m,
-              name: names.get(m.account_id),
-              current: m.current_dialed,
-              previous: m.previous_dialed,
-            }))}
-            unit="dialed"
-            onAccount={onAccount}
-          />
-        </Card>
-      </div>
-
-      <SectionTitle>Load</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
+  if (tab === 'hours') {
+    return (
+      <div className="grid grid-cols-12 gap-4">
         <Card
           {...NONE}
           span={12}
@@ -315,10 +185,62 @@ function AllAccounts({
           <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
         </Card>
       </div>
+    );
+  }
 
-      <SectionTitle>Billing</SectionTitle>
-      <MonthlyStatement months={data.months} asOf={data.as_of!} />
-    </>
+  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} />;
+
+  if (tab === 'statement') {
+    return (
+      <DailyStatement
+        days={data.daily.map(withRate)}
+        months={data.months}
+        asOf={data.as_of!}
+        columns={VOICEDROP_DAILY_COLUMNS}
+        service="voicedrop"
+      />
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-4">
+      <Card
+        {...NONE}
+        span={6}
+        title="Sleeping accounts"
+        subtitle={`Ran campaigns before, none in the last ${idleDays} days — biggest senders first`}
+        extra={
+          <Toggle
+            label="Quiet for"
+            value={idleDays}
+            onChange={setIdleDays}
+            options={[
+              { id: '15', label: '15 days' },
+              { id: '30', label: '30 days' },
+            ]}
+          />
+        }
+      >
+        <SleepingAccounts
+          accounts={data.accounts.map((a) => ({ ...a, recent: a.dialed_last_90_active }))}
+          idleDays={Number(idleDays)}
+          unit="dialed"
+          onAccount={onAccount}
+        />
+      </Card>
+      <Card
+        {...NONE}
+        span={6}
+        title="Rising and falling"
+        subtitle={`Numbers dialed, ${spanLabel(movers.current_from, movers.current_to)} against ${sameDays}`}
+      >
+        <Movers
+          movers={movers.accounts.map((m) => ({ ...m, name: names.get(m.account_id), current: m.current_dialed, previous: m.previous_dialed }))}
+          unit="dialed"
+          onAccount={onAccount}
+        />
+      </Card>
+    </div>
   );
 }
 
@@ -331,13 +253,15 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
     queryKey: ['summary', 'statement', month],
     queryFn: () => summaryApi.statement(month === 'all' ? null : month),
     staleTime: 5 * 60_000,
+    placeholderData: (previous) => previous,
   });
   const lines: VoicedropStatementLine[] = query.data?.rows ?? [];
+  if (query.isPending) return <LoadingBlock height={360} />;
   return (
-    <div className="mb-6 grid grid-cols-12 gap-4">
+    <div className="relative grid grid-cols-12 gap-4">
       <Card
         span={12}
-        isLoading={query.isPending}
+        isLoading={false}
         error={query.error}
         isEmpty={!lines.length}
         title="Monthly statement"
@@ -362,187 +286,10 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
           </div>
         }
       >
-        <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth={month === 'all'} showAccount />
+        <div className={query.isFetching ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+          <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth={month === 'all'} showAccount />
+        </div>
       </Card>
     </div>
-  );
-}
-
-// ── One account ─────────────────────────────────────────────────────────────
-
-function AccountView({
-  accountId,
-  clientId,
-  onDay,
-}: {
-  accountId: number;
-  clientId: number | null;
-  onDay: (iso: string) => void;
-}) {
-  const query = useQuery({
-    queryKey: ['summary', 'account', accountId, clientId],
-    queryFn: () => summaryApi.account(accountId, clientId),
-    staleTime: 5 * 60_000,
-  });
-  if (query.isPending) {
-    return (
-      <Centered>
-        <Loader2 className="h-8 w-8 animate-spin text-[#50a6d5]" />
-      </Centered>
-    );
-  }
-  if (query.error) return <Problem title="Couldn't read voicedrop_summary." message={query.error.message} onRetry={() => query.refetch()} />;
-  return <AccountHistoryView data={query.data} onDay={onDay} />;
-}
-
-function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso: string) => void }) {
-  const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('dialed');
-  const [trend, setTrend] = useState<TrendView>('usage');
-  const [hourMetric, setHourMetric] = useState<HourMetric>('campaigns');
-  const lines = useMemo<VoicedropStatementLine[]>(
-    () =>
-      [...data.monthly].reverse().map((m) => ({ ...m, account_id: data.account_id, client_ids: data.client_ids })),
-    [data],
-  );
-  const activeDays = data.daily.length;
-
-  return (
-    <>
-      <div className="mb-5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="text-xl font-semibold text-[#16213a] dark:text-white">
-          <span className="tabular-nums">{data.account_id}</span>
-          {data.name && <span className="ml-2 font-medium text-[#35415a] dark:text-zinc-200">{data.name}</span>}
-        </h1>
-        <span className="text-sm text-[#6a7d96] dark:text-zinc-400">
-          {data.client && (
-            <>
-              client <strong className="font-semibold text-[#35415a] dark:text-zinc-100">{data.client.id}</strong>
-              {data.client.name && <> {data.client.name}</>} ·{' '}
-            </>
-          )}
-          first campaign {dayLabel(data.first_date)} · {fmt(activeDays)} active days
-        </span>
-        {/* Each client opens the same page with that client's campaigns alone. */}
-        {data.clients.length > 0 && (
-          <nav className="flex w-full flex-wrap gap-1.5" aria-label="Clients">
-            {data.clients.length > 1 && (
-              <Link
-                to={`?account=${data.account_id}`}
-                aria-current={!data.client ? 'page' : undefined}
-                className={clsx(CLIENT_CHIP, !data.client ? CLIENT_ON : CLIENT_OFF)}
-              >
-                All clients
-              </Link>
-            )}
-            {data.clients.map((c) => (
-              <Link
-                key={c.id}
-                to={`?account=${data.account_id}&client=${c.id}`}
-                aria-current={data.client?.id === c.id ? 'page' : undefined}
-                title={`Show client ${c.id} alone`}
-                className={clsx(CLIENT_CHIP, data.client?.id === c.id ? CLIENT_ON : CLIENT_OFF)}
-              >
-                <span className={clsx('tabular-nums', data.client?.id !== c.id && 'text-[#8a99ad]')}>{c.id}</span>
-                {c.name && <span className="ml-1">{c.name}</span>}
-              </Link>
-            ))}
-          </nav>
-        )}
-      </div>
-
-      <div className="mb-6 grid grid-cols-12 gap-4">
-        <Card {...NONE} span={12} title="Daily volume" subtitle="Dial out and connected — every day, the latest in view">
-          <DailyVolume
-            days={data.daily.map((d) => ({ date: d.date, total: d.dialout, connected: d.connected }))}
-            asOf={data.as_of}
-            totalLabel="dialed"
-            onDay={onDay}
-          />
-        </Card>
-      </div>
-
-      <SectionTitle>History</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
-        <Card
-          {...NONE}
-          span={12}
-          title="Activity calendar"
-          subtitle="Every day of the last 12 months — click a day to open this account's campaigns that day"
-          extra={<Toggle label="Colour by" options={CALENDAR_METRICS} value={calendarMetric} onChange={setCalendarMetric} />}
-        >
-          <ActivityCalendar
-            days={data.daily}
-            asOf={data.as_of}
-            firstDate={data.first_date}
-            valueOf={(d) => d[calendarMetric]}
-            renderTip={dayTip(calendarMetric)}
-            emptyLabel="No campaigns."
-            onDay={onDay}
-          />
-        </Card>
-        <Card
-          {...NONE}
-          span={7}
-          title="Monthly trend"
-          subtitle={trend === 'usage' ? 'Connected minutes per month, with the connect rate' : 'Connect rate and DND % per month — stale lists show here first'}
-          isEmpty={!data.monthly.length}
-          extra={
-            <Toggle
-              label="Show"
-              value={trend}
-              onChange={setTrend}
-              options={[
-                { id: 'usage', label: 'Usage' },
-                { id: 'quality', label: 'List quality' },
-              ]}
-            />
-          }
-        >
-          <MonthlyTrend
-            months={data.monthly}
-            bar={trend === 'usage' ? { key: 'minutes', label: 'Connected minutes' } : undefined}
-            lines={
-              trend === 'usage'
-                ? [{ key: 'connect_rate', label: 'Connect rate' }]
-                : [
-                    { key: 'connect_rate', label: 'Connect rate' },
-                    { key: 'dnd_rate', label: 'DND %' },
-                  ]
-            }
-            tipRows={monthTipRows}
-            note={
-              <TrendNote
-                months={data.monthly}
-                rate={{ key: 'connect_rate', label: 'connect rate' }}
-                risk={{ key: 'dnd_rate', label: 'DND' }}
-                advice="the number lists may be getting stale. Worth raising with the client."
-              />
-            }
-          />
-        </Card>
-        <Card
-          {...NONE}
-          span={5}
-          title="When it sends"
-          subtitle="Campaigns by weekday and start hour"
-          extra={<Toggle label="Colour by" options={HOUR_METRICS} value={hourMetric} onChange={setHourMetric} />}
-        >
-          <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
-        </Card>
-      </div>
-
-      <SectionTitle>Billing</SectionTitle>
-      <div className="mb-6 grid grid-cols-12 gap-4">
-        <Card
-          {...NONE}
-          span={12}
-          title="Monthly statement"
-          subtitle={`Account ${data.account_id}, month by month`}
-          extra={<DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${data.account_id}.csv`, lines, VOICEDROP_COLUMNS)} />}
-        >
-          <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth showAccount={false} />
-        </Card>
-      </div>
-    </>
   );
 }

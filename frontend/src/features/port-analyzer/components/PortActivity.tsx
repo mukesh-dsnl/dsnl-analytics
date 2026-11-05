@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import clsx from 'clsx';
-import { BarChart3, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
+import { BarChart3, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 
+import { ProcessingChip, ProgressSweep } from '../../../components/Loading';
 import { compact } from '../../cdr-dashboard/components/attempt-analytics/design';
 import type { PortResult } from '../api';
 import { clock, fromSeconds, toSeconds } from '../params';
@@ -88,11 +89,7 @@ export function PortActivity({
       )}
     >
       {/* Working: a sweep along the card's top edge. */}
-      {isFetching && (
-        <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-[#e8f0fe] dark:bg-sky-500/10" role="progressbar" aria-label="Processing">
-          <div className="progress-sweep h-full w-1/4 rounded-full bg-[#2563eb]" />
-        </div>
-      )}
+      {isFetching && <ProgressSweep />}
 
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <BarChart3 className="h-6 w-6 shrink-0 text-[#2563eb]" />
@@ -187,7 +184,7 @@ export function PortActivity({
           <div className="h-full rounded-xl bg-[repeating-linear-gradient(0deg,transparent_0_83px,#eef2f7_83px_84px)] dark:bg-[repeating-linear-gradient(0deg,transparent_0_83px,rgba(255,255,255,0.05)_83px_84px)]" />
         )}
 
-        {isFetching && <Processing />}
+        {isFetching && <ProcessingChip />}
       </div>
 
       {/* The view switch, along the bottom. */}
@@ -221,18 +218,6 @@ export function PortActivity({
         </div>
       </div>
     </section>
-  );
-}
-
-/** Shown over the chart while a request runs. */
-function Processing() {
-  return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div className="flex items-center gap-3 rounded-xl border border-[#e4eaf2] bg-white/95 px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.12)] dark:border-white/[0.08] dark:bg-[#13213a]/95">
-        <Loader2 className="h-5 w-5 animate-spin text-[#2563eb]" />
-        <span className="text-[13px] font-semibold text-[#0f172a] dark:text-white">Processing…</span>
-      </div>
-    </div>
   );
 }
 
