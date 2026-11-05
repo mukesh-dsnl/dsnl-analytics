@@ -7,7 +7,9 @@ import { LoadingBlock } from '../../../components/Loading';
 import { HoverTooltipProvider } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { compact, fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { AccountDirectory } from '../../summary/components/AccountDirectory';
-import { AccountSelect, Centered, Problem } from '../../summary/components/PageParts';
+import { useAccountTab } from '../../summary/accountTabs';
+import { AccountPicker } from '../../summary/components/AccountPicker';
+import { Centered, Problem } from '../../summary/components/PageParts';
 import { dayLabel } from '../../summary/format';
 import { conferenceSummaryApi } from '../api';
 import { AccountView } from '../components/AccountView';
@@ -16,12 +18,13 @@ const PROBLEM = "Couldn't read conference_summary.";
 
 /**
  * Conference › Accounts: every account, searchable (?q=), and one account's
- * history (?account=). Clicking a day opens that account's conferences on
+ * history (?account=), in four sections (&tab=). Clicking a day opens that account's conferences on
  * the Campaigns tab of Campaign Metrics.
  */
 export function ConferenceAccountsPage() {
   const [params, setParams] = useSearchParams();
   const accountId = Number(params.get('account')) || null;
+  const [tab, setTab] = useAccountTab();
   const headerSlot = useHeaderSlot();
   const navigate = useNavigate();
 
@@ -30,7 +33,7 @@ export function ConferenceAccountsPage() {
     queryFn: conferenceSummaryApi.overview,
     staleTime: 5 * 60_000,
   });
-  const openAccount = (id: number) => setParams({ account: String(id) });
+  const openAccount = (id: number | null) => setParams(id ? { account: String(id), ...(tab !== 'daily' && { tab }) } : {});
   const openDay = (iso: string) =>
     navigate(`/analytics/conference/campaign-metrics?view=campaigns&date=${iso}&account=${accountId}`);
 
@@ -40,12 +43,14 @@ export function ConferenceAccountsPage() {
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <h1 className="shrink-0 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Conference Accounts</h1>
         {overview.data && (
-          <AccountSelect
+          <AccountPicker
             value={accountId}
-            onChange={(id) => setParams(id ? { account: String(id) } : {})}
+            onChange={openAccount}
             options={overview.data.accounts.map((a) => ({
               id: a.account_id,
-              label: `${a.account_id}${a.name ? ` — ${a.name}` : ''} · ${compact(a.attended_minutes)} min${a.days_idle >= 15 ? ` · quiet ${a.days_idle}d` : ''}`,
+              name: a.name,
+              meta: `${compact(a.attended_minutes)} min`,
+              days_idle: a.days_idle,
             }))}
           />
         )}
@@ -61,7 +66,7 @@ export function ConferenceAccountsPage() {
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
         {accountId ? (
-          <AccountView key={accountId} accountId={accountId} onDay={openDay} />
+          <AccountView key={accountId} accountId={accountId} tab={tab} onTab={setTab} onDay={openDay} />
         ) : overview.isPending ? (
           <LoadingBlock />
         ) : overview.error ? (

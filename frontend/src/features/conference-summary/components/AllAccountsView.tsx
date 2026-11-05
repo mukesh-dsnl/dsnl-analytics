@@ -6,7 +6,6 @@ import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCh
 import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { ActivityCalendar } from '../../summary/components/ActivityCalendar';
 import { DailyStatement } from '../../summary/components/DailyStatement';
-import type { DailyColumn } from '../../summary/components/DailyStatement';
 import { DailyVolume } from '../../summary/components/DailyVolume';
 import { BusiestDays, Movers, SleepingAccounts } from '../../summary/components/AccountLists';
 import { DownloadButton } from '../../summary/components/PageParts';
@@ -16,30 +15,14 @@ import { Toggle } from '../../summary/components/ui';
 import { dayLabel, monthLabel, spanLabel } from '../../summary/format';
 import { downloadStatement } from '../../summary/statement';
 import { conferenceSummaryApi } from '../api';
-import type { ConferenceDayTotals, ConferenceOverview } from '../api';
-import { CONFERENCE_COLUMNS } from '../statement';
+import type { ConferenceOverview } from '../api';
+import { CONFERENCE_COLUMNS, CONFERENCE_DAILY_COLUMNS, withConnectRate } from '../statement';
 import { CALENDAR_METRICS, HOUR_LABELS, HOUR_METRICS, conferenceDayTip } from './shared';
 import type { CalendarMetric, HourMetric } from './shared';
 
 const NONE = { isLoading: false, error: null };
 
 export type ConferenceTab = 'daily' | 'hours' | 'monthly' | 'statement' | 'watch';
-
-type DayLine = ConferenceDayTotals & { connect_rate: number };
-const sum = (days: DayLine[], key: keyof DayLine) => days.reduce((t, d) => t + (Number(d[key]) || 0), 0);
-const rate = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
-
-const DAILY_COLUMNS: DailyColumn<DayLine>[] = [
-  { key: 'conferences', label: 'Conferences' },
-  { key: 'accounts', label: 'Accounts', total: () => NaN },
-  { key: 'ringed', label: 'Ringed' },
-  { key: 'connected', label: 'Connected' },
-  { key: 'connect_rate', label: 'Connect %', percent: true, total: (d) => rate(sum(d, 'connected'), sum(d, 'ringed')) },
-  { key: 'empty_rooms', label: 'Empty rooms' },
-  { key: 'attended_minutes', label: 'Attended minutes' },
-  { key: 'call_minutes', label: 'Call minutes' },
-  { key: 'peak_port', label: 'Peak port', total: (d) => Math.max(0, ...d.map((x) => x.peak_port)) },
-];
 
 /** Every account together, one section at a time — the Summary page's tabs. */
 export function ConferenceSections({
@@ -126,10 +109,10 @@ export function ConferenceSections({
   if (tab === 'statement') {
     return (
       <DailyStatement
-        days={data.daily.map((d) => ({ ...d, connect_rate: rate(d.connected, d.ringed) }))}
+        days={data.daily.map(withConnectRate)}
         months={data.months}
         asOf={data.as_of!}
-        columns={DAILY_COLUMNS}
+        columns={CONFERENCE_DAILY_COLUMNS}
         service="conference"
       />
     );

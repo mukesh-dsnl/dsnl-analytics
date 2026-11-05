@@ -74,3 +74,14 @@ export function levels(values: number[]): (value: number) => number {
     return step === -1 ? 4 : step;
   };
 }
+
+/**
+ * The account master list often ends a name with the account's own id
+ * ("Reliance Foundation - VMS - 109446"). The id is shown beside the name
+ * already, so the repeat is dropped — only when it is the whole last word.
+ */
+export function cleanName(name: string | null | undefined, id: number): string | null {
+  if (!name) return null;
+  const trimmed = name.replace(new RegExp(`(?:^|[\\s\\-–—:(]+)${id}\\)?\\s*$`), '').trim();
+  return trimmed || name;
+}

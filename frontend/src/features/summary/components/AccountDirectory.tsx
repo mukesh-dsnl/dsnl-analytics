@@ -5,6 +5,7 @@ import { ChevronRight, Search, X } from 'lucide-react';
 
 import { compact, fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { dayLabel, daysAgo } from '../format';
+import { AccountName } from './AccountName';
 
 export interface DirectoryRow {
   account_id: number;
@@ -110,11 +111,8 @@ export function AccountDirectory({
                   onClick={() => onAccount(row.account_id)}
                   className="group grid w-full grid-cols-[minmax(0,1fr)_170px_150px_20px] items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-[#f5f9fe] focus-visible:bg-[#f5f9fe] focus-visible:outline-none dark:hover:bg-white/[0.03]"
                 >
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold tabular-nums text-[#16213a] dark:text-white">{row.account_id}</span>
-                    <span className="block truncate text-[12px] text-[#6a7d96] dark:text-zinc-400" title={row.name ?? undefined}>
-                      {row.name ?? 'No name in the account list'}
-                    </span>
+                  <span className="flex min-w-0">
+                    <AccountName id={row.account_id} name={row.name} />
                   </span>
                   <span className="text-right">
                     <span className="block text-sm font-semibold tabular-nums text-[#1f2b45] dark:text-zinc-100" title={fmt(row.total)}>

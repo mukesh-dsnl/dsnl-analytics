@@ -29,14 +29,19 @@ export function DailyStatement<T extends { date: string }>({
   asOf,
   columns,
   service,
+  scope = 'all accounts together',
 }: {
   days: T[];
   months: string[];
   asOf: string;
   columns: DailyColumn<T>[];
+  /** The CSV's name starts with it: "voicedrop", "voicedrop-109446". */
   service: string;
+  /** Whose days these are, for the subtitle. */
+  scope?: string;
 }) {
-  const [month, setMonth] = useState(asOf.slice(0, 7));
+  // This month, or — for an account quiet this month — its latest month.
+  const [month, setMonth] = useState(() => (months.includes(asOf.slice(0, 7)) ? asOf.slice(0, 7) : (months[months.length - 1] ?? asOf.slice(0, 7))));
   const lines = useMemo(() => days.filter((d) => d.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date)), [days, month]);
   // A total that does not add up (accounts across days) is given as NaN, and shown as a dash.
   const cell = (c: DailyColumn<T>, value: number) => (Number.isNaN(value) ? '—' : c.percent ? `${value}%` : fmt(value));
@@ -50,7 +55,7 @@ export function DailyStatement<T extends { date: string }>({
         error={null}
         isEmpty={!lines.length}
         title="Daily statement"
-        subtitle={`Every day of ${monthLabel(month)}, all accounts together`}
+        subtitle={`Every day of ${monthLabel(month)}, ${scope}`}
         extra={
           <div className="flex items-center gap-2">
             <select

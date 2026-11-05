@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
@@ -7,10 +7,10 @@ import clsx from 'clsx';
  * an ordinary mouse wheel (or a two-finger vertical swipe) slides the content
  * left and right, and a sideways trackpad swipe does what it always does.
  *
- * The wheel only takes over while there is somewhere to go — at either end it
- * hands the scroll back to the page, so a chart never traps the reader. The
- * motion eases towards where the wheel is aiming rather than jumping a notch
- * at a time, which is what keeps a clicky mouse wheel smooth.
+ * While the pointer is over the strip the wheel moves the strip alone — at
+ * either end it stops there rather than scrolling the page. The motion eases
+ * towards where the wheel is aiming rather than jumping a notch at a time,
+ * which is what keeps a clicky mouse wheel smooth.
  *
  * `startAtEnd` opens it on its right edge — the latest days — and keeps it
  * there when more content arrives, until the reader scrolls away.
@@ -27,14 +27,6 @@ export function HScroll({
   const ref = useRef<HTMLDivElement>(null);
   const target = useRef(0);
   const frame = useRef(0);
-  const [edges, setEdges] = useState({ left: false, right: false });
-
-  const measure = () => {
-    const el = ref.current;
-    if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
-    setEdges({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
-  };
 
   // Open on the latest end, and stay pinned there while the content grows.
   useLayoutEffect(() => {
@@ -42,11 +34,9 @@ export function HScroll({
     if (!el) return;
     if (startAtEnd) el.scrollLeft = el.scrollWidth;
     target.current = el.scrollLeft;
-    measure();
     const observer = new ResizeObserver(() => {
       if (startAtEnd && el.scrollLeft >= el.scrollWidth - el.clientWidth - 40) el.scrollLeft = el.scrollWidth;
       target.current = el.scrollLeft;
-      measure();
     });
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
@@ -63,22 +53,31 @@ export function HScroll({
         frame.current = 0;
         return;
       }
+      const before = el.scrollLeft;
       el.scrollLeft += distance * 0.22;
+      // Pinned against an end it cannot pass (a fractional width): stop there.
+      if (el.scrollLeft === before) {
+        target.current = before;
+        frame.current = 0;
+        return;
+      }
       frame.current = requestAnimationFrame(step);
     };
     const onWheel = (event: WheelEvent) => {
       const max = el.scrollWidth - el.clientWidth;
       if (max <= 0 || event.ctrlKey) return;
-      // A sideways trackpad swipe already scrolls this way natively.
+      // The page stays put while the pointer is here, even at either end.
+      event.preventDefault();
+      // A sideways trackpad swipe moves the strip directly.
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        cancelAnimationFrame(frame.current);
+        frame.current = 0;
+        el.scrollLeft += event.deltaX;
         target.current = el.scrollLeft;
         return;
       }
       const delta = event.deltaY * (event.deltaMode === 1 ? 32 : event.deltaMode === 2 ? el.clientWidth : 1);
       const from = frame.current ? target.current : el.scrollLeft;
-      // At an end, going further: the page scrolls instead.
-      if ((delta < 0 && from <= 0) || (delta > 0 && from >= max)) return;
-      event.preventDefault();
       target.current = Math.max(0, Math.min(max, from + delta));
       if (!frame.current) frame.current = requestAnimationFrame(step);
     };
@@ -95,27 +94,11 @@ export function HScroll({
         ref={ref}
         onScroll={() => {
           if (!frame.current) target.current = ref.current?.scrollLeft ?? 0;
-          measure();
         }}
         className="overflow-x-auto overscroll-x-contain pb-1.5 [scrollbar-width:thin] [scrollbar-color:rgba(138,153,173,0.35)_transparent]"
       >
         {children}
       </div>
-      {/* A soft fade says there is more on that side. */}
-      <div
-        aria-hidden
-        className={clsx(
-          'pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white to-transparent transition-opacity dark:from-[#0e192c]',
-          edges.left ? 'opacity-100' : 'opacity-0',
-        )}
-      />
-      <div
-        aria-hidden
-        className={clsx(
-          'pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent transition-opacity dark:from-[#0e192c]',
-          edges.right ? 'opacity-100' : 'opacity-0',
-        )}
-      />
     </div>
   );
 }

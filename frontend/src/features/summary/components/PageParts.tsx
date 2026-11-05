@@ -39,30 +39,3 @@ export function DownloadButton({ onClick, disabled }: { onClick: () => void; dis
     </button>
   );
 }
-
-/** The account picker that sits in the header on an Account tab. */
-export function AccountSelect({
-  value,
-  options,
-  onChange,
-}: {
-  value: number | null;
-  options: { id: number; label: string }[];
-  onChange: (id: number | null) => void;
-}) {
-  return (
-    <select
-      aria-label="Account"
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      className="field-focus h-9 min-w-0 max-w-[420px] rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-    >
-      <option value="">Choose an account…</option>
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
