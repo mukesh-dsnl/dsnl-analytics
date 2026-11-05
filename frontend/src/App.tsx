@@ -28,6 +28,9 @@ const ConferenceSummaryPage = lazy(() =>
     default: m.ConferenceSummaryPage,
   })),
 );
+const PortAnalyzerPage = lazy(() =>
+  import('./features/port-analyzer/pages/PortAnalyzerPage').then((m) => ({ default: m.PortAnalyzerPage })),
+);
 const MulticallRegistryPage = lazy(() =>
   import('./features/multicall-registry/pages/MulticallRegistryPage').then((m) => ({
     default: m.MulticallRegistryPage,
@@ -151,6 +154,15 @@ function App() {
                   element={
                     <Suspense fallback={<RouteFallback />}>
                       <ConferenceSummaryPage />
+                    </Suspense>
+                  }
+                />
+
+                <Route
+                  path="ports"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <PortAnalyzerPage />
                     </Suspense>
                   }
                 />

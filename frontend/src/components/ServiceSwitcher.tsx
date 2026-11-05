@@ -6,10 +6,18 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SERVICES, SERVICE_ORDER } from './services';
 import type { ServiceId } from './services';
 
+/** The tile's light-theme colours only: the switcher is white in both themes. */
+const lightTile = (tile: string) =>
+  tile
+    .split(' ')
+    .filter((c) => !c.startsWith('dark:'))
+    .join(' ');
+
 /**
  * The sidebar's service switcher: which service's pages the sidebar lists
  * under it. A full-width control on the open sidebar; on the icon rail, the
- * service's icon, opening to the side.
+ * service's icon, opening to the side. White in both themes — on the navy
+ * sidebar it has to read at a glance as the one control there is.
  */
 export function ServiceSwitcher({
   value,
@@ -32,21 +40,21 @@ export function ServiceSwitcher({
           aria-label={`Service: ${current.name}. Change service`}
           title={collapsed ? `${current.name} — change service` : undefined}
           className={clsx(
-            'flex items-center rounded-xl bg-white/[0.08] text-white ring-1 ring-white/15 transition-colors hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300',
+            'flex items-center rounded-xl bg-white text-[#0f172a] shadow-[0_2px_8px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#f3f7fc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300',
             collapsed ? 'mx-auto h-10 w-10 justify-center' : 'w-full gap-2.5 px-2 py-2 text-left',
-            open && 'bg-white/[0.14]',
+            open && 'ring-2 ring-sky-300',
           )}
         >
-          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/15">
+          <span className={clsx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', lightTile(current.tile))}>
             <Icon className="h-4 w-4" />
           </span>
           {!collapsed && (
             <>
               <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold uppercase tracking-wider text-white/55">Service</span>
-                <span className="block truncate text-sm font-medium leading-tight">{current.name}</span>
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#6b7a90]">Service</span>
+                <span className="block truncate text-sm font-semibold leading-tight">{current.name}</span>
               </span>
-              <ChevronsUpDown className="h-4 w-4 shrink-0 text-white/60" />
+              <ChevronsUpDown className="h-4 w-4 shrink-0 text-[#6b7a90]" />
             </>
           )}
         </button>
@@ -55,7 +63,7 @@ export function ServiceSwitcher({
         side={collapsed ? 'right' : 'bottom'}
         align="start"
         sideOffset={8}
-        className="w-[248px] border-white/10 bg-[#13213a] p-1.5 text-white shadow-[0_16px_40px_rgba(0,0,0,0.4)]"
+        className="w-[248px] border-[#e4eaf2] bg-white p-1.5 text-[#0f172a] shadow-[0_16px_40px_rgba(0,0,0,0.3)] dark:border-[#e4eaf2] dark:bg-white dark:text-[#0f172a]"
       >
         {SERVICE_ORDER.map((id) => {
           const option = SERVICES[id];
@@ -69,18 +77,18 @@ export function ServiceSwitcher({
                 setOpen(false);
               }}
               className={clsx(
-                'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors',
-                id === value ? 'bg-white/[0.10]' : 'hover:bg-white/[0.06]',
+                'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3]',
+                id === value ? 'bg-[#eef4fd]' : 'hover:bg-[#f5f8fc]',
               )}
             >
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10">
+              <span className={clsx('inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', lightTile(option.tile))}>
                 <OptionIcon className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[13px] font-medium">{option.name}</span>
-                <span className="block truncate text-[11px] text-white/55">{option.blurb}</span>
+                <span className="block truncate text-[11px] text-[#6b7a90]">{option.blurb}</span>
               </span>
-              {id === value && <Check className="h-4 w-4 shrink-0 text-sky-300" />}
+              {id === value && <Check className="h-4 w-4 shrink-0 text-[#2563eb]" />}
             </button>
           );
         })}

@@ -471,3 +471,22 @@ body {
     animation: none;
   }
 }
+
+/* An indeterminate progress bar: a short stripe sweeping across its track,
+   for work whose length is not known in advance (Port Analyzer). */
+.progress-sweep {
+  animation: progress-sweep 1.15s ease-in-out infinite;
+}
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-sweep {
+    animation-duration: 3s;
+  }
+}

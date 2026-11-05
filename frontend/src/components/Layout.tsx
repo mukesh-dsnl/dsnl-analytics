@@ -2,6 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
   House,
+  Server,
   LayoutGrid,
   LogOut,
   Moon,
@@ -27,6 +28,8 @@ interface NavItem {
   label: string;
   path: string;
   icon: LucideIcon;
+  /** Where the link goes, when that differs from the path it is active on (a query string). */
+  to?: string;
 }
 
 interface NavSection {
@@ -76,7 +79,7 @@ function NavLink({ item, section, active, collapsed }: { item: NavItem; section:
   const railLabel = `${section} · ${item.label}`;
   return (
     <Link
-      to={item.path}
+      to={item.to ?? item.path}
       aria-current={active ? 'page' : undefined}
       // On the rail the label is gone, so it moves to the tooltip and the
       // accessible name.
@@ -161,8 +164,16 @@ export function Layout() {
   // Switching service on one of a service's pages opens the same page of the
   // new one (Campaign Metrics stays Campaign Metrics), or its first page when
   // it has no such page; anywhere else it only changes the list.
+  const isPorts = location.pathname.startsWith('/analytics/ports');
   const switchService = (next: ServiceId) => {
     setNavService(next);
+    // Port Analyzer covers every service: switching sets its service filter.
+    if (isPorts) {
+      const params = new URLSearchParams(location.search);
+      params.set('service', next);
+      navigate(`/analytics/ports?${params}`);
+      return;
+    }
     if (!routeService || next === routeService) return;
     const here = SERVICES[routeService].pages.find((p) => isActivePath(p.path));
     const there = SERVICES[next].pages.find((p) => p.key === here?.key) ?? SERVICES[next].pages[0];
@@ -181,6 +192,7 @@ export function Layout() {
   const isSummary = /^\/analytics\/(voicedrop|conference)\/summary/.test(location.pathname);
   const isRedesigned =
     isHome ||
+    location.pathname.startsWith('/analytics/ports') ||
     isSummary ||
     /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
 
@@ -364,6 +376,13 @@ export function Layout() {
                     collapsed={narrow}
                   />
                 ))}
+                {/* Port Analyzer reads every service; from here it opens on this one. */}
+                <NavLink
+                  item={{ label: 'Port Analyzer', path: '/analytics/ports', icon: Server, to: `/analytics/ports?service=${shownService}` }}
+                  section={SERVICES[shownService].name}
+                  active={isActivePath('/analytics/ports')}
+                  collapsed={narrow}
+                />
               </div>
             </nav>
           )}
@@ -488,7 +507,7 @@ export function Layout() {
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
             {/* Summary covers the whole table; its own header says how far the data runs. */}
-            {isAiChat || isMulticallRegistry || isSummary || isHome ? null : location.pathname.endsWith('/campaign-metrics') ? (
+            {isAiChat || isMulticallRegistry || isSummary || isHome || isPorts ? null : location.pathname.endsWith('/campaign-metrics') ? (
               <HeaderCampaignDate />
             ) : (
               <HeaderDateRange />
