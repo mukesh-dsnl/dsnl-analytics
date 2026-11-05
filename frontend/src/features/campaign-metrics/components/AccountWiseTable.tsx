@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChartNoAxesColumn, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { campaignApi } from '../api';
 import type { CampaignFilter, AccountMetricsRow } from '../api';
@@ -10,8 +10,6 @@ import { SummaryLink } from './SummaryLink';
 import { summaryPath } from '../links';
 import { ConnectedBar } from './ConnectedBar';
 import {
-  ROW_ACTION_CLASS,
-  ROW_ACTION_IDLE_CLASS,
   SortableHeader,
   TableCard,
   TablePager,
@@ -19,6 +17,7 @@ import {
   TH_CLASS,
 } from './TableChrome';
 import { AccountInsightDialog } from './AccountInsightDialog';
+import { ChartButton } from './ChartButton';
 
 type SortKey = keyof AccountMetricsRow;
 
@@ -35,6 +34,12 @@ interface AccountWiseTableProps {
    * has none and would otherwise carry a column empty on every row.
    */
   showCpin: boolean;
+  /**
+   * Where a row leads instead of expanding: Voicedrop and Conference open the
+   * account's campaigns on the Campaigns tab. Unset (MultiCall), a row
+   * expands into its CRNs as before.
+   */
+  onOpenAccount?: (account: string) => void;
 }
 
 /** The five measures, shared by the account rows and the CRN rows beneath them. */
@@ -67,6 +72,7 @@ export function AccountWiseTable({
   sort,
   onSort,
   showCpin,
+  onOpenAccount,
 }: AccountWiseTableProps) {
   // Paged from the already-sorted list, so sorting reorders the whole table
   // rather than shuffling only the page in view.
@@ -123,6 +129,7 @@ export function AccountWiseTable({
                     row={row}
                     showCpin={showCpin}
                     onChart={(crn) => setCharting({ account: row.account, crn })}
+                    onOpen={onOpenAccount}
                   />
                 ))}
               </tbody>
@@ -151,10 +158,13 @@ interface AccountRowProps {
   row: AccountMetricsRow;
   showCpin: boolean;
   onChart: (crn?: string) => void;
+  onOpen?: (account: string) => void;
 }
 
-function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
-  const [isOpen, setIsOpen] = useState(false);
+function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps) {
+  const [expanded, setIsOpen] = useState(false);
+  // A row that leads elsewhere never expands.
+  const isOpen = !onOpen && expanded;
 
   const { data, isPending, error } = useQuery({
     queryKey: ['campaign-account-crn', filters.date, filters.service, row.account],
@@ -175,8 +185,9 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
       {/* The whole row toggles — the chevron is an affordance, not the only
           target. The chart button stops propagation so it doesn't also expand. */}
       <tr
-        onClick={() => setIsOpen((v) => !v)}
-        aria-expanded={isOpen}
+        onClick={() => (onOpen ? onOpen(row.account) : setIsOpen((v) => !v))}
+        aria-expanded={onOpen ? undefined : isOpen}
+        title={onOpen ? `Show account ${row.account}'s campaigns` : undefined}
         className={clsx(
           'cursor-pointer transition-colors',
           isOpen
@@ -185,12 +196,14 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
         )}
       >
         <td className={clsx('pl-4 py-3', openCell)}>
-          <ChevronRight
-            className={clsx(
-              'w-4 h-4 text-zinc-400 transition-transform',
-              isOpen && 'rotate-90 text-blue-500',
-            )}
-          />
+          {!onOpen && (
+            <ChevronRight
+              className={clsx(
+                'w-4 h-4 text-zinc-400 transition-transform',
+                isOpen && 'rotate-90 text-blue-500',
+              )}
+            />
+          )}
         </td>
         <td className={clsx('px-4 py-3', openCell)}>
           <span className="flex items-center gap-2.5">
@@ -341,23 +354,6 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
  * that does something *else* has to look like a control at rest, or it reads as
  * part of the row and gets found by accident.
  */
-function ChartButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      aria-label={label}
-      title="View charts"
-      className={clsx(ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS)}
-    >
-      <ChartNoAxesColumn className="h-[18px] w-[18px]" strokeWidth={2.6} />
-    </button>
-  );
-}
-
 function SubRowMessage({
   children,
   span,

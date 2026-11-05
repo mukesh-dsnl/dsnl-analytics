@@ -3,28 +3,16 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import {
-  CalendarCheck,
-  CalendarClock,
-  Clock,
-  Layers,
-  Loader2,
-  PhoneOutgoing,
-  Sparkles,
-  Timer,
-  TrendingUp,
-  Users,
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { useCampaignDateStore } from '../../../store';
 import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCharts';
-import { Kpi } from '../../cdr-dashboard/components/attempt-analytics/AttemptKpis';
-import { TONES, compact, fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
+import { compact, fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { summaryApi } from '../api';
 import type { AccountHistory, DayTotals, MonthTotals, Overview } from '../api';
-import { dayLabel, daysAgo, hourLabel, monthLabel, spanLabel } from '../format';
+import { dayLabel, monthLabel, spanLabel } from '../format';
 import { VOICEDROP_COLUMNS, downloadStatement } from '../statement';
 import type { VoicedropStatementLine } from '../statement';
 import { ActivityCalendar } from '../components/ActivityCalendar';
@@ -34,7 +22,7 @@ import { BusiestDays, Movers, SleepingAccounts } from '../components/AccountList
 import { DailyVolume } from '../components/DailyVolume';
 import { AccountDirectory } from '../components/AccountDirectory';
 import { StatementTable } from '../components/StatementTable';
-import { Change, Toggle } from '../components/ui';
+import { Toggle } from '../components/ui';
 import { AccountSelect, Centered, DownloadButton, Problem, SectionTitle } from '../components/PageParts';
 
 type CalendarMetric = 'dialed' | 'minutes';
@@ -115,9 +103,13 @@ export function SummaryPage() {
 
   const setCampaignDate = useCampaignDateStore((s) => s.setDate);
   const navigate = useNavigate();
-  const openDay = (iso: string, account?: number) => {
+  // A clicked day opens its campaigns — the account's alone (and within it,
+  // the client's) when one is chosen.
+  const openDay = (iso: string, account?: number, client?: number | null) => {
     setCampaignDate(iso);
-    navigate(`/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}${account ? `&search=${account}` : ''}`);
+    navigate(
+      `/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}${account ? `&account=${account}` : ''}${client ? `&search=${client}` : ''}`,
+    );
   };
   const openAccount = (id: number) => setParams({ account: String(id) });
 
@@ -172,7 +164,7 @@ export function SummaryPage() {
             key={`${accountId}-${clientId}`}
             accountId={accountId}
             clientId={clientId}
-            onDay={(iso) => openDay(iso, clientId ?? accountId)}
+            onDay={(iso) => openDay(iso, accountId, clientId)}
           />
         ) : (
           <AccountDirectory
@@ -216,142 +208,12 @@ function AllAccounts({
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('dialed');
   const [hourMetric, setHourMetric] = useState<HourMetric>('dialed');
   const [idleDays, setIdleDays] = useState<'15' | '30'>('15');
-  const { this_month: now, last_month_same_days: before } = data.kpis;
   const { movers } = data;
   const names = new Map(data.accounts.map((a) => [a.account_id, a.name]));
-  const thisMonth = data.as_of!.slice(0, 7);
-  const newThisMonth = data.new_accounts.find((n) => n.month === thisMonth && !n.is_table_start)?.accounts ?? [];
   const sameDays = `${spanLabel(movers.previous_from, movers.previous_to)}`;
 
   return (
     <>
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi
-          {...NONE}
-          tone={TONES.blue}
-          icon={Users}
-          label="Active accounts"
-          value={fmt(data.kpis.active_accounts_30d)}
-          note={
-            <>
-              last 30 days · <Change now={data.kpis.active_accounts_30d} before={data.kpis.active_accounts_prev_30d} />{' '}
-              vs {data.kpis.active_accounts_prev_30d}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow="Accounts with a campaign"
-              title="Last 30 days"
-              value={data.kpis.active_accounts_30d}
-              share={`${data.kpis.active_accounts_prev_30d} in the 30 days before · ${data.accounts.length} in the table`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.sky}
-          icon={PhoneOutgoing}
-          label="Dialed this month"
-          value={compact(now.dialed)}
-          note={
-            <>
-              <Change now={now.dialed} before={before.dialed} /> vs {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={`${spanLabel(movers.current_from, movers.current_to)} vs ${sameDays}`}
-              title="Numbers dialed"
-              value={now.dialed}
-              share={`${fmt(before.dialed)} the same days last month`}
-              sections={[
-                {
-                  title: 'This month',
-                  base: now.dialed,
-                  rows: [
-                    { label: 'Campaigns', value: now.campaigns, share: '' },
-                    { label: 'Connected', value: now.connected },
-                    { label: 'Not connected', value: now.not_connected },
-                  ],
-                },
-              ]}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.teal}
-          icon={TrendingUp}
-          label="Connect rate"
-          value={`${now.connect_rate}%`}
-          bar={now.connect_rate}
-          note={
-            <>
-              <strong>{before.connect_rate}%</strong> over {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow="This month so far"
-              title="Connected"
-              value={now.connected}
-              share={`${pct(now.connected, now.dialed)} of ${fmt(now.dialed)} dialed`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.violet}
-          icon={Timer}
-          label="Connected minutes"
-          value={compact(now.minutes)}
-          note={
-            <>
-              <Change now={now.minutes} before={before.minutes} /> vs {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={spanLabel(movers.current_from, movers.current_to)}
-              title="Connected minutes"
-              value={now.minutes}
-              share={`${fmt(before.minutes)} over ${sameDays}`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.orange}
-          icon={Sparkles}
-          label="New accounts"
-          value={fmt(newThisMonth.length)}
-          note={newThisMonth.length ? <>first campaign in {monthLabel(thisMonth, true)}</> : <>none yet this month</>}
-          tip={() => (
-            <>
-              <div className="text-[9px] uppercase tracking-[1px] text-[#8398b9]">First campaign, by month</div>
-              <div className="mt-1.5 space-y-[3px]">
-                {data.new_accounts.map((n) => (
-                  <div key={n.month} className="flex justify-between gap-4 text-[11px] text-[#c5cee0]">
-                    <span>
-                      {monthLabel(n.month)}
-                      {n.is_table_start && <span className="ml-1 text-[#8095b2]">(table start)</span>}
-                    </span>
-                    <span className="tabular-nums text-[#e7eefa]" title={n.accounts.join(', ')}>
-                      {n.is_table_start ? '—' : n.accounts.length}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {newThisMonth.length > 0 && (
-                <div className="mt-2 border-t border-white/[0.07] pt-2 text-[11px] text-[#c5cee0]">
-                  This month: {newThisMonth.join(', ')}
-                </div>
-              )}
-            </>
-          )}
-        />
-      </div>
-
       <div className="mb-6 grid grid-cols-12 gap-4">
         <Card {...NONE} span={12} title="Daily volume" subtitle="Dial out and connected, all accounts — every day, the latest in view">
           <DailyVolume
@@ -537,8 +399,6 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('dialed');
   const [trend, setTrend] = useState<TrendView>('usage');
   const [hourMetric, setHourMetric] = useState<HourMetric>('campaigns');
-  const h = data.habits;
-  const period = h.scope === '90d' ? 'last 90 days' : 'whole history';
   const lines = useMemo<VoicedropStatementLine[]>(
     () =>
       [...data.monthly].reverse().map((m) => ({ ...m, account_id: data.account_id, client_ids: data.client_ids })),
@@ -588,92 +448,6 @@ function AccountHistoryView({ data, onDay }: { data: AccountHistory; onDay: (iso
             ))}
           </nav>
         )}
-      </div>
-
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi
-          {...NONE}
-          tone={TONES.blue}
-          icon={CalendarCheck}
-          label="Active days"
-          value={fmt(h.active_days_this_month)}
-          note={
-            <>
-              this month · <strong>{h.active_days_last_month}</strong> last month
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={monthLabel(data.as_of.slice(0, 7))}
-              title="Days with a campaign"
-              value={h.active_days_this_month}
-              share={`${h.active_days_last_month} last month · ${activeDays} since ${dayLabel(data.first_date)}`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.sky}
-          icon={Layers}
-          label="Campaigns a day"
-          value={String(h.campaigns_per_active_day)}
-          note={<>per active day, {period}</>}
-          tip={() => (
-            <TipBody eyebrow={period} title="Campaigns per active day" value={h.campaigns_per_active_day} />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.teal}
-          icon={Users}
-          label="Campaign size"
-          value={compact(h.avg_campaign_size)}
-          note={
-            <>
-              numbers each · <strong>{compact(h.avg_dialed_per_campaign)}</strong> dialed
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={period}
-              title="Phone numbers per campaign"
-              value={h.avg_campaign_size}
-              share={`${fmt(h.avg_dialed_per_campaign)} dialed per campaign on average`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.violet}
-          icon={Clock}
-          label="Usual start"
-          value={h.usual_start ?? '—'}
-          note={h.busiest_hour != null ? <>busiest hour {hourLabel(h.busiest_hour)}–{hourLabel((h.busiest_hour + 1) % 24)}</> : <>no start times</>}
-          tip={() => (
-            <>
-              <div className="text-[9px] uppercase tracking-[1px] text-[#8398b9]">{period}</div>
-              <div className="mt-1 text-[12px] text-[#c5cee0]">
-                Half its campaigns start before {h.usual_start ?? '—'}, half after.
-              </div>
-            </>
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={h.days_since_active >= 15 ? TONES.orange : TONES.teal}
-          icon={CalendarClock}
-          label="Last active"
-          value={dayLabel(h.last_active).replace(/ \d{4}$/, '')}
-          note={<span className={clsx(h.days_since_active >= 15 && 'text-[#e07d2c]')}>{daysAgo(h.days_since_active)}</span>}
-          tip={() => (
-            <TipBody
-              eyebrow="Last campaign"
-              title={dayLabel(h.last_active)}
-              value={h.days_since_active}
-              share={`days before ${dayLabel(data.as_of)}, the latest data`}
-            />
-          )}
-        />
       </div>
 
       <div className="mb-6 grid grid-cols-12 gap-4">

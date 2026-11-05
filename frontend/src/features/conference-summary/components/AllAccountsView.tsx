@@ -1,18 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles, Timer, TrendingUp, Users, Video } from 'lucide-react';
 
 import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCharts';
-import { Kpi } from '../../cdr-dashboard/components/attempt-analytics/AttemptKpis';
-import { TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
-import { TONES, compact, fmt, pct } from '../../cdr-dashboard/components/attempt-analytics/design';
+import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { ActivityCalendar } from '../../summary/components/ActivityCalendar';
 import { DailyVolume } from '../../summary/components/DailyVolume';
 import { BusiestDays, Movers, SleepingAccounts } from '../../summary/components/AccountLists';
 import { DownloadButton, SectionTitle } from '../../summary/components/PageParts';
 import { StatementTable } from '../../summary/components/StatementTable';
 import { WeekHourHeatmap } from '../../summary/components/WeekHourHeatmap';
-import { Change, Toggle } from '../../summary/components/ui';
+import { Toggle } from '../../summary/components/ui';
 import { dayLabel, monthLabel, spanLabel } from '../../summary/format';
 import { downloadStatement } from '../../summary/statement';
 import { conferenceSummaryApi } from '../api';
@@ -36,140 +33,13 @@ export function AllAccountsView({
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('conferences');
   const [hourMetric, setHourMetric] = useState<HourMetric>('conferences');
   const [idleDays, setIdleDays] = useState<'15' | '30'>('15');
-  const { this_month: now, last_month_same_days: before } = data.kpis;
   const { movers } = data;
   const names = new Map(data.accounts.map((a) => [a.account_id, a.name]));
-  const thisMonth = data.as_of!.slice(0, 7);
-  const newThisMonth = data.new_accounts.find((n) => n.month === thisMonth && !n.is_table_start)?.accounts ?? [];
   const sameDays = spanLabel(movers.previous_from, movers.previous_to);
   const thisSpan = spanLabel(movers.current_from, movers.current_to);
 
   return (
     <>
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi
-          {...NONE}
-          tone={TONES.blue}
-          icon={Users}
-          label="Active accounts"
-          value={fmt(data.kpis.active_accounts_30d)}
-          note={
-            <>
-              last 30 days · <Change now={data.kpis.active_accounts_30d} before={data.kpis.active_accounts_prev_30d} /> vs{' '}
-              {data.kpis.active_accounts_prev_30d}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow="Accounts with a conference"
-              title="Last 30 days"
-              value={data.kpis.active_accounts_30d}
-              share={`${data.kpis.active_accounts_prev_30d} in the 30 days before · ${data.accounts.length} in the table`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.sky}
-          icon={Video}
-          label="Conferences"
-          value={fmt(now.conferences)}
-          note={
-            <>
-              <Change now={now.conferences} before={before.conferences} /> vs {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={`${thisSpan} vs ${sameDays}`}
-              title="Conferences held"
-              value={now.conferences}
-              share={`${fmt(before.conferences)} the same days last month`}
-              sections={[
-                {
-                  title: 'This month',
-                  base: now.conferences,
-                  rows: [
-                    { label: 'Nobody joined', value: now.empty_rooms },
-                    { label: 'Parties connected', value: now.connected, share: '' },
-                  ],
-                },
-              ]}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.teal}
-          icon={TrendingUp}
-          label="Connect rate"
-          value={`${now.connect_rate}%`}
-          bar={now.connect_rate}
-          note={
-            <>
-              <strong>{before.connect_rate}%</strong> over {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow="This month so far"
-              title="Parties who joined"
-              value={now.connected}
-              share={`${pct(now.connected, now.ringed)} of ${fmt(now.ringed)} ringed`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.violet}
-          icon={Timer}
-          label="Attended minutes"
-          value={compact(now.attended_minutes)}
-          note={
-            <>
-              <Change now={now.attended_minutes} before={before.attended_minutes} /> vs {sameDays}
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={thisSpan}
-              title="Minutes joined to release"
-              value={now.attended_minutes}
-              share={`${fmt(before.attended_minutes)} over ${sameDays} · ${fmt(now.call_minutes)} call minutes`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.orange}
-          icon={Sparkles}
-          label="New accounts"
-          value={fmt(newThisMonth.length)}
-          note={newThisMonth.length ? <>first conference in {monthLabel(thisMonth, true)}</> : <>none yet this month</>}
-          tip={() => (
-            <>
-              <div className="text-[9px] uppercase tracking-[1px] text-[#8398b9]">First conference, by month</div>
-              <div className="mt-1.5 space-y-[3px]">
-                {data.new_accounts.map((n) => (
-                  <div key={n.month} className="flex justify-between gap-4 text-[11px] text-[#c5cee0]">
-                    <span>
-                      {monthLabel(n.month)}
-                      {n.is_table_start && <span className="ml-1 text-[#8095b2]">(table start)</span>}
-                    </span>
-                    <span className="tabular-nums text-[#e7eefa]">{n.is_table_start ? '—' : n.accounts.length}</span>
-                  </div>
-                ))}
-              </div>
-              {newThisMonth.length > 0 && (
-                <div className="mt-2 border-t border-white/[0.07] pt-2 text-[11px] text-[#c5cee0]">
-                  This month: {newThisMonth.map((id) => names.get(id) ?? id).join(', ')}
-                </div>
-              )}
-            </>
-          )}
-        />
-      </div>
-
       <div className="mb-6 grid grid-cols-12 gap-4">
         <Card {...NONE} span={12} title="Daily volume" subtitle="Parties ringed and connected, all accounts — every day, the latest in view">
           <DailyVolume

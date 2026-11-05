@@ -5,6 +5,7 @@ import { SortableHeader, TableCard, TableStatus, TH_CLASS } from '../../campaign
 import type { SortState } from '../../campaign-metrics/useSortableRows';
 import type { ConferenceRecord } from '../api';
 import { SummaryLink } from '../../campaign-metrics/components/SummaryLink';
+import { ChartButton } from '../../campaign-metrics/components/ChartButton';
 import { summaryPath } from '../../campaign-metrics/links';
 
 /** A record as the table holds it: nulls flattened for sorting, and the connect rate worked out. */
@@ -55,12 +56,15 @@ export function RecordsTable({
   error,
   sort,
   onSort,
+  onChart,
 }: {
   rows: ConferenceRow[] | undefined;
   isLoading: boolean;
   error: Error | null;
   sort: SortState<ConferenceSortKey>;
   onSort: (key: ConferenceSortKey) => void;
+  /** Opens the charts for one conference (its account and CRN). */
+  onChart?: (row: ConferenceRow) => void;
 }) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
@@ -84,6 +88,7 @@ export function RecordsTable({
                 {MINUTES.map((m) => (
                   <SortableHeader key={m.key} label={m.label} sortKey={m.key} sort={sort} onSort={onSort} align="right" />
                 ))}
+                {onChart && <th className={`${TH_CLASS} w-16`} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
@@ -146,6 +151,11 @@ export function RecordsTable({
                         {nf.format(row[m.key] as number)}
                       </td>
                     ))}
+                    {onChart && (
+                      <td className={clsx(CELL, 'text-right')}>
+                        <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />
+                      </td>
+                    )}
                   </tr>
                 );
               })}

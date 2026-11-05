@@ -1,12 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import clsx from 'clsx';
-import { CalendarCheck, CalendarClock, Clock, Layers, Loader2, Users } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCharts';
-import { Kpi } from '../../cdr-dashboard/components/attempt-analytics/AttemptKpis';
-import { TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
-import { TONES, fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
+import { fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { ActivityCalendar } from '../../summary/components/ActivityCalendar';
 import { DailyVolume } from '../../summary/components/DailyVolume';
 import { MonthlyTrend, TrendNote } from '../../summary/components/MonthlyTrend';
@@ -14,7 +11,7 @@ import { Centered, DownloadButton, Problem, SectionTitle } from '../../summary/c
 import { StatementTable } from '../../summary/components/StatementTable';
 import { WeekHourHeatmap } from '../../summary/components/WeekHourHeatmap';
 import { Toggle } from '../../summary/components/ui';
-import { dayLabel, daysAgo, hourLabel, monthLabel } from '../../summary/format';
+import { dayLabel } from '../../summary/format';
 import { downloadStatement } from '../../summary/statement';
 import { conferenceSummaryApi } from '../api';
 import type { ConferenceAccountHistory, ConferenceMonth, ConferenceStatementLine } from '../api';
@@ -59,8 +56,6 @@ function History({ data, onDay }: { data: ConferenceAccountHistory; onDay: (iso:
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('conferences');
   const [trend, setTrend] = useState<'usage' | 'quality'>('usage');
   const [hourMetric, setHourMetric] = useState<HourMetric>('conferences');
-  const h = data.habits;
-  const period = h.scope === '90d' ? 'last 90 days' : 'whole history';
   const lines = useMemo<ConferenceStatementLine[]>(
     () => [...data.monthly].reverse().map((m) => ({ ...m, account_id: data.account_id, name: data.name })),
     [data],
@@ -77,89 +72,6 @@ function History({ data, onDay }: { data: ConferenceAccountHistory; onDay: (iso:
         <span className="text-sm text-[#6a7d96] dark:text-zinc-400">
           first conference {dayLabel(data.first_date)} · {fmt(activeDays)} active days
         </span>
-      </div>
-
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi
-          {...NONE}
-          tone={TONES.blue}
-          icon={CalendarCheck}
-          label="Active days"
-          value={fmt(h.active_days_this_month)}
-          note={
-            <>
-              this month · <strong>{h.active_days_last_month}</strong> last month
-            </>
-          }
-          tip={() => (
-            <TipBody
-              eyebrow={monthLabel(data.as_of.slice(0, 7))}
-              title="Days with a conference"
-              value={h.active_days_this_month}
-              share={`${h.active_days_last_month} last month · ${activeDays} since ${dayLabel(data.first_date)}`}
-            />
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.sky}
-          icon={Layers}
-          label="Conferences a day"
-          value={String(h.conferences_per_active_day)}
-          note={<>per active day, {period}</>}
-          tip={() => <TipBody eyebrow={period} title="Conferences per active day" value={h.conferences_per_active_day} />}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.teal}
-          icon={Users}
-          label="Parties a conference"
-          value={String(h.parties_per_conference)}
-          note={<>connected, on average, {period}</>}
-          tip={() => <TipBody eyebrow={period} title="Parties connected per conference" value={h.parties_per_conference} />}
-        />
-        <Kpi
-          {...NONE}
-          tone={TONES.violet}
-          icon={Clock}
-          label="Usual start"
-          value={h.usual_start ?? '—'}
-          note={
-            h.median_length_minutes != null ? (
-              <>
-                rooms run <strong>{h.median_length_minutes} min</strong>
-              </>
-            ) : (
-              <>no start times</>
-            )
-          }
-          tip={() => (
-            <>
-              <div className="text-[9px] uppercase tracking-[1px] text-[#8398b9]">{period}</div>
-              <div className="mt-1 text-[12px] text-[#c5cee0]">
-                Half its conferences start before {h.usual_start ?? '—'}, half after
-                {h.busiest_hour != null && <> — the busiest hour is {hourLabel(h.busiest_hour)}–{hourLabel((h.busiest_hour + 1) % 24)}</>}.
-                {h.median_length_minutes != null && <> A typical room runs {h.median_length_minutes} minutes.</>}
-              </div>
-            </>
-          )}
-        />
-        <Kpi
-          {...NONE}
-          tone={h.days_since_active >= 15 ? TONES.orange : TONES.teal}
-          icon={CalendarClock}
-          label="Last active"
-          value={dayLabel(h.last_active).replace(/ \d{4}$/, '')}
-          note={<span className={clsx(h.days_since_active >= 15 && 'text-[#e07d2c]')}>{daysAgo(h.days_since_active)}</span>}
-          tip={() => (
-            <TipBody
-              eyebrow="Last conference"
-              title={dayLabel(h.last_active)}
-              value={h.days_since_active}
-              share={`days before ${dayLabel(data.as_of)}, the latest data`}
-            />
-          )}
-        />
       </div>
 
       <div className="mb-6 grid grid-cols-12 gap-4">

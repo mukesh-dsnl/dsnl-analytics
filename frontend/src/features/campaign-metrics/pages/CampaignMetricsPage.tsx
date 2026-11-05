@@ -16,6 +16,7 @@ import { useSortableRows } from '../useSortableRows';
 import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
 import { AccountWiseTable } from '../components/AccountWiseTable';
+import { AccountInsightDialog } from '../components/AccountInsightDialog';
 import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
 import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
 import { MetricsToolbar } from '../components/MetricsToolbar';
@@ -135,6 +136,12 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     return asked === 'provider' || asked === 'location' ? asked : 'account';
   });
   const [search, setSearch] = useState(() => params.get('search') ?? '');
+  // One account's campaigns (?account=): set by clicking an account on
+  // Account wise, or by a Summary page's link. An exact match on the account,
+  // unlike the free-text search.
+  const [account, setAccount] = useState(() => params.get('account') ?? '');
+  // The campaign whose charts are open, if any.
+  const [charting, setCharting] = useState<{ account: string; crn: string } | null>(null);
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it
@@ -146,6 +153,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   if (searchFor !== service) {
     setSearchFor(service);
     setSearch('');
+    setAccount('');
     // Campaigns exists on Voicedrop and Conference; leaving them lands on Account wise.
     if (view === 'campaigns' && !hasCampaigns(service)) setView('account');
   }
@@ -168,11 +176,12 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     const next = new URLSearchParams();
     if (view !== 'account') next.set('view', view);
     if (date) next.set('date', date);
+    if (account && view === 'campaigns') next.set('account', account);
     if (search.trim()) next.set('search', search.trim());
     if (next.toString() !== window.location.search.replace(/^\?/, '')) setParams(next, { replace: true });
-    // setParams is stable enough here; the URL follows these three only.
+    // setParams is stable enough here; the URL follows these only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, date, search]);
+  }, [view, date, search, account]);
 
   const filters: CampaignFilter = { date, service };
   const enabled = status.available;
@@ -244,29 +253,31 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
   // Campaign rows are one day's tens of campaigns, filtered here.
   const campaignRows = useMemo((): CampaignTableRow[] | undefined => {
-    const rows = campaignsQuery.data?.rows.map(withConnectedShare);
+    const all = campaignsQuery.data?.rows.map(withConnectedShare);
+    const rows = account ? all?.filter((r) => String(r.account_id) === account) : all;
     if (!rows || !term) return rows;
     return rows.filter((r) =>
       [r.crn, r.account_id, r.client_id, r.name ?? '', r.booking_reference ?? '']
         .some((value) => String(value).toLowerCase().includes(term)),
     );
-  }, [campaignsQuery.data, term]);
+  }, [campaignsQuery.data, term, account]);
   // Conference rooms for the day, filtered the same way, across their own columns.
   const conferenceRows = useMemo((): ConferenceRow[] | undefined => {
-    const rows = conferenceQuery.data?.rows.map((r) => ({
+    const all = conferenceQuery.data?.rows.map((r) => ({
       ...r,
       conference_name: r.conference_name ?? '',
       account_name: r.account_name ?? '',
       start_time: r.start_time ?? '',
       connect_rate: r.ringed ? Math.round((r.connected / r.ringed) * 1000) / 10 : 0,
     }));
+    const rows = account ? all?.filter((r) => String(r.account_id) === account) : all;
     if (!rows || !term) return rows;
     return rows.filter((r) =>
       [r.account_id, r.account_name, r.crn, r.conf_num, r.conference_name, r.pin ?? '', ...r.dids].some((v) =>
         String(v).toLowerCase().includes(term),
       ),
     );
-  }, [conferenceQuery.data, term]);
+  }, [conferenceQuery.data, term, account]);
   const conferenceSort = useSortableRows<ConferenceRow, ConferenceSortKey>(conferenceRows, {
     key: 'start_time',
     direction: 'asc',
@@ -407,6 +418,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               // The term belongs to the column it was typed against; carrying
               // "109775" into Location wise would silently show an empty table.
               setSearch('');
+              setAccount('');
             }}
             onExport={handleExport}
             canExport={visibleCount > 0}
@@ -417,6 +429,22 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             what hands the overflow to the table's own scroll region instead of
             the page. */}
         <div className="flex-1 min-h-0 flex flex-col">
+          {view === 'campaigns' && account && (
+            <div className="mb-3 flex shrink-0 items-center gap-2 text-sm">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#93b8f3] bg-[#eef4fd] py-1 pl-3 pr-1 text-[#1d4ed8] dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300">
+                Account <strong className="font-semibold tabular-nums">{account}</strong>
+                <button
+                  type="button"
+                  onClick={() => setAccount('')}
+                  aria-label="Show every account"
+                  className="rounded-full px-2 py-0.5 text-[12px] font-medium hover:bg-white/70 dark:hover:bg-white/10"
+                >
+                  Show all ✕
+                </button>
+              </span>
+              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its campaigns on {date}</span>
+            </div>
+          )}
           {!status.available ? (
             <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
               Campaign Metrics needs a readable CDR export directory.
@@ -428,6 +456,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               error={conferenceQuery.error}
               sort={conferenceSort.sort}
               onSort={conferenceSort.toggle}
+              onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
             />
           ) : view === 'campaigns' ? (
             <CampaignsTable
@@ -436,6 +465,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               error={campaignsQuery.error}
               sort={campaignSort.sort}
               onSort={campaignSort.toggle}
+              onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
             />
           ) : view === 'account' ? (
             <AccountWiseTable
@@ -446,6 +476,16 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={accountSort.sort}
               onSort={accountSort.toggle}
               showCpin={service !== 'voicedrop'}
+              // Voicedrop and Conference: an account opens its campaigns.
+              onOpenAccount={
+                hasCampaigns(service)
+                  ? (acct) => {
+                      setView('campaigns');
+                      setSearch('');
+                      setAccount(acct);
+                    }
+                  : undefined
+              }
             />
           ) : (
             <SimpleMetricsTable
@@ -466,6 +506,10 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           )}
         </div>
       </div>
+
+      {charting && (
+        <AccountInsightDialog filters={filters} account={charting.account} crn={charting.crn} onClose={() => setCharting(null)} />
+      )}
     </div>
   );
 }

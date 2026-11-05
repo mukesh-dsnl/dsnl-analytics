@@ -9,6 +9,7 @@ import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, Tab
 import { campaignApi } from '../api';
 import { downloadCsv } from '../exportCsv';
 import { SummaryLink } from './SummaryLink';
+import { ChartButton } from './ChartButton';
 import { summaryPath } from '../links';
 
 interface CampaignsTableProps {
@@ -17,6 +18,8 @@ interface CampaignsTableProps {
   error: Error | null;
   sort: SortState<CampaignSortKey>;
   onSort: (key: CampaignSortKey) => void;
+  /** Opens the charts for one campaign (its account and CRN). */
+  onChart?: (row: CampaignTableRow) => void;
 }
 
 /** The numeric columns, in reading order: what was loaded, what was dialled, how it went. */
@@ -42,7 +45,7 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * pinned header. A campaign with numbers left unblasted did not finish — its
  * row is tinted red, so it stands out without being searched for.
  */
-export function CampaignsTable({ rows, isLoading, error, sort, onSort }: CampaignsTableProps) {
+export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }: CampaignsTableProps) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -83,12 +86,12 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
                   onSort={onSort}
                   align="right"
                 />
-                <th className={`${TH_CLASS} w-14`} />
+                <th className={`${TH_CLASS} w-28`} />
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} />
+                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} onChart={onChart} />
               ))}
             </tbody>
           </table>
@@ -98,7 +101,7 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
   );
 }
 
-function CampaignRow({ row }: { row: CampaignTableRow }) {
+function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: CampaignTableRow) => void }) {
   const incomplete = isIncomplete(row);
 
   return (
@@ -191,7 +194,10 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
         {row.connected_duration.toLocaleString()}
       </td>
       <td className={clsx(CELL, 'text-right')}>
-        <RecordsDownload row={row} />
+        <span className="inline-flex items-center gap-1.5">
+          {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
+          <RecordsDownload row={row} />
+        </span>
       </td>
     </tr>
   );
