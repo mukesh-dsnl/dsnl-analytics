@@ -185,7 +185,37 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+/** One room in full, from that day's CODR booking and CDR legs (the Campaigns details panel). */
+export interface ConferenceRoom {
+  date: string;
+  account_id: number;
+  account_name: string | null;
+  client_id: number | null;
+  client_name: string | null;
+  conference_name: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  room_duration_mins: number | null;
+  crn: number;
+  conf_num: string;
+  chair_pin: number | null;
+  /** The chairperson named on the booking. */
+  chair_name: string | null;
+  dids: number[];
+  /** Every chairperson who called in, one line per name and number. */
+  chairpersons: { name: string | null; phone: string | null; legs: number; joined: boolean; first_call: string | null }[];
+  /** Set when the day's CDR export couldn't be read: the booking shows without DIDs or chairpersons. */
+  cdr_note: string | null;
+}
+
+/** The key a room is known by: a CRN is reused across rooms, the Conf Num tells them apart. */
+export const roomKey = (row: { crn: number; conf_num: string }) => `${row.crn}-${row.conf_num}`;
+
 export const conferenceSummaryApi = {
+  room: (r: { date: string; account: number; crn: number; conf_num: string }) =>
+    get<ConferenceRoom>(
+      `room?date=${r.date}&account=${r.account}&crn=${r.crn}&conf_num=${encodeURIComponent(r.conf_num)}`,
+    ),
   status: () => get<ConferenceStatus>('status'),
   records: (date: string) => get<{ date: string; rows: ConferenceRecord[] }>(`records?date=${date}`),
   daily: (end: string, days: number) =>

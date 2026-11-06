@@ -24,7 +24,10 @@ import { CampaignsTable } from '../components/CampaignsTable';
 import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
 import { conferenceSummaryApi } from '../../conference-summary/api';
 import { RecordsTable } from '../../conference-summary/components/RecordsTable';
-import type { ConferenceRow, ConferenceSortKey } from '../../conference-summary/components/RecordsTable';
+import type { ConferenceRow } from '../../conference-summary/components/RecordsTable';
+import { ConferenceRoomDrawer } from '../../conference-summary/components/ConferenceRoomDrawer';
+import type { RoomRef } from '../../conference-summary/components/ConferenceRoomDrawer';
+import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
 
@@ -142,6 +145,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const [account, setAccount] = useState(() => params.get('account') ?? '');
   // The campaign whose charts are open, if any.
   const [charting, setCharting] = useState<{ account: string; crn: string } | null>(null);
+  // The conference room whose details are open (Conference › Campaigns).
+  const [room, setRoom] = useState<RoomRef | null>(null);
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it
@@ -278,10 +283,11 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       ),
     );
   }, [conferenceQuery.data, term, account]);
-  const conferenceSort = useSortableRows<ConferenceRow, ConferenceSortKey>(conferenceRows, {
-    key: 'start_time',
-    direction: 'asc',
-  });
+  // Conference rooms always read in start-time order.
+  const conferenceSorted = useMemo(
+    () => conferenceRows && [...conferenceRows].sort((a, b) => a.start_time.localeCompare(b.start_time) || a.crn - b.crn),
+    [conferenceRows],
+  );
 
   const campaignSort = useSortableRows<CampaignTableRow, CampaignSortKey>(campaignRows, {
     key: 'start_time',
@@ -309,7 +315,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           'PIN', 'DID', 'Total Ringed Calls', 'Total Connected Calls', 'Total Call Duration (Mins)',
           'Total Attended Duration (Mins)', 'Peak Port Used',
         ],
-        (conferenceSort.rows ?? []).map((r) => [
+        (conferenceSorted ?? []).map((r) => [
           r.account_id, r.account_name, r.date, r.crn, r.conf_num, r.start_time, r.end_time, r.conference_name,
           r.pin, r.dids.join(', '), r.ringed, r.connected, r.call_minutes, r.attended_minutes, r.peak_port,
         ]),
@@ -360,7 +366,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       ? (accountSort.rows?.length ?? 0)
       : view === 'campaigns'
         ? service === 'conference'
-          ? (conferenceSort.rows?.length ?? 0)
+          ? (conferenceSorted?.length ?? 0)
           : (campaignSort.rows?.length ?? 0)
         : (simpleSort.rows?.length ?? 0);
 
@@ -451,11 +457,11 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             </div>
           ) : view === 'campaigns' && service === 'conference' ? (
             <RecordsTable
-              rows={conferenceSort.rows}
+              rows={conferenceSorted}
               isLoading={conferenceQuery.isPending}
               error={conferenceQuery.error}
-              sort={conferenceSort.sort}
-              onSort={conferenceSort.toggle}
+              openKey={room ? roomKey(room) : null}
+              onOpen={(r) => setRoom({ date: r.date, account: r.account_id, crn: r.crn, conf_num: r.conf_num, name: r.conference_name })}
               onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
             />
           ) : view === 'campaigns' ? (
@@ -507,6 +513,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
         </div>
       </div>
 
+      {room && <ConferenceRoomDrawer key={roomKey(room)} room={room} onClose={() => setRoom(null)} />}
       {charting && (
         <AccountInsightDialog filters={filters} account={charting.account} crn={charting.crn} onClose={() => setCharting(null)} />
       )}

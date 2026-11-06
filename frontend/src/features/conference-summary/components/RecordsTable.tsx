@@ -1,14 +1,15 @@
+import type { KeyboardEvent } from 'react';
 import clsx from 'clsx';
 
 import { ConnectedBar } from '../../campaign-metrics/components/ConnectedBar';
-import { SortableHeader, TableCard, TableStatus, TH_CLASS } from '../../campaign-metrics/components/TableChrome';
-import type { SortState } from '../../campaign-metrics/useSortableRows';
+import { TableCard, TableStatus, TH_CLASS, TH_CLASS_RIGHT } from '../../campaign-metrics/components/TableChrome';
+import { roomKey } from '../api';
 import type { ConferenceRecord } from '../api';
 import { SummaryLink } from '../../campaign-metrics/components/SummaryLink';
 import { ChartButton } from '../../campaign-metrics/components/ChartButton';
 import { summaryPath } from '../../campaign-metrics/links';
 
-/** A record as the table holds it: nulls flattened for sorting, and the connect rate worked out. */
+/** A record as the table holds it: nulls flattened, and the connect rate worked out. */
 export interface ConferenceRow extends ConferenceRecord {
   conference_name: string;
   account_name: string;
@@ -16,23 +17,7 @@ export interface ConferenceRow extends ConferenceRecord {
   connect_rate: number;
 }
 
-export type ConferenceSortKey =
-  | 'account_id'
-  | 'start_time'
-  | 'conference_name'
-  | 'crn'
-  | 'ringed'
-  | 'connected'
-  | 'connect_rate'
-  | 'call_minutes'
-  | 'attended_minutes'
-  | 'peak_port';
-
-const MEASURES: { key: ConferenceSortKey; label: string; title: string }[] = [
-  { key: 'ringed', label: 'Ringed', title: 'Distinct conferees dialled into the room' },
-  { key: 'connected', label: 'Connected', title: 'Of those, how many joined' },
-];
-const MINUTES: { key: ConferenceSortKey; label: string; title: string }[] = [
+const MINUTES: { key: 'call_minutes' | 'attended_minutes' | 'peak_port'; label: string; title: string }[] = [
   { key: 'call_minutes', label: 'Call min', title: 'Minutes from each leg starting to its release, summed' },
   { key: 'attended_minutes', label: 'Attended min', title: 'Minutes from each leg joining to its release, summed' },
   { key: 'peak_port', label: 'Peak port', title: 'The highest port number any leg used' },
@@ -41,28 +26,29 @@ const MINUTES: { key: ConferenceSortKey; label: string; title: string }[] = [
 const CELL = 'px-3 py-2.5 align-middle';
 const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
 
-const hhmm = (t: string | null) => (t ? t.slice(0, 5) : '—');
 const nf = new Intl.NumberFormat('en-US');
 
 /**
- * One day of conference_summary: a row per conference (CRN + Conf Num), on
- * one scrolling list under a pinned header — a day holds a few hundred rooms
- * at most. A room nobody joined is greyed, so the empty ones stand out
- * without a filter.
+ * One day of conference_summary: a row per conference (CRN + Conf Num), in
+ * start-time order, on one scrolling list under a pinned header — a day holds
+ * a few hundred rooms at most. A room nobody joined is greyed, so the empty
+ * ones stand out without a filter. Clicking a row opens the room's details
+ * (`onOpen`); the account id keeps its own link to the account's page.
  */
 export function RecordsTable({
   rows,
   isLoading,
   error,
-  sort,
-  onSort,
+  openKey,
+  onOpen,
   onChart,
 }: {
   rows: ConferenceRow[] | undefined;
   isLoading: boolean;
   error: Error | null;
-  sort: SortState<ConferenceSortKey>;
-  onSort: (key: ConferenceSortKey) => void;
+  /** The room whose details are open, highlighted. */
+  openKey?: string | null;
+  onOpen?: (row: ConferenceRow) => void;
   /** Opens the charts for one conference (its account and CRN). */
   onChart?: (row: ConferenceRow) => void;
 }) {
@@ -76,17 +62,21 @@ export function RecordsTable({
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="Time" sortKey="start_time" sort={sort} onSort={onSort} />
-                <SortableHeader label="Conference" sortKey="conference_name" sort={sort} onSort={onSort} />
-                <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
-                <th className={TH_CLASS}>PIN · DID</th>
-                {MEASURES.map((m) => (
-                  <SortableHeader key={m.key} label={m.label} sortKey={m.key} sort={sort} onSort={onSort} align="right" />
-                ))}
-                <SortableHeader label="Connected %" sortKey="connect_rate" sort={sort} onSort={onSort} align="right" />
+                <th className={TH_CLASS}>Account</th>
+                <th className={`${TH_CLASS} whitespace-nowrap`}>Start time</th>
+                <th className={TH_CLASS}>Conference</th>
+                <th className={TH_CLASS}>CRN</th>
+                <th className={TH_CLASS_RIGHT} title="Distinct conferees dialled into the room">
+                  Ringed
+                </th>
+                <th className={TH_CLASS_RIGHT} title="Of those, how many joined">
+                  Connected
+                </th>
+                <th className={TH_CLASS_RIGHT}>Connected %</th>
                 {MINUTES.map((m) => (
-                  <SortableHeader key={m.key} label={m.label} sortKey={m.key} sort={sort} onSort={onSort} align="right" />
+                  <th key={m.key} className={TH_CLASS_RIGHT} title={m.title}>
+                    {m.label}
+                  </th>
                 ))}
                 {onChart && <th className={`${TH_CLASS} w-16`} />}
               </tr>
@@ -94,17 +84,34 @@ export function RecordsTable({
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
               {rows.map((row) => {
                 const empty = row.connected === 0;
+                const open = openKey === roomKey(row);
                 return (
                   <tr
-                    key={`${row.crn}-${row.conf_num}`}
+                    key={roomKey(row)}
+                    aria-selected={onOpen ? open : undefined}
+                    {...(onOpen && {
+                      tabIndex: 0,
+                      title: 'Show this conference’s details',
+                      onClick: () => onOpen(row),
+                      onKeyDown: (e: KeyboardEvent) => {
+                        if (e.key === 'Enter') onOpen(row);
+                      },
+                    })}
                     className={clsx(
-                      'transition-colors hover:bg-[#f5f9fe] dark:hover:bg-white/[0.03]',
+                      'transition-colors',
+                      onOpen && 'cursor-pointer outline-none focus-visible:bg-[#eef5fe] dark:focus-visible:bg-white/[0.04]',
+                      open ? 'bg-[#e8f1fd] dark:bg-sky-500/10' : 'hover:bg-[#f5f9fe] dark:hover:bg-white/[0.03]',
                       empty && 'text-zinc-400 dark:text-zinc-500',
                     )}
                   >
                     <td className={clsx(CELL, 'max-w-[240px]')}>
-                      <div className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">
-                        <SummaryLink to={summaryPath('conference', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
+                      {/* The id is its own link, to the account's page — not the details. */}
+                      <div
+                        className="w-fit text-sm font-semibold tabular-nums text-zinc-900 dark:text-white"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <SummaryLink to={summaryPath('conference', row.account_id)!} title={`Open account ${row.account_id}'s page`}>
                           {row.account_id}
                         </SummaryLink>
                       </div>
@@ -112,13 +119,8 @@ export function RecordsTable({
                         {row.account_name}
                       </div>
                     </td>
-                    <td className={clsx(CELL, 'whitespace-nowrap')}>
-                      <div className="text-sm tabular-nums text-zinc-800 dark:text-zinc-200">
-                        {hhmm(row.start_time)} – {hhmm(row.end_time)}
-                      </div>
-                      {row.length_minutes != null && (
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{row.length_minutes} min</div>
-                      )}
+                    <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums text-zinc-800 dark:text-zinc-200')}>
+                      {row.start_time || '—'}
                     </td>
                     <td className={clsx(CELL, 'max-w-[320px]')}>
                       <div
@@ -128,17 +130,7 @@ export function RecordsTable({
                         {row.conference_name || '—'}
                       </div>
                     </td>
-                    <td className={clsx(CELL, 'whitespace-nowrap')}>
-                      <div className="text-sm tabular-nums">{row.crn}</div>
-                      <div className="text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">Conf {row.conf_num}</div>
-                    </td>
-                    <td className={clsx(CELL, 'whitespace-nowrap')}>
-                      <div className="text-sm tabular-nums">{row.pin ?? '—'}</div>
-                      <div className="text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400" title={row.dids.join(', ')}>
-                        {row.dids.length ? row.dids[0] : 'no DID'}
-                        {row.dids.length > 1 && ` +${row.dids.length - 1}`}
-                      </div>
-                    </td>
+                    <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums')}>{row.crn}</td>
                     <td className={NUM}>{nf.format(row.ringed)}</td>
                     <td className={clsx(NUM, !empty && 'font-semibold text-emerald-600 dark:text-emerald-400')}>
                       {nf.format(row.connected)}
@@ -148,11 +140,11 @@ export function RecordsTable({
                     </td>
                     {MINUTES.map((m) => (
                       <td key={m.key} className={NUM}>
-                        {nf.format(row[m.key] as number)}
+                        {nf.format(row[m.key])}
                       </td>
                     ))}
                     {onChart && (
-                      <td className={clsx(CELL, 'text-right')}>
+                      <td className={clsx(CELL, 'text-right')} onClick={(e) => e.stopPropagation()}>
                         <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />
                       </td>
                     )}

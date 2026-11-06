@@ -8,6 +8,9 @@ Conference › Summary API — conference_summary and conference_daily_summary.
                                                   hours, sleeping, movers, new
     GET /api/conference-summary/account/{id}      one account's history
     GET /api/conference-summary/statement?month=  per account per month
+    GET /api/conference-summary/room?date=&account=&crn=&conf_num=
+                                                  one room in full, from the
+                                                  day's CODR/CDR exports
 
 Read-only; see app/cdr/conference_summary.py for what each column means.
 """
@@ -19,9 +22,11 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.cdr import conference_detail
 from app.cdr import conference_insights as insights
 from app.cdr import conference_summary as tables
 from app.cdr import voicedrop_summary
+from app.cdr.campaign_service import DatasetNotReady
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -70,3 +75,19 @@ def conference_statement(month: Optional[str] = Query(default=None)) -> dict[str
     if month is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
     return {"month": month, "rows": _read(insights.statement, month)}
+
+
+@router.get("/conference-summary/room")
+def conference_room(
+    day: date = Query(alias="date"),
+    account: int = Query(),
+    crn: int = Query(),
+    conf_num: str = Query(min_length=1, max_length=50),
+) -> dict[str, Any]:
+    try:
+        result = conference_detail.detail(day, account, crn, conf_num)
+    except DatasetNotReady as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No CODR record for CRN {crn} / Conf {conf_num} of account {account} on {day}.")
+    return result
