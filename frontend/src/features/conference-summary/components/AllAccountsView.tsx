@@ -34,7 +34,7 @@ export function ConferenceSections({
   data: ConferenceOverview;
   tab: ConferenceTab;
   onDay: (iso: string) => void;
-  onAccount: (id: number) => void;
+  onAccount: (id: number, tab?: 'monthly') => void;
 }) {
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('conferences');
   const [hourMetric, setHourMetric] = useState<HourMetric>('conferences');
@@ -104,7 +104,7 @@ export function ConferenceSections({
     );
   }
 
-  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} />;
+  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} onAccount={onAccount} />;
 
   if (tab === 'statement') {
     return (
@@ -113,6 +113,7 @@ export function ConferenceSections({
         months={data.months}
         asOf={data.as_of!}
         columns={CONFERENCE_DAILY_COLUMNS}
+        onDay={onDay}
         service="conference"
       />
     );
@@ -152,7 +153,7 @@ export function ConferenceSections({
 }
 
 /** Per account, per month — one month at a time, or every month. */
-function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) {
+function MonthlyStatement({ months, asOf, onAccount }: { months: string[]; asOf: string; onAccount: (id: number, tab?: 'monthly') => void }) {
   // The last complete month by default: what billing asks for.
   const current = asOf.slice(0, 7);
   const [month, setMonth] = useState<string>(() => [...months].reverse().find((m) => m < current) ?? current);
@@ -194,7 +195,14 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
         }
       >
         <div className={query.isFetching ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
-          <StatementTable lines={lines} columns={CONFERENCE_COLUMNS} showMonth={month === 'all'} showAccount />
+          <StatementTable
+            lines={lines}
+            columns={CONFERENCE_COLUMNS}
+            showMonth={month === 'all'}
+            showAccount
+            onRow={(line) => onAccount(line.account_id, 'monthly')}
+            rowTitle={(line) => `Open account ${line.account_id}'s monthly statement`}
+          />
         </div>
       </Card>
     </div>

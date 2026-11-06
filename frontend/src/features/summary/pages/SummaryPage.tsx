@@ -77,7 +77,7 @@ export function SummaryPage() {
     setCampaignDate(iso);
     navigate(`/analytics/voicedrop/campaign-metrics?view=campaigns&date=${iso}`);
   };
-  const openAccount = (id: number) => navigate(`/analytics/voicedrop/accounts?account=${id}`);
+  const openAccount = (id: number, tab?: 'monthly') => navigate(`/analytics/voicedrop/accounts?account=${id}${tab ? `&tab=${tab}` : ''}`);
 
   const header =
     headerSlot &&
@@ -95,7 +95,7 @@ export function SummaryPage() {
     <HoverTooltipProvider>
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
-        <SectionTabs tabs={SUMMARY_TABS} active={tab} onTab={(next) => setParams(next === 'daily' ? {} : { tab: next })} />
+        <SectionTabs tabs={SUMMARY_TABS} active={tab} onTab={(next) => setParams(next === 'daily' ? {} : { tab: next }, { replace: true })} />
         {overview.isPending ? (
           <LoadingBlock />
         ) : overview.error ? (
@@ -119,7 +119,7 @@ function Sections({
   data: Overview;
   tab: SummaryTab;
   onDay: (iso: string) => void;
-  onAccount: (id: number) => void;
+  onAccount: (id: number, tab?: 'monthly') => void;
 }) {
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('dialed');
   const [hourMetric, setHourMetric] = useState<HourMetric>('dialed');
@@ -188,7 +188,7 @@ function Sections({
     );
   }
 
-  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} />;
+  if (tab === 'monthly') return <MonthlyStatement months={data.months} asOf={data.as_of!} onAccount={onAccount} />;
 
   if (tab === 'statement') {
     return (
@@ -198,6 +198,7 @@ function Sections({
         asOf={data.as_of!}
         columns={VOICEDROP_DAILY_COLUMNS}
         service="voicedrop"
+        onDay={onDay}
       />
     );
   }
@@ -244,8 +245,8 @@ function Sections({
   );
 }
 
-/** Per account, per month, for billing — one month at a time, or every month. */
-function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) {
+/** Per account, per month, for billing — one month at a time, or every month. A row opens that account's statement. */
+function MonthlyStatement({ months, asOf, onAccount }: { months: string[]; asOf: string; onAccount: (id: number, tab?: 'monthly') => void }) {
   // The last complete month by default: what billing asks for.
   const current = asOf.slice(0, 7);
   const [month, setMonth] = useState<string>(() => [...months].reverse().find((m) => m < current) ?? current);
@@ -287,7 +288,14 @@ function MonthlyStatement({ months, asOf }: { months: string[]; asOf: string }) 
         }
       >
         <div className={query.isFetching ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
-          <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth={month === 'all'} showAccount />
+          <StatementTable
+            lines={lines}
+            columns={VOICEDROP_COLUMNS}
+            showMonth={month === 'all'}
+            showAccount
+            onRow={(line) => onAccount(line.account_id, 'monthly')}
+            rowTitle={(line) => `Open account ${line.account_id}'s monthly statement`}
+          />
         </div>
       </Card>
     </div>

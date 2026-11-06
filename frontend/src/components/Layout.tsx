@@ -38,16 +38,17 @@ interface NavSection {
 }
 
 /**
- * The overview pages sit at the top. Under them, the service switcher picks
- * one service and the sidebar lists that service's pages — Summary, Attempt
- * Metrics, Campaign Metrics (MultiCall: Registration Lookup instead of
- * Summary). See ./services.ts.
+ * Two sections. The global pages — Home and Port Analyzer, which covers every
+ * service — sit at the top. Under them, the service switcher picks one
+ * service and the sidebar lists that service's pages — Summary, Accounts,
+ * Attempt Metrics, Campaign Metrics (MultiCall: Registration Lookup instead).
+ * See ./services.ts. (The All Services page still exists; it has no entry.)
  */
 const OVERVIEW: NavSection = {
   title: 'Overview',
   items: [
     { label: 'Home', path: '/', icon: House },
-    { label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid },
+    { label: 'Port Analyzer', path: '/analytics/ports', icon: Server },
   ],
 };
 // The assistant is deliberately not a nav entry: the floating button in the
@@ -363,7 +364,11 @@ export function Layout() {
                 ))}
               </div>
               <div className="space-y-0.5">
-                {narrow && <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />}
+                {narrow ? (
+                  <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
+                ) : (
+                  <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">Services</div>
+                )}
                 <div className="pb-1.5">
                   <ServiceSwitcher value={shownService} onChange={switchService} collapsed={narrow} />
                 </div>
@@ -376,13 +381,6 @@ export function Layout() {
                     collapsed={narrow}
                   />
                 ))}
-                {/* Port Analyzer reads every service; from here it opens on this one. */}
-                <NavLink
-                  item={{ label: 'Port Analyzer', path: '/analytics/ports', icon: Server, to: `/analytics/ports?service=${shownService}` }}
-                  section={SERVICES[shownService].name}
-                  active={isActivePath('/analytics/ports')}
-                  collapsed={narrow}
-                />
               </div>
             </nav>
           )}

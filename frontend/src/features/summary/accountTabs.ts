@@ -11,6 +11,7 @@ export const ACCOUNT_TABS: { id: AccountTab; label: string; icon: typeof Clock }
   { id: 'statement', label: 'Daily Statement', icon: FileSpreadsheet },
 ];
 
+/** The open tab, from the URL. Switching tabs replaces the history entry: Back leaves the page, not the tab. */
 export function useAccountTab(): [AccountTab, (tab: AccountTab) => void] {
   const [params, setParams] = useSearchParams();
   const value = params.get('tab');
@@ -21,6 +22,6 @@ export function useAccountTab(): [AccountTab, (tab: AccountTab) => void] {
       if (next === 'daily') out.delete('tab');
       else out.set('tab', next);
       return out;
-    });
+    }, { replace: true });
   return [tab, setTab];
 }

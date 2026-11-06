@@ -51,7 +51,7 @@ export function ConferenceSummaryPage() {
   }
 
   const openDay = (iso: string) => navigate(`/analytics/conference/campaign-metrics?view=campaigns&date=${iso}`);
-  const openAccount = (id: number) => navigate(`/analytics/conference/accounts?account=${id}`);
+  const openAccount = (id: number, tab?: 'monthly') => navigate(`/analytics/conference/accounts?account=${id}${tab ? `&tab=${tab}` : ''}`);
 
   const header =
     headerSlot &&
@@ -69,7 +69,7 @@ export function ConferenceSummaryPage() {
     <HoverTooltipProvider>
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
-        <SectionTabs tabs={TABS} active={tab} onTab={(next) => setParams(next === 'daily' ? {} : { tab: next })} />
+        <SectionTabs tabs={TABS} active={tab} onTab={(next) => setParams(next === 'daily' ? {} : { tab: next }, { replace: true })} />
         {overview.isPending ? (
           <LoadingBlock />
         ) : overview.error ? (

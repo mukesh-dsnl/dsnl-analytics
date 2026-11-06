@@ -12,6 +12,7 @@ import { DownloadButton, Problem } from '../../summary/components/PageParts';
 import { StatementTable } from '../../summary/components/StatementTable';
 import { WeekHourHeatmap } from '../../summary/components/WeekHourHeatmap';
 import { Toggle } from '../../summary/components/ui';
+import { monthLabel } from '../../summary/format';
 import { downloadStatement } from '../../summary/statement';
 import { conferenceSummaryApi } from '../api';
 import type { ConferenceAccountHistory, ConferenceStatementLine } from '../api';
@@ -27,6 +28,9 @@ interface ViewProps {
   tab: AccountTab;
   onTab: (tab: AccountTab) => void;
   onDay: (iso: string) => void;
+  /** The Daily Statement's month (?month=), set by clicking a month. */
+  month: string | null;
+  onMonth: (month: string) => void;
 }
 
 /** One account's history on the Conference Accounts page, in four sections (?tab=). */
@@ -43,7 +47,7 @@ export function AccountView({ accountId, ...rest }: ViewProps & { accountId: num
   return <History data={query.data} {...rest} />;
 }
 
-function History({ data, tab, onTab, onDay }: ViewProps & { data: ConferenceAccountHistory }) {
+function History({ data, tab, onTab, onDay, month, onMonth }: ViewProps & { data: ConferenceAccountHistory }) {
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('conferences');
   const [hourMetric, setHourMetric] = useState<HourMetric>('conferences');
   const lines = useMemo<ConferenceStatementLine[]>(
@@ -110,7 +114,14 @@ function History({ data, tab, onTab, onDay }: ViewProps & { data: ConferenceAcco
               <DownloadButton onClick={() => downloadStatement(`conference-statement-${data.account_id}.csv`, lines, CONFERENCE_COLUMNS)} />
             }
           >
-            <StatementTable lines={lines} columns={CONFERENCE_COLUMNS} showMonth showAccount={false} />
+            <StatementTable
+              lines={lines}
+              columns={CONFERENCE_COLUMNS}
+              showMonth
+              showAccount={false}
+              onRow={(line) => onMonth(line.month)}
+              rowTitle={(line) => `Open the days of ${monthLabel(line.month)}`}
+            />
           </Card>
         </div>
       )}
@@ -123,6 +134,8 @@ function History({ data, tab, onTab, onDay }: ViewProps & { data: ConferenceAcco
           columns={ACCOUNT_DAILY_COLUMNS}
           service={`conference-${data.account_id}`}
           scope={`account ${data.account_id}`}
+          initialMonth={month}
+          onDay={onDay}
         />
       )}
     </>

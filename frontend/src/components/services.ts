@@ -46,7 +46,7 @@ export const SERVICES: Record<ServiceId, ServiceMeta> = {
     pages: [page('voicedrop', 'summary'), page('voicedrop', 'accounts'), page('voicedrop', 'attempt-metrics'), page('voicedrop', 'campaign-metrics')],
   },
   conference: {
-    name: 'Conference',
+    name: 'Audio Conference',
     blurb: 'Audio conference rooms',
     icon: Users,
     tile: 'bg-[#f1eafd] text-[#7c5cd6] dark:bg-violet-500/15 dark:text-violet-300',

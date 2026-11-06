@@ -63,7 +63,7 @@ export function ServiceSwitcher({
         side={collapsed ? 'right' : 'bottom'}
         align="start"
         sideOffset={8}
-        className="w-[248px] border-[#e4eaf2] bg-white p-1.5 text-[#0f172a] shadow-[0_16px_40px_rgba(0,0,0,0.3)] dark:border-[#e4eaf2] dark:bg-white dark:text-[#0f172a]"
+        className="w-[224px] border-[#e4eaf2] bg-white p-1.5 text-[#0f172a] shadow-[0_16px_40px_rgba(0,0,0,0.3)] dark:border-[#e4eaf2] dark:bg-white dark:text-[#0f172a]"
       >
         {SERVICE_ORDER.map((id) => {
           const option = SERVICES[id];
@@ -77,17 +77,14 @@ export function ServiceSwitcher({
                 setOpen(false);
               }}
               className={clsx(
-                'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3]',
+                'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3]',
                 id === value ? 'bg-[#eef4fd]' : 'hover:bg-[#f5f8fc]',
               )}
             >
-              <span className={clsx('inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', lightTile(option.tile))}>
+              <span className={clsx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', lightTile(option.tile))}>
                 <OptionIcon className="h-4 w-4" />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium">{option.name}</span>
-                <span className="block truncate text-[11px] text-[#6b7a90]">{option.blurb}</span>
-              </span>
+              <span className={clsx('min-w-0 flex-1 truncate text-[13px]', id === value ? 'font-semibold' : 'font-medium')}>{option.name}</span>
               {id === value && <Check className="h-4 w-4 shrink-0 text-[#2563eb]" />}
             </button>
           );

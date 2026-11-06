@@ -66,7 +66,15 @@ export function ConferenceAccountsPage() {
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
         {accountId ? (
-          <AccountView key={accountId} accountId={accountId} tab={tab} onTab={setTab} onDay={openDay} />
+          <AccountView
+            key={accountId}
+            accountId={accountId}
+            tab={tab}
+            onTab={setTab}
+            onDay={openDay}
+            month={params.get('month')}
+            onMonth={(month) => setParams({ account: String(accountId), tab: 'statement', month })}
+          />
         ) : overview.isPending ? (
           <LoadingBlock />
         ) : overview.error ? (
@@ -85,7 +93,7 @@ export function ConferenceAccountsPage() {
             }))}
             totalLabel="Attended minutes"
             query={params.get('q') ?? ''}
-            onQuery={(q) => setParams(q ? { q } : {})}
+            onQuery={(q) => setParams(q ? { q } : {}, { replace: true })}
             onAccount={openAccount}
           />
         )}

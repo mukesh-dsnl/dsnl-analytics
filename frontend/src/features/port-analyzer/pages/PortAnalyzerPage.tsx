@@ -81,16 +81,17 @@ function Analyzer({ minDate, maxDate }: { minDate: string | null; maxDate: strin
   // Minute by minute, the total only: "Hour wise" is folded from it in the chart.
   // Opens on yesterday, 9 AM to 9 PM, unless the URL says otherwise.
   const request: PortRequest = { ...requestFromParams(params, defaultDay(minDate, maxDate)), resolution: '1m', group_by: 'none' };
-  const view: PortView = params.get('view') === 'minute' ? 'minute' : 'hour';
+  // Minute wise unless the URL asks for hours.
+  const view: PortView = params.get('view') === 'hour' ? 'hour' : 'minute';
 
   const apply = (draft: Draft) => {
     const next = paramsFromRequest({ ...request, ...draft });
-    if (view !== 'hour') next.set('view', view);
+    if (view !== 'minute') next.set('view', view);
     setParams(next);
   };
   const setView = (v: PortView) => {
     const next = new URLSearchParams(params);
-    if (v === 'hour') next.delete('view');
+    if (v === 'minute') next.delete('view');
     else next.set('view', v);
     setParams(next, { replace: true });
   };

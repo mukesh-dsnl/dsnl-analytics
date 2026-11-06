@@ -12,7 +12,7 @@ import { Card } from '../../cdr-dashboard/components/attempt-analytics/AttemptCh
 import { compact, fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
 import { summaryApi } from '../api';
 import type { AccountHistory } from '../api';
-import { dayLabel } from '../format';
+import { dayLabel, monthLabel } from '../format';
 import { VOICEDROP_COLUMNS, downloadStatement } from '../statement';
 import type { VoicedropStatementLine } from '../statement';
 import { ActivityCalendar } from '../components/ActivityCalendar';
@@ -92,7 +92,16 @@ export function AccountsPage() {
       {header}
       <div className="vd-design mx-auto max-w-[1500px] p-8">
         {accountId ? (
-          <AccountView key={`${accountId}-${clientId}`} accountId={accountId} clientId={clientId} tab={tab} onTab={setTab} onDay={openDay} />
+          <AccountView
+            key={`${accountId}-${clientId}`}
+            accountId={accountId}
+            clientId={clientId}
+            tab={tab}
+            onTab={setTab}
+            onDay={openDay}
+            month={params.get('month')}
+            onMonth={(month) => setParams({ account: String(accountId), ...(clientId && { client: String(clientId) }), tab: 'statement', month })}
+          />
         ) : overview.isPending ? (
           <LoadingBlock />
         ) : overview.error ? (
@@ -111,7 +120,7 @@ export function AccountsPage() {
             }))}
             totalLabel="Total dialed"
             query={params.get('q') ?? ''}
-            onQuery={(q) => setParams(q ? { q } : {})}
+            onQuery={(q) => setParams(q ? { q } : {}, { replace: true })}
             onAccount={openAccount}
           />
         )}
@@ -124,6 +133,9 @@ interface ViewProps {
   tab: AccountTab;
   onTab: (tab: AccountTab) => void;
   onDay: (iso: string) => void;
+  /** The Daily Statement's month (?month=), set by clicking a month. */
+  month: string | null;
+  onMonth: (month: string) => void;
 }
 
 function AccountView({ accountId, clientId, ...rest }: ViewProps & { accountId: number; clientId: number | null }) {
@@ -137,7 +149,7 @@ function AccountView({ accountId, clientId, ...rest }: ViewProps & { accountId: 
   return <History data={query.data} {...rest} />;
 }
 
-function History({ data, tab, onTab, onDay }: ViewProps & { data: AccountHistory }) {
+function History({ data, tab, onTab, onDay, month, onMonth }: ViewProps & { data: AccountHistory }) {
   const [calendarMetric, setCalendarMetric] = useState<CalendarMetric>('dialed');
   const [hourMetric, setHourMetric] = useState<HourMetric>('campaigns');
   const lines = useMemo<VoicedropStatementLine[]>(
@@ -232,7 +244,14 @@ function History({ data, tab, onTab, onDay }: ViewProps & { data: AccountHistory
             subtitle={`${who[0].toUpperCase()}${who.slice(1)}, month by month`}
             extra={<DownloadButton onClick={() => downloadStatement(`voicedrop-statement-${file}.csv`, lines, VOICEDROP_COLUMNS)} />}
           >
-            <StatementTable lines={lines} columns={VOICEDROP_COLUMNS} showMonth showAccount={false} />
+            <StatementTable
+              lines={lines}
+              columns={VOICEDROP_COLUMNS}
+              showMonth
+              showAccount={false}
+              onRow={(line) => onMonth(line.month)}
+              rowTitle={(line) => `Open the days of ${monthLabel(line.month)}`}
+            />
           </Card>
         </div>
       )}
@@ -245,6 +264,8 @@ function History({ data, tab, onTab, onDay }: ViewProps & { data: AccountHistory
           columns={ACCOUNT_DAILY_COLUMNS}
           service={`voicedrop-${file}`}
           scope={who}
+          initialMonth={month}
+          onDay={onDay}
         />
       )}
     </>
