@@ -9,6 +9,12 @@ import { HoverTooltipProvider } from './attempt-analytics/HoverTooltip';
 /** Stable reference so a still-loading cube doesn't hand every readout a fresh empty array. */
 const EMPTY_CUBE_ROWS: CallCubeRow[] = [];
 
+// A day's files are a heavy read on the share and don't change once written,
+// so a set of filters is fetched once per browser session: coming back to the
+// page (or to filters already seen) shows the kept result straight away, with
+// no request. Reloading the browser starts the session over and fetches anew.
+const KEEP_FOR_SESSION = { staleTime: Infinity, gcTime: Infinity } as const;
+
 interface CDRDashboardProps {
   filters: CdrFilters;
 }
@@ -25,6 +31,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   const { data, isPending, isFetching, error } = useQuery({
     queryKey: ['cdr', 'dashboard', filters],
     queryFn: () => cdrApi.dashboard(filters),
+    ...KEEP_FOR_SESSION,
   });
 
   // Second, independent request: the joint location × connected × direction ×
@@ -33,6 +40,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   const { data: cube } = useQuery({
     queryKey: ['cdr', 'call-cube', filters],
     queryFn: () => cdrApi.callCube(filters),
+    ...KEEP_FOR_SESSION,
   });
   const cubeRows = cube?.rows ?? EMPTY_CUBE_ROWS;
 

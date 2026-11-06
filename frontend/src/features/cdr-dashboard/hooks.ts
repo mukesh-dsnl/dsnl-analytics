@@ -19,6 +19,8 @@ export function useCdrStatus() {
     queryKey: CDR_STATUS_KEY,
     queryFn: cdrApi.getStatus,
     staleTime: 60_000,
+    // Kept after leaving the page, so a return shows straight away (refreshed quietly when stale).
+    gcTime: Infinity,
   });
 }
 
