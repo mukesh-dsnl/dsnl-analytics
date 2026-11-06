@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { multicallApi } from '../api';
 import type { Profile, RegistrationMatch, SearchCriteria } from '../api';
-import { dateLabel, focus, sourceLabel, surface } from '../lookup';
+import { dateLabel, fieldFocus, focus, sourceLabel, surface } from '../lookup';
 import { Avatar, Field, Hit, Kbd, StatusPill } from './shared';
 
 interface AccountViewProps {
@@ -165,7 +165,7 @@ export function AccountView({ accounts, index, criteria, onNavigate, onBack }: A
                 <span className="sr-only">Find a profile</span>
                 <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, phone, email or ref" autoComplete="off"
-                  className={clsx('h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-white', focus)} />
+                  className={clsx('h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-white', fieldFocus)} />
                 {query && <button type="button" onClick={() => setQuery('')} aria-label="Clear profile filter" className={clsx('absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200', focus)}><X className="h-3.5 w-3.5" /></button>}
               </label>}
             </div>

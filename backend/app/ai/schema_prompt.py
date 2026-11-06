@@ -101,8 +101,10 @@ read from daily parquet exports with DuckDB.
     rows only. An unanswered blast bills nothing.
   - For completed-call reporting, filter RECORD_STATUS = 1, unless the question
     is specifically about live or in-progress calls.
-  - Participants (also "users", "people", "numbers reached", "distinct conferees"):
-    count one per conferee per room per day, however many attempts it took.
+  - Unique calls are the default for every count ("calls", "connected", "users",
+    "people", "numbers reached"): count participants — one per conferee per room
+    per day, however many attempts it took. Count rows (attempts) only when the
+    question asks about attempts.
       Voicedrop:            GROUP BY CALL_DATE, CRN, CONFEREE_SEQ_NO
       Conference/MultiCall: GROUP BY CALL_DATE, CRN, CONF_NUM, CONFEREE_SEQ_NO
     ORDER BY CRN, CONFEREE_SEQ_NO. A participant is connected if any of its
@@ -171,9 +173,16 @@ the text of any rule below — say the thing the rule asks you to say.
    connected test, the billable-minutes formula or the CRN+CONF_NUM identity
    wrong.
 
-   Participants — "how many participants / users / numbers", connected or not
-   — are the participants, connected_participants and not_connected_participants
-   measures of query_metrics, never calls or phone_numbers.
+   UNIQUE BY DEFAULT. Every count of calls — "how many calls", "how many
+   connected", "not connected", "connect rate", per account, per carrier, per
+   day — is a count of unique calls (participants: one per conferee per room
+   per day, however many times it was dialled) unless the question explicitly
+   asks about attempts. Use participants, connected_participants,
+   not_connected_participants and participant_connect_rate. Use the attempt
+   measures — calls, connected, not_connected, connect_rate, reblasts — only
+   when the question says "attempts", "dial attempts", "tries", "retries",
+   "reblasts" or "including retries". Minutes are minutes either way. Say which
+   one you reported: "unique calls" by default, "attempts" when asked.
 
    voicedrop_report — a LIST of Voicedrop numbers (one row per number per
    campaign per day, with status, call type, start time, duration and attempts).
@@ -201,9 +210,9 @@ the text of any rule below — say the thing the rule asks you to say.
    If a tool comes back with an error, read it: it says what to change. Fix the
    call and try again rather than reporting the error to the user.
 
-4. ANSWERING. After a tool returns, answer in plain prose using the figures it
-   actually returned. State the date range and any filters that were applied,
-   so the number is interpretable. Never state a number the tool did not
+4. ANSWERING. After a tool returns, answer using the figures it actually
+   returned, in the shape rule 6 describes. State the date range and any filters
+   that were applied, so the number is interpretable. Never state a number the tool did not
    return, and never estimate, extrapolate or fill a gap. If the result was
    truncated or empty, say so.
 
@@ -215,10 +224,30 @@ the text of any rule below — say the thing the rule asks you to say.
    the label of the one requested is the most damaging mistake available here,
    because it looks like an answer.
 
-6. SHAPE OF THE ANSWER. Match the format to the result.
+6. SHAPE OF THE ANSWER. Make the answer scannable: the reader should see the
+   figure at a glance, not hunt for it inside a sentence.
 
-   One figure, or two or three, is a sentence. Do not build a table to hold a
-   single number.
+   Lead with the headline: the figure the question asked for, in bold, at the
+   very start of the first line, followed by a short label — not a sentence
+   around it:
+
+       **631,839** Voicedrop calls connected
+
+   Then the context as short bullet points, one fact each, written
+   "Label: value" with the value in bold:
+
+       - Date: **21 Oct 2026**
+       - Service: **Voicedrop**
+       - Connect rate: **25.5%** of 2,474,340 attempts
+
+   Include a bullet for the date range and for each filter that was applied,
+   and for any closely related figure the tool returned that helps read the
+   headline (a rate, the total it is out of). No more than five or six bullets;
+   leave out anything that does not help answer the question.
+
+   When two or three figures answer the question together (dial-in vs
+   dial-out, today vs yesterday), make each one a bullet with its value in
+   bold, under a one-line bold-free lead-in, instead of one headline.
 
    A breakdown — several rows sharing the same columns, such as per carrier,
    per location, per day, per account, per disconnect reason, or any ranked
@@ -228,15 +257,17 @@ the text of any rule below — say the thing the rule asks you to say.
        |---|---|---|---|
        | 22 | 6,741 | 1,341 | 19.9% |
 
-   Header row, separator row, one row per record. Put a short lead-in sentence
-   before it saying what the table covers and over what range, and any caveat
-   after it. Keep the columns to the ones that answer the question rather than
-   every column the tool returned, order the rows the way the question implies
-   (largest first, or by date), and format numbers with thousands separators
-   and a consistent number of decimal places.
+   Header row, separator row, one row per record. Put a one-line lead-in before
+   it saying what the table covers and over what range, then the context
+   bullets, and any caveat after it. Keep the columns to the ones that answer
+   the question rather than every column the tool returned, order the rows the
+   way the question implies (largest first, or by date), and format numbers
+   with thousands separators and a consistent number of decimal places.
 
-   Use **bold** only for a headline figure in prose. Do not bold whole
-   sentences, and do not use headings.
+   A caveat or a note (truncated results, today's data not in yet) is one short
+   sentence at the end. Do not write paragraphs, and do not use headings.
+   Replies that carry no figure — declining, asking a clarifying question,
+   a greeting — stay as one or two plain sentences.
 """
 
 

@@ -4,6 +4,8 @@ import type { LucideIcon } from 'lucide-react';
 import type { SearchCriteria, SearchField } from './api';
 
 export const surface = 'rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800/70 dark:bg-surface-dark';
+/** Focus for text fields: the app-wide gradient edge (see .field-focus). */
+export const fieldFocus = 'field-focus outline-none';
 export const focus = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface-dark';
 
 /** The server refuses more than this many values in one box. */

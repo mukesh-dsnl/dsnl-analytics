@@ -56,10 +56,11 @@ def test_connect_rate_is_a_percentage(fixture_lake):
     assert row["connect_rate"] == pytest.approx(66.67, abs=0.01)  # 4 of 6
 
 
-def test_defaults_to_calls_connected_and_rate(fixture_lake):
+def test_defaults_to_unique_calls(fixture_lake):
+    # Unique calls (participants) unless attempts are asked for.
     day = fixture_lake.isoformat()
-    payload = run(date_from=day, date_to=day)
-    assert set(payload["rows"][0]) == {"calls", "connected", "connect_rate"}
+    row = run(date_from=day, date_to=day)["rows"][0]
+    assert row == {"participants": 6, "connected_participants": 4, "participant_connect_rate": 66.67}
 
 
 # ── Grouping ───────────────────────────────────────────────────────────────

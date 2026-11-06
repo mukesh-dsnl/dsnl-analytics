@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, RefreshCw } from 'lucide-react';
+import { Check, ChevronRight, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { TextShimmer } from '@/components/core/text-shimmer';
 import type { ChatStep } from '../hooks';
@@ -133,23 +133,26 @@ function StepRow({
  * once the answer lands the lines stay exactly where they are as the record of
  * how it was reached, with the time each step took. That continuity is the
  * point — the progress display is not replaced by a summary, it *becomes* one.
+ *
+ * Once the answer is in, the record folds into one "Thought for 8.4s" line
+ * above it; a click opens the steps again.
  */
 export function RoundSteps({ steps, isLive }: RoundStepsProps) {
   // Which steps existed on the first render. Those are history and appear
   // instantly; anything added later is new work and types itself in.
   const initialCount = useRef(isLive ? 0 : steps.length);
   const animate = !prefersReducedMotion();
+  const [expanded, setExpanded] = useState(false);
 
   if (!steps.length) return null;
 
-  return (
+  const list = (
     <ul
       className={clsx(
         'space-y-0.5',
-        // Once the answer is below it, the list is separated from it by a rule
-        // underneath rather than above — the steps read as the preamble to the
-        // answer, which is the order they happened in.
-        !isLive && 'mb-2.5 border-b border-zinc-200 dark:border-zinc-800/60 pb-2',
+        // Opened after the answer: indented under the "Thought" line, on a
+        // thin rule, so it reads as that line's detail.
+        !isLive && 'mt-1 ml-1.5 border-l border-zinc-200 pl-3 dark:border-zinc-800',
       )}
       aria-live={isLive ? 'polite' : undefined}
     >
@@ -166,5 +169,29 @@ export function RoundSteps({ steps, isLive }: RoundStepsProps) {
         />
       ))}
     </ul>
+  );
+
+  if (isLive) return list;
+
+  const seconds = steps.reduce((total, step) => total + (step.seconds ?? 0), 0);
+  return (
+    <div className="mb-2.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((open) => !open)}
+        aria-expanded={expanded}
+        className="inline-flex items-center gap-1 rounded-md text-xs text-zinc-500 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+      >
+        {seconds > 0 ? (
+          <>
+            Thought for <span className="tabular-nums">{seconds.toFixed(seconds < 10 ? 1 : 0)}s</span>
+          </>
+        ) : (
+          'Thought'
+        )}
+        <ChevronRight className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
+      </button>
+      {expanded && list}
+    </div>
   );
 }

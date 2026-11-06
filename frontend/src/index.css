@@ -312,3 +312,219 @@ body {
   --action-hover: #33b8ed;
   --on-action: #10152a;
 }
+
+/* The attempt-analytics redesign's typeface (Voicedrop charts). Scoped to
+   .vd-design so the rest of the app keeps Inter. */
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-medium.woff2') format('woff2');
+  font-weight: 500 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: Dashboard;
+  src: url('./assets/fonts/dashboard-bold.woff2') format('woff2');
+  font-weight: 650 900;
+  font-display: swap;
+}
+.vd-design {
+  font-family: Dashboard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-synthesis: none;
+}
+@keyframes vd-tooltip-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* The redesigned pages' canvas: one flat, light blue tone — no gradient, no
+   glow — painted on the content panel. Dark mode keeps a flat navy. */
+.vd-canvas {
+  background-color: #eef4fb;
+}
+.dark .vd-canvas {
+  background-color: #0f1729;
+}
+
+/* ── The app shell ─────────────────────────────────────────────────────────
+   The sidebar and the gutter around the content panel are a deep navy in both
+   themes — switching theme changes only the floating content panel. Built the
+   same way as the brand field (see .app-ground): a flat fill, a broad diagonal
+   sheen and a fine halftone, re-coloured. The sign-in page's left side is the
+   same navy, also in both themes. */
+.app-ground.app-shell,
+.app-ground.app-ground-hero {
+  --ground-dot: rgba(255, 255, 255, 0.05);
+
+  background-color: #0b1628;
+  background-image:
+    radial-gradient(circle at 16% 82%, rgba(56, 160, 230, 0.10), transparent 55%),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(var(--ground-dot) var(--ground-dot-radius), transparent var(--ground-dot-edge));
+  background-size: auto, auto, var(--ground-dot-gap) var(--ground-dot-gap);
+}
+
+/* A 1px gradient edge drawn inside an element's border box, without touching
+   its background (so it works over layered backgrounds like .vd-canvas).
+   Colours come from --edge-from / --edge-via / --edge-to. Dark mode only. */
+.vd-edge {
+  --edge-from: rgba(34, 211, 238, 0.22);
+  --edge-via: rgba(59, 130, 246, 0.12);
+  --edge-to: rgba(139, 92, 246, 0.2);
+}
+.vd-edge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--edge-from), var(--edge-via), var(--edge-to));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+  opacity: 0;
+}
+.dark .vd-edge::before {
+  opacity: 1;
+}
+
+/* ── Field focus ───────────────────────────────────────────────────────────
+   Every text input, search box, select and date-picker trigger shows focus as
+   one thin brand-blue edge with a soft glow, instead of a thick ring. Drawn
+   with box-shadows, so it works on any field colour and follows the field's
+   rounded corners. `field-focus-within` is for a box that holds a borderless
+   field (the chat composer); `[data-state=open]` keeps a date picker lit while
+   its calendar is open, since a click does not set :focus-visible. */
+.field-focus:focus,
+.field-focus[data-state='open'],
+.field-focus-within:focus-within {
+  outline: none;
+  border-color: #00a3e0 !important;
+  box-shadow: 0 0 0 3px rgba(0, 163, 224, 0.14) !important;
+}
+.dark .field-focus:focus,
+.dark .field-focus[data-state='open'],
+.dark .field-focus-within:focus-within {
+  border-color: rgba(56, 189, 248, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14) !important;
+}
+
+/* ── Suggestion cards ──────────────────────────────────────────────────────
+   A soft highlight that travels slowly around the card's edge: a conic
+   gradient — faint all round, with one sky-to-violet arc — rotated by an
+   animatable angle and masked down to a 1px border. Each card is offset (see
+   --orbit-delay) so they don't move in step. Still for reduced motion. */
+@property --orbit-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.ai-orbit {
+  position: relative;
+  border-color: transparent !important;
+}
+.ai-orbit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--orbit-angle),
+    rgba(148, 163, 184, 0.28) 0deg,
+    rgba(148, 163, 184, 0.28) 200deg,
+    rgba(56, 189, 248, 0.7) 270deg,
+    rgba(139, 92, 246, 0.6) 320deg,
+    rgba(148, 163, 184, 0.28) 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: ai-orbit 7s linear infinite;
+  animation-delay: var(--orbit-delay, 0s);
+  pointer-events: none;
+}
+.dark .ai-orbit::before {
+  background: conic-gradient(
+    from var(--orbit-angle),
+    rgba(148, 163, 184, 0.14) 0deg,
+    rgba(148, 163, 184, 0.14) 200deg,
+    rgba(56, 189, 248, 0.55) 270deg,
+    rgba(139, 92, 246, 0.45) 320deg,
+    rgba(148, 163, 184, 0.14) 360deg
+  );
+}
+@keyframes ai-orbit {
+  to {
+    --orbit-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-orbit::before {
+    animation: none;
+  }
+}
+
+/* An indeterminate progress bar: a short stripe sweeping across its track,
+   for work whose length is not known in advance (Port Analyzer). */
+.progress-sweep {
+  animation: progress-sweep 1.15s ease-in-out infinite;
+}
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+/* A grid backdrop for the top half of a page (Registration Lookup): fine blue
+   lines over a pale blue wash, both fading to nothing by the bottom edge. */
+.grid-backdrop {
+  background-image:
+    linear-gradient(to right, rgba(59, 130, 246, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, #e8f2fd 0%, rgba(232, 242, 253, 0.55) 50%, rgba(232, 242, 253, 0) 100%);
+  background-size: 64px 64px, 64px 64px, 100% 100%;
+  background-position: -1px -1px, -1px -1px, 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%);
+}
+.dark .grid-backdrop {
+  background-image:
+    linear-gradient(to right, rgba(148, 197, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 197, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 120, 220, 0.12), rgba(56, 120, 220, 0));
+}
+
+/* A details sheet sliding in from the right of the content panel, over a dimming page. */
+.drawer-in {
+  animation: drawer-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.drawer-fade {
+  animation: drawer-fade 200ms ease-out;
+}
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes drawer-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in,
+  .drawer-fade {
+    animation: none;
+  }
+  .progress-sweep {
+    animation-duration: 3s;
+  }
+}

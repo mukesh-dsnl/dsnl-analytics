@@ -1,15 +1,13 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
-  Activity,
-  ContactRound,
+  House,
+  Server,
   LayoutGrid,
   LogOut,
-  Megaphone,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
   Sun,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -18,13 +16,20 @@ import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
+import { BrandMark } from './BrandMark';
+import { AnalyticsAiIcon } from './AnalyticsAiIcon';
 import { ContentPanelContext } from './ContentPanelSlot';
 import { ConversationList } from '../features/ai-chat/components/ConversationList';
+import { ServiceSwitcher } from './ServiceSwitcher';
+import { SERVICES, serviceOfPath } from './services';
+import type { ServiceId } from './services';
 
 interface NavItem {
   label: string;
   path: string;
   icon: LucideIcon;
+  /** Where the link goes, when that differs from the path it is active on (a query string). */
+  to?: string;
 }
 
 interface NavSection {
@@ -33,28 +38,19 @@ interface NavSection {
 }
 
 /**
- * The two views every service offers: Attempt Metrics is the per-service
- * analytics dashboard, Campaign Metrics the single-day account/provider/
- * location tables. MultiCall adds its registration lookup.
+ * Two sections. The global pages — Home and Port Analyzer, which covers every
+ * service — sit at the top. Under them, the service switcher picks one
+ * service and the sidebar lists that service's pages — Summary, Accounts,
+ * Attempt Metrics, Campaign Metrics (MultiCall: Registration Lookup instead).
+ * See ./services.ts. (The All Services page still exists; it has no entry.)
  */
-const serviceItems = (service: 'voicedrop' | 'conference' | 'multicall'): NavItem[] => [
-  { label: 'Attempt Metrics', path: `/analytics/${service}/attempt-metrics`, icon: Activity },
-  { label: 'Campaign Metrics', path: `/analytics/${service}/campaign-metrics`, icon: Megaphone },
-  ...(service === 'multicall'
-    ? [{ label: 'Registration Lookup', path: '/analytics/multicall/registry', icon: ContactRound }]
-    : []),
-];
-
-/**
- * Always-open, labelled groups: every destination is one click away and the
- * service it belongs to is the heading above it, so nothing needs expanding.
- */
-const NAV: NavSection[] = [
-  { title: 'Overview', items: [{ label: 'All Services', path: '/analytics/all/attempt-metrics', icon: LayoutGrid }] },
-  { title: 'Voicedrop', items: serviceItems('voicedrop') },
-  { title: 'Conference', items: serviceItems('conference') },
-  { title: 'MultiCall', items: serviceItems('multicall') },
-];
+const OVERVIEW: NavSection = {
+  title: 'Overview',
+  items: [
+    { label: 'Home', path: '/', icon: House },
+    { label: 'Port Analyzer', path: '/analytics/ports', icon: Server },
+  ],
+};
 // The assistant is deliberately not a nav entry: the floating button in the
 // corner is its way in, and two controls for one destination in the same
 // column is one too many.
@@ -72,10 +68,10 @@ const COLLAPSE_MS = 550;
  * Where the panel's left edge collapses to: 40% of the viewport, which is
  * where the sign-in card's own left edge sits. The padding is what moves, so
  * the figure is that mark less the sidebar the panel is already offset by —
- * w-64 open, w-20 collapsed.
+ * w-60 open, w-20 collapsed.
  */
 const COLLAPSE_PADDING = {
-  open: 'lg:pl-[calc(40vw-256px)]',
+  open: 'lg:pl-[calc(40vw-240px)]',
   collapsed: 'lg:pl-[calc(40vw-80px)]',
 };
 
@@ -84,25 +80,25 @@ function NavLink({ item, section, active, collapsed }: { item: NavItem; section:
   const railLabel = `${section} · ${item.label}`;
   return (
     <Link
-      to={item.path}
+      to={item.to ?? item.path}
       aria-current={active ? 'page' : undefined}
       // On the rail the label is gone, so it moves to the tooltip and the
       // accessible name.
       title={collapsed ? railLabel : undefined}
       aria-label={collapsed ? railLabel : undefined}
       className={clsx(
-        'relative flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors',
+        'relative flex items-center gap-2.5 rounded-lg py-2 text-sm transition-colors',
         collapsed ? 'justify-center px-0' : 'px-3',
         // Pure white ink either way: the sidebar scrim (see .app-sidebar-scrim)
         // is what buys white its contrast on the cyan ground, with none to spare.
-        active ? 'bg-white/25 text-white ring-1 ring-white/30 shadow-sm' : 'text-white hover:bg-white/15',
+        active ? 'bg-white/20 font-medium text-white ring-1 ring-white/25' : 'text-white/90 hover:bg-white/10 hover:text-white',
       )}
     >
       {/* The marker sits on the sidebar's own left edge, outside the pill. */}
       {active && (
-        <span aria-hidden="true" className="absolute -left-3 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        <span aria-hidden="true" className="absolute -left-3 top-1/2 h-[22px] w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
       )}
-      <item.icon className="h-5 w-5 shrink-0" />
+      <item.icon className="h-[18px] w-[18px] shrink-0" />
       {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
     </Link>
   );
@@ -116,7 +112,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export function Layout() {
-  const { theme, toggleTheme, isSidebarCollapsed, toggleSidebar } = useUIStore();
+  const { theme, toggleTheme, isSidebarCollapsed, toggleSidebar, navService, setNavService } = useUIStore();
   const { username, aiPermission, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -130,6 +126,23 @@ export function Layout() {
   /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
+  // Collapsed, the rail opens while the pointer is over it and closes when it
+  // leaves — as an overlay over the content, so nothing behind it moves. A
+  // short delay each way keeps a pointer passing across it from flickering it.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
+  const openPeek = () => {
+    if (!isSidebarCollapsed) return;
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(true), 120);
+  };
+  const closePeek = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(false), 180);
+  };
+  // What the sidebar draws: the icon rail only when collapsed and not hovered.
+  const narrow = isSidebarCollapsed && !peek;
   /** The corner button's opening/closing circle — null when nothing is moving. */
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
@@ -142,16 +155,44 @@ export function Layout() {
   }, [theme]);
 
   const isActivePath = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`);
+    path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`);
+
+  const routeService = serviceOfPath(location.pathname);
+  const shownService: ServiceId = routeService ?? navService;
+  useEffect(() => {
+    if (routeService && routeService !== navService) setNavService(routeService);
+  }, [routeService, navService, setNavService]);
+  // Switching service on one of a service's pages opens the same page of the
+  // new one (Campaign Metrics stays Campaign Metrics), or its first page when
+  // it has no such page; anywhere else it only changes the list.
+  const isPorts = location.pathname.startsWith('/analytics/ports');
+  const switchService = (next: ServiceId) => {
+    setNavService(next);
+    // Port Analyzer covers every service: switching sets its service filter.
+    if (isPorts) {
+      const params = new URLSearchParams(location.search);
+      params.set('service', next);
+      navigate(`/analytics/ports?${params}`);
+      return;
+    }
+    if (!routeService || next === routeService) return;
+    const here = SERVICES[routeService].pages.find((p) => isActivePath(p.path));
+    const there = SERVICES[next].pages.find((p) => p.key === here?.key) ?? SERVICES[next].pages[0];
+    navigate(there.path);
+  };
 
   /** The chat route is the one page with no date control of its own. */
   const isAiChat = location.pathname.startsWith('/assistant');
   const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
+  // Home, the services overview, has no date control: each card says its own day.
+  const isHome = location.pathname === '/';
+  // Both Summary pages carry their own controls in the header slot.
+  const isSummary = /^\/analytics\/(voicedrop|conference)\/(summary|accounts)/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
   // not to a default one you then have to navigate away from.
-  const lastAnalyticsPath = useRef('/analytics/all/attempt-metrics');
+  const lastAnalyticsPath = useRef('/');
   if (!isAiChat) lastAnalyticsPath.current = location.pathname;
 
   /**
@@ -185,48 +226,66 @@ export function Layout() {
     // dark. The fill stays flat underneath because any gradient spanning the
     // whole field would drift away from itself between the sidebar and the far
     // edge of the gutter, putting a seam exactly where the two are continuous.
-    <div className="app-ground flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
+    <div className="app-ground app-shell flex h-screen w-full overflow-hidden font-sans text-zinc-900 dark:text-zinc-100">
 
-      {/* Left Sidebar — flush to the edge, full height; w-64, or a w-20 icon
+      {/* Left Sidebar — flush to the edge, full height; w-60, or a w-20 icon
           rail when collapsed. No fill
           of its own: it is the ground showing through, plus a scrim that fades
           out by its right edge to buy the nav text contrast without drawing a
           line between the sidebar and the gutter. On logout it fades out the
           way the sign-in page fades its own left region. */}
+      {/* The space the sidebar takes in the layout: the rail's width when
+          collapsed, so a hovered rail opens over the content instead of
+          pushing it. */}
+      <div
+        className={clsx('relative z-50 shrink-0', isSidebarCollapsed ? 'w-20' : 'w-60')}
+        style={{ transition: 'width 300ms' }}
+      >
       <aside
+        onMouseEnter={openPeek}
+        onMouseLeave={closePeek}
         className={clsx(
-          'app-sidebar-scrim flex shrink-0 flex-col overflow-hidden z-20',
-          isSidebarCollapsed ? 'w-20' : 'w-64',
+          'app-sidebar-scrim absolute inset-y-0 left-0 flex flex-col overflow-hidden',
+          narrow ? 'w-20' : 'w-60',
+          // Opened by hover: it floats over the panel, so it takes the shell's
+          // own ground (fixed, so it lines up with the field behind) and a shadow.
+          peek && 'app-ground app-shell shadow-[8px_0_32px_rgba(0,0,0,0.35)]',
           isLoggingOut && 'opacity-0 pointer-events-none',
         )}
         // Width for the collapse, opacity for the logout fade — each at its own
         // speed, written out so neither is left to stylesheet order.
-        style={{ transitionProperty: 'width, opacity', transitionDuration: '300ms, 500ms' }}
+        style={{ transitionProperty: 'width, opacity', transitionDuration: '200ms, 500ms' }}
       >
         {/* Logo, with the collapse control at the row's right end. Collapsed,
             only the tile is left; the way back out is the expand button at the
             top left of the header. */}
-        <div className={clsx('flex h-[72px] shrink-0 items-center', isSidebarCollapsed ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
-          <Link to="/" title={isSidebarCollapsed ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white transition-opacity group-hover:opacity-90">
-              <img src="/DSNL.png" alt="DSNL" className="h-full w-full object-cover" />
-            </div>
-            {!isSidebarCollapsed && (
+        <div className={clsx('flex h-[72px] shrink-0 items-center', narrow ? 'justify-center' : 'gap-2 pl-6 pr-3')}>
+          <Link to="/" title={narrow ? 'DSNL Analytics' : undefined} className="group flex min-w-0 items-center gap-3">
+            {/* The mark straight on the sidebar, no white tile, in brand blue
+                on the navy shell (the same in both themes). */}
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center transition-opacity group-hover:opacity-90">
+              <BrandMark className="h-9 w-9 text-[#2ea3dc]" />
+              <span className="sr-only">DSNL</span>
+            </span>
+            {!narrow && (
               <div className="flex min-w-0 flex-col whitespace-nowrap leading-tight">
-                <span className="text-base font-semibold tracking-tight text-white">DSNL Analytics</span>
+                <span className="text-base font-semibold tracking-tight text-white">Analytics</span>
                 <span className="text-[11px] font-medium text-white/70">by DSNL</span>
               </div>
             )}
           </Link>
-          {!isSidebarCollapsed && (
+          {!narrow && (
             <button
               type="button"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
+              onClick={() => {
+                toggleSidebar();
+                setPeek(false);
+              }}
+              aria-label={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
+              title={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
               className="ml-auto shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
             >
-              <PanelLeftClose className="h-5 w-5" />
+              {peek ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
             </button>
           )}
         </div>
@@ -235,14 +294,14 @@ export function Layout() {
             floating corner button: a switch you can see, where navigation
             already lives, rather than a round icon that had to be learned. */}
         {aiPermission && (
-          isSidebarCollapsed ? (
+          narrow ? (
             <Link
               to={isAiChat ? lastAnalyticsPath.current : '/assistant'}
               title={isAiChat ? 'Analytics' : 'Chat'}
               aria-label={isAiChat ? 'Switch to Analytics' : 'Switch to Chat'}
               className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 text-white transition-colors hover:bg-white/25"
             >
-              {isAiChat ? <LayoutGrid className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+              {isAiChat ? <LayoutGrid className="h-4 w-4" /> : <AnalyticsAiIcon className="h-4 w-4" />}
             </Link>
           ) : (
             <div className="mx-3 mb-2 flex shrink-0 rounded-xl bg-white/15 p-1" role="tablist" aria-label="Analytics or Chat">
@@ -274,43 +333,60 @@ export function Layout() {
               instead of analytics destinations. The chat list scrolls itself so
               "New chat" stays put while threads move under it. */}
           {isAiChat ? (
-            <ConversationList isCollapsed={isSidebarCollapsed} />
+            <ConversationList isCollapsed={narrow} />
           ) : (
-            <nav className="space-y-5 px-3 py-4" aria-label="Analytics">
-              {NAV.map((section) => (
-                <div key={section.title} className="space-y-1">
-                  {/* On the rail a short rule stands in for the section name. */}
-                  {isSidebarCollapsed ? (
-                    <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
-                  ) : (
-                    <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/55">
-                      {section.title}
-                    </div>
-                  )}
-                  {section.items.map((item) => (
-                    <NavLink
-                      key={item.path}
-                      item={item}
-                      section={section.title}
-                      active={isActivePath(item.path)}
-                      collapsed={isSidebarCollapsed}
-                    />
-                  ))}
+            <nav className="space-y-4 px-3 py-3" aria-label="Analytics">
+              <div className="space-y-0.5">
+                {/* On the rail a short rule stands in for the section name. */}
+                {narrow ? (
+                  <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
+                ) : (
+                  <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+                    {OVERVIEW.title}
+                  </div>
+                )}
+                {OVERVIEW.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    item={item}
+                    section={OVERVIEW.title}
+                    active={isActivePath(item.path)}
+                    collapsed={narrow}
+                  />
+                ))}
+              </div>
+              <div className="space-y-0.5">
+                {narrow ? (
+                  <div aria-hidden="true" className="mx-auto mb-2 h-px w-8 bg-white/25" />
+                ) : (
+                  <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">Services</div>
+                )}
+                <div className="pb-1.5">
+                  <ServiceSwitcher value={shownService} onChange={switchService} collapsed={narrow} />
                 </div>
-              ))}
+                {SERVICES[shownService].pages.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    item={item}
+                    section={SERVICES[shownService].name}
+                    active={isActivePath(item.path)}
+                    collapsed={narrow}
+                  />
+                ))}
+              </div>
             </nav>
           )}
         </div>
 
         {/* Footer: identity + sign out. Stacked on the rail. */}
-        <div className={clsx('flex shrink-0 items-center gap-3 border-t border-white/10 p-3', isSidebarCollapsed ? 'flex-col' : 'px-4')}>
+        <div className={clsx('flex shrink-0 items-center gap-3 border-t border-white/10 p-3', narrow ? 'flex-col' : 'px-4')}>
           <div
-            title={isSidebarCollapsed && username ? `Signed in as ${username}` : undefined}
+            title={narrow && username ? `Signed in as ${username}` : undefined}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white"
           >
             {initials(username)}
           </div>
-          {!isSidebarCollapsed && (
+          {!narrow && (
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-sm font-semibold text-white">{username}</div>
               <div className="text-[11px] text-white/65">Signed in</div>
@@ -328,6 +404,7 @@ export function Layout() {
           </button>
         </div>
       </aside>
+      </div>
 
       {/* Main content — the one floating panel. The gutter lives on this
           wrapper rather than on the row, so the sidebar stays flush left while
@@ -351,35 +428,38 @@ export function Layout() {
         )}
         style={{ transitionDuration: `${COLLAPSE_MS}ms` }}
       >
-      {/* No border: against the brand blue the panel edge is already a hard
+        {/* No border: against the brand blue the panel edge is already a hard
           value change, and a light hairline there would read as a halo. */}
-      {/* `relative` is load-bearing: it is what makes this card the containing
+        {/* `relative` is load-bearing: it is what makes this card the containing
           block for the overlays pages portal in, so they cover the panel and
           nothing outside it. */}
-      <div
-        ref={setContentPanel}
-        className="relative h-full flex flex-col rounded-2xl overflow-hidden
-                   shadow-lg shadow-black/10
-                   bg-zinc-50 dark:bg-canvas-dark"
-      >
-        {/* The date control lives here rather than on the page: it applies to
+        <div
+          ref={setContentPanel}
+          className={clsx(
+            'vd-edge relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10 dark:shadow-[0_0_32px_-14px_rgba(34,211,238,0.12)]',
+            'bg-white dark:bg-canvas-dark',
+          )}
+        >
+          {/* Every page sits on the grid backdrop: it runs from the very top of
+            the panel, behind the header, and fades out by the middle. */}
+          <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-x-0 top-0 h-[80vh]" />
+          {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
             Metrics gets its own single-date control instead of the analytics
             date range, since the two modules read the lake differently (one day
             vs a range) and hold their selections in separate stores. */}
-        {/* The surface itself stays put while its contents fade, which is the
+          {/* The surface itself stays put while its contents fade, which is the
             sign-in card's exit in reverse — there the card's shell held while
             the form faded as it grew. A dashboard squeezed into a 60%-wide box
             on the way out would read as a layout bug, not as a transition. */}
-        <header
-          className={clsx(
-            `h-[72px] flex items-center gap-5 px-6 shrink-0 z-10
-             bg-white dark:bg-surface-dark border-b border-zinc-200 dark:border-zinc-800/60
-             transition-opacity duration-300`,
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          {/* Page-owned controls land here — the per-service filters. Layout
+          <header
+            className={clsx(
+              // Clear, so the grid runs through it instead of stopping at a white band.
+              'relative h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 bg-transparent transition-opacity duration-300',
+              isLoggingOut && 'opacity-0 pointer-events-none',
+            )}
+          >
+            {/* Page-owned controls land here — the per-service filters. Layout
               only provides the space; what goes in it is decided by whichever
               page is mounted (see HeaderSlot). It takes the free width so the
               date control and theme toggle stay pinned right.
@@ -393,55 +473,58 @@ export function Layout() {
               focus ring — which paints outside the input's border box — was
               being sliced off top and bottom. The padding gives it somewhere to
               land inside the scroll box. */}
-          {/* Expand lives here, top left of the header: on the rail there is no
+            {/* Expand lives here, top left of the header: on the rail there is no
               room for it beside the logo. Collapse is in the sidebar itself. */}
-          {isSidebarCollapsed && (
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              className="-ml-2 -mr-2 p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
-            >
-              <PanelLeftOpen className="w-5 h-5" />
-            </button>
-          )}
-          <div
-            ref={setHeaderSlot}
-            className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          />
-          {/* The AI chat carries no date control: the range is part of the
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+                className="-ml-2 -mr-2 p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+              >
+                <PanelLeftOpen className="w-5 h-5" />
+              </button>
+            )}
+            <div
+              ref={setHeaderSlot}
+              className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            />
+            {/* The AI chat carries no date control: the range is part of the
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
-          {isAiChat || isMulticallRegistry ? null : location.pathname.endsWith('/campaign-metrics') ? (
-            <HeaderCampaignDate />
-          ) : (
-            <HeaderDateRange />
-          )}
-          <button
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            className="p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-        </header>
+            {/* Summary covers the whole table; its own header says how far the data runs. */}
+            {isAiChat || isMulticallRegistry || isSummary || isHome || isPorts ? null : location.pathname.endsWith('/campaign-metrics') ? (
+              <HeaderCampaignDate />
+            ) : (
+              <HeaderDateRange />
+            )}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              // The icon alone, no box: dark on the pale header, white in dark mode.
+              className="shrink-0 rounded-md p-1 text-[#45556e] transition-colors hover:text-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3] dark:text-white dark:hover:text-sky-300"
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+          </header>
 
-        {/* Main Content Area */}
-        <main
-          className={clsx(
-            'flex-1 relative transition-opacity duration-300',
-            isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
-            isLoggingOut && 'opacity-0 pointer-events-none',
-          )}
-        >
-          <HeaderSlotContext.Provider value={headerSlot}>
-            <ContentPanelContext.Provider value={contentPanel}>
-              <Outlet />
-            </ContentPanelContext.Provider>
-          </HeaderSlotContext.Provider>
-        </main>
-      </div>
+          {/* Main Content Area */}
+          <main
+            className={clsx(
+              'flex-1 relative transition-opacity duration-300',
+              isAiChat ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
+              isLoggingOut && 'opacity-0 pointer-events-none',
+            )}
+          >
+            <HeaderSlotContext.Provider value={headerSlot}>
+              <ContentPanelContext.Provider value={contentPanel}>
+                <Outlet />
+              </ContentPanelContext.Provider>
+            </HeaderSlotContext.Provider>
+          </main>
+        </div>
       </div>
 
     </div>

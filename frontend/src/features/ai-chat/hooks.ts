@@ -76,6 +76,8 @@ export interface ChatMessage {
   interactionId?: number;
   /** Assistant turns only — the question asked for /chart. */
   chart?: boolean;
+  /** Assistant turns only — when the answer was given (ISO), shown under it. */
+  createdAt?: string;
 }
 
 /** Still being written on the server — worth polling for. */
@@ -216,6 +218,7 @@ export function useChat(conversationId: string | null) {
                 queries: item.queries,
                 exports: item.exports ?? [],
                 interactionId: item.id,
+                createdAt: item.created_at,
                 chart: parseCommands(item.query).commands.some((c) => c.name === 'chart'),
                 interaction: {
                   input_tokens: item.input_token,
@@ -229,6 +232,7 @@ export function useChat(conversationId: string | null) {
                 role: 'assistant',
                 text: item.response || 'Stopped.',
                 isStopped: true,
+                createdAt: item.created_at,
               });
             } else if (item.status === 'fail') {
               turns.push({
@@ -449,6 +453,7 @@ export function useChat(conversationId: string | null) {
               model: event.model,
               exports: event.exports ?? [],
               interactionId: event.interaction_id,
+              createdAt: new Date().toISOString(),
               animate: true,
               isStreaming: false,
               // Any step still open never reported an end — mark them closed

@@ -134,6 +134,12 @@ MEASURES: dict[str, str] = {
         f"CAST(COUNT(DISTINCT {_PARTICIPANT_KEY}) "
         f"- COUNT(DISTINCT {_PARTICIPANT_KEY}) FILTER (WHERE {_CONNECTED}) AS BIGINT)"
     ),
+    # Share of participants with at least one connected attempt — the unique
+    # counterpart of connect_rate, which is per attempt.
+    "participant_connect_rate": (
+        f"ROUND(100.0 * COUNT(DISTINCT {_PARTICIPANT_KEY}) FILTER (WHERE {_CONNECTED}) "
+        f"/ NULLIF(COUNT(DISTINCT {_PARTICIPANT_KEY}), 0), 2)"
+    ),
     "accounts": "CAST(COUNT(DISTINCT c.ACCOUNTID) AS BIGINT)",
     # Blast 0 is the initial dial, so a reblast is any later attempt.
     "reblasts": "CAST(COUNT(*) FILTER (WHERE c.CONFDIAL_REBLAST_COUNT > 0) AS BIGINT)",
@@ -143,7 +149,8 @@ MEASURES: dict[str, str] = {
     ),
 }
 
-DEFAULT_MEASURES = ["calls", "connected", "connect_rate"]
+# Unique calls by default; the attempt measures are for questions about attempts.
+DEFAULT_MEASURES = ["participants", "connected_participants", "participant_connect_rate"]
 
 # Dimensions that read as a sequence rather than a ranking — sorted by their
 # own value, ascending, unless the caller says otherwise.
@@ -162,7 +169,7 @@ QUERY_METRICS_TOOL = ToolSpec(
         "  measures: calls (attempts), connected, not_connected, connect_rate (%), "
         "minutes (billable, connected legs only), phone_numbers (distinct subscribers), "
         "conferences (distinct CRN+CONF_NUM rooms), participants, connected_participants, "
-        "not_connected_participants (distinct conferees, however many attempts: Voicedrop "
+        "not_connected_participants, participant_connect_rate (%) (distinct conferees, however many attempts: Voicedrop "
         "per CALL_DATE+CRN+CONFEREE_SEQ_NO, Conference and MultiCall per "
         "CALL_DATE+CRN+CONF_NUM+CONFEREE_SEQ_NO — use these for any 'how many "
         "participants / users / people / numbers reached' question), accounts, reblasts, "
@@ -180,7 +187,7 @@ QUERY_METRICS_TOOL = ToolSpec(
             "measures": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(MEASURES)},
-                "description": "Figures to compute. Defaults to calls, connected and connect_rate.",
+                "description": "Figures to compute. Defaults to unique calls: participants, connected_participants and participant_connect_rate.",
             },
             "group_by": {
                 "type": "array",
@@ -364,7 +371,10 @@ _DISTINCT: dict[str, tuple[str, str]] = {
 }
 
 # Measures worked out from other staged measures once the windows are merged.
-_DERIVED_DISTINCT = {"not_connected_participants": ("participants", "connected_participants")}
+_DERIVED_DISTINCT = {
+    "not_connected_participants": ("participants", "connected_participants"),
+    "participant_connect_rate": ("participants", "connected_participants"),
+}
 
 
 def _from_clause(plan: _Plan, start, end) -> tuple[str | None, str | None]:
@@ -505,6 +515,11 @@ def _execute(plan: _Plan, con, cap: int):
             finals.append('ROUND(100.0 * a."p_connected" / NULLIF(a."p_calls", 0), 2) AS "connect_rate"')
         elif m in _ADDITIVE:
             finals.append(f'CAST(a."p_{m}" AS BIGINT) AS "{m}"')
+        elif m == "participant_connect_rate":
+            total, part = _DERIVED_DISTINCT[m]
+            finals.append(
+                f'ROUND(100.0 * COALESCE(d_{part}."{part}", 0) / NULLIF(d_{total}."{total}", 0), 2) AS "{m}"'
+            )
         elif m in _DERIVED_DISTINCT:
             total, part = _DERIVED_DISTINCT[m]
             finals.append(

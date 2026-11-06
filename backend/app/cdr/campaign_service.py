@@ -353,6 +353,11 @@ _INSIGHT_SQL = """
     SELECT 'carrier', CAST(SERVICE_PROVIDER AS VARCHAR) || '::connected',
            CAST(COUNT(DISTINCT (CRN, CONFEREE_SEQ_NO)) FILTER (WHERE CONNECTED) AS DOUBLE)
     FROM slice GROUP BY 2
+    UNION ALL
+    -- Dial attempts per carrier: each carrier's share of the traffic, which
+    -- (unlike the connect rates) adds up to 100% across carriers.
+    SELECT 'carrier', CAST(SERVICE_PROVIDER AS VARCHAR) || '::attempts', CAST(COUNT(*) AS DOUBLE)
+    FROM slice GROUP BY 2
 """
 
 # Blast x AID grid. CONFDIAL_REBLAST_COUNT is which blast the number went out on
@@ -511,7 +516,7 @@ def query_account_insight(
     carrier_totals: dict[str, dict[str, int]] = {}
     for row in grouped.get("carrier", []):
         provider, _, kind = str(row["label"]).partition("::")
-        bucket = carrier_totals.setdefault(provider, {"total": 0, "connected": 0})
+        bucket = carrier_totals.setdefault(provider, {"total": 0, "connected": 0, "attempts": 0})
         bucket[kind] = int(row["value"])
     carriers = [
         {
@@ -519,9 +524,11 @@ def query_account_insight(
             "total": vals["total"],
             "connected": vals["connected"],
             "connect_percentage": pct(vals["connected"], vals["total"]),
+            "attempts": vals["attempts"],
+            "attempt_percentage": pct(vals["attempts"], int(attempts)),
         }
         for provider, vals in sorted(
-            carrier_totals.items(), key=lambda kv: kv[1]["total"], reverse=True
+            carrier_totals.items(), key=lambda kv: kv[1]["attempts"], reverse=True
         )
     ]
 

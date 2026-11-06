@@ -134,6 +134,13 @@ interface UIState {
   /** The sidebar narrowed to an icon rail to give the page more width. */
   isSidebarCollapsed: boolean;
   toggleSidebar: () => void;
+  /**
+   * The service the sidebar's switcher shows the pages of. On a service's
+   * own page the route decides; this is what it shows everywhere else (Home,
+   * All Services) — the last one chosen.
+   */
+  navService: 'voicedrop' | 'conference' | 'multicall';
+  setNavService: (service: 'voicedrop' | 'conference' | 'multicall') => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -144,6 +151,8 @@ export const useUIStore = create<UIState>()(
         set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
       isSidebarCollapsed: false,
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+      navService: 'voicedrop',
+      setNavService: (navService) => set({ navService }),
     }),
     {
       // Namespaced for the same reason as the auth key above. Changing this
@@ -153,7 +162,11 @@ export const useUIStore = create<UIState>()(
       // Only the value is stored. Persisting the whole object would put the
       // action in localStorage too — dropped by JSON today, but a trap for the
       // first non-serializable field anyone adds here later.
-      partialize: (state) => ({ theme: state.theme, isSidebarCollapsed: state.isSidebarCollapsed }),
+      partialize: (state) => ({
+        theme: state.theme,
+        isSidebarCollapsed: state.isSidebarCollapsed,
+        navService: state.navService,
+      }),
     },
   ),
 );

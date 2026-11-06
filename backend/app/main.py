@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.api import ai, auth, campaign, cdr, multicall
+from app.api import ai, auth, campaign, cdr, conference_summary, home, multicall, ports, summary
 from app.api.deps import require_user, require_ai_permission
 from app.core.config import get_settings
 from app.core.database import Base, engine
@@ -155,6 +155,30 @@ app.include_router(
     prefix="/api",
     dependencies=[Depends(require_user)],
     tags=["MultiCall Lookup"],
+)
+app.include_router(
+    summary.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["Voicedrop Summary"],
+)
+app.include_router(
+    conference_summary.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["Conference Summary"],
+)
+app.include_router(
+    home.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["Home"],
+)
+app.include_router(
+    ports.router,
+    prefix="/api",
+    dependencies=[Depends(require_user)],
+    tags=["Port Analyzer"],
 )
 # Registers unconditionally. With no AI key configured the route still exists
 # and answers 503 naming the variable to set — the dashboards above are

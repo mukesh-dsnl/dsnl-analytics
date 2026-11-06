@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Lock, PhoneCall, PhoneForwarded, User, Users } from 'lucide-react';
 import clsx from 'clsx';
+import { BrandMark } from '../components/BrandMark';
 import { api } from '../services/api';
 import { useAuthStore, useUIStore } from '../store';
 
@@ -9,7 +10,7 @@ import { useAuthStore, useUIStore } from '../store';
 const INPUT_CLASS =
   'w-full h-12 pl-11 rounded-lg text-[15px] border bg-white dark:bg-[#0a0f1d] border-zinc-300 dark:border-zinc-700 ' +
   'text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 ' +
-  'focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-colors';
+  'field-focus outline-none transition-colors';
 
 /**
  * How long the card takes to grow into the content panel, and therefore how
@@ -119,21 +120,19 @@ export function Login() {
     // on it. The card below carries the only gutter on this page.
     <div className="app-ground app-ground-hero relative h-full w-full overflow-hidden">
       {/* ── Left: brand hero ─────────────────────────────────────────────
-          40% of the width, dark ink on the brand ground (white in dark mode).
+          40% of the width, white on the navy ground (in both themes).
           Its content fades in on arrival and out on the way into the app,
           leaving the bare field the sidebar arrives on. Hidden below lg. */}
       <div
         className={clsx(
           'absolute inset-y-0 left-0 w-[40%] hidden lg:flex flex-col px-14 py-10',
-          'text-indigo-deep dark:text-white transition-opacity duration-500',
+          'text-white transition-opacity duration-500',
           isLeaving || !hasEntered ? 'opacity-0' : 'opacity-100',
         )}
       >
-        {/* Brand mark — the same logo block as the sidebar */}
+        {/* Brand mark — the same logo as the sidebar, straight on the navy */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
-            <img src="/DSNL.png" alt="DSNL" className="w-full h-full object-cover" />
-          </div>
+          <BrandMark className="h-10 w-10 shrink-0 text-[#2ea3dc]" />
           <span className="text-base font-bold tracking-tight">DSNL Analytics</span>
         </div>
 
@@ -142,7 +141,7 @@ export function Login() {
           <h2 className="text-5xl xl:text-6xl font-extrabold tracking-[-0.035em] leading-[1.02]">
             Every call,
             <br />
-            <span className="text-white dark:text-cyan-light">measured.</span>
+            <span className="text-cyan-light">measured.</span>
           </h2>
 
           {/* The three services, wearing the same icons as the sidebar. */}
@@ -150,7 +149,7 @@ export function Login() {
             {SERVICES.map(({ label, icon: Icon }) => (
               <li
                 key={label}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/25 border border-indigo-deep/10 dark:bg-white/10 dark:border-white/15"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 border border-white/15"
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 {label}
@@ -158,7 +157,7 @@ export function Login() {
             ))}
           </ul>
 
-          <p className="mt-6 text-lg leading-relaxed max-w-md opacity-85 dark:text-white/75 dark:opacity-100">
+          <p className="mt-6 text-lg leading-relaxed max-w-md text-white/75">
             Analyze your daily call metrics.
           </p>
 
@@ -169,7 +168,7 @@ export function Login() {
                 key={index}
                 className={clsx(
                   'flex-1 rounded-t-md',
-                  index % 4 === 3 ? 'bg-indigo-deep/40 dark:bg-hero' : 'bg-black/[0.08] dark:bg-white/10',
+                  index % 4 === 3 ? 'bg-hero' : 'bg-white/10',
                 )}
                 style={{ height: `${height}%` }}
               />
@@ -178,11 +177,11 @@ export function Login() {
         </div>
 
         <div className="shrink-0">
-          <p className="text-xs font-medium opacity-80 dark:text-white/70 dark:opacity-100">
+          <p className="text-xs font-medium text-white/70">
             © {new Date().getFullYear()} DSNL
           </p>
           {/* From package.json's "version", at build time. */}
-          <p className="mt-0.5 text-[11px] font-medium opacity-50 dark:text-white/40 dark:opacity-100">
+          <p className="mt-0.5 text-[11px] font-medium text-white/40">
             V{__APP_VERSION__}
           </p>
         </div>
@@ -190,7 +189,7 @@ export function Login() {
 
       {/* ── Right: the floating card ─────────────────────────────────────
           60% of the width at rest, inset by Layout's 12px gutter. On success
-          its left edge slides to 268px — the sidebar (w-64) plus that gutter,
+          its left edge slides to 252px — the sidebar (w-60) plus that gutter,
           the content panel's own position — so the two pages share one
           continuous surface. */}
       <div
@@ -198,7 +197,7 @@ export function Login() {
           'absolute top-3 bottom-3 right-3 flex flex-col rounded-2xl overflow-hidden',
           'bg-white dark:bg-surface-dark shadow-2xl shadow-black/25 dark:ring-1 dark:ring-white/5',
           'transition-[left] ease-in-out motion-reduce:transition-none',
-          isLeaving ? 'left-3 lg:left-[268px]' : 'left-3 lg:left-[40%]',
+          isLeaving ? 'left-3 lg:left-[252px]' : 'left-3 lg:left-[40%]',
         )}
         style={{ transitionDuration: `${EXPAND_MS}ms` }}
       >

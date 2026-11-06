@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { PageLoadingBar } from '../../../components/Loading';
 import { filtersForDay } from '../api';
 import type { CdrFilters, CdrService, CdrStatus } from '../api';
 import { spanDays } from '../dateRange';
@@ -53,9 +54,7 @@ export function CDRDashboardPage({ service }: CDRDashboardPageProps) {
 
   if (isPending) {
     return (
-      <div className="flex items-center justify-center p-24">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
+      <PageLoadingBar />
     );
   }
 
@@ -136,6 +135,8 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   const isQueryable = status.available && !isReversed && !isTooWide;
 
   return (
+    // Voicedrop's blue background is painted by the panel behind this page
+    // (Layout), so it also runs under the header.
     <div className="p-8 max-w-[1500px] mx-auto min-h-full">
       <div className="space-y-6">
         {!status.available && (

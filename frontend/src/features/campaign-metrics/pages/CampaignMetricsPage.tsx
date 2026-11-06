@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin, Megaphone } from 'lucide-react';
 import clsx from 'clsx';
@@ -15,11 +16,18 @@ import { useSortableRows } from '../useSortableRows';
 import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
 import { AccountWiseTable } from '../components/AccountWiseTable';
+import { AccountInsightDialog } from '../components/AccountInsightDialog';
 import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
 import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
 import { MetricsToolbar } from '../components/MetricsToolbar';
 import { CampaignsTable } from '../components/CampaignsTable';
 import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
+import { conferenceSummaryApi } from '../../conference-summary/api';
+import { RecordsTable } from '../../conference-summary/components/RecordsTable';
+import type { ConferenceRow } from '../../conference-summary/components/RecordsTable';
+import { ConferenceRoomDrawer } from '../../conference-summary/components/ConferenceRoomDrawer';
+import type { RoomRef } from '../../conference-summary/components/ConferenceRoomDrawer';
+import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
 
@@ -43,6 +51,12 @@ const VOICEDROP_VIEWS: ToolbarTab<View>[] = [
   ...VIEWS.slice(1),
 ];
 
+// Conference's Campaigns are its rooms, from conference_summary.
+const CONFERENCE_VIEWS: ToolbarTab<View>[] = VOICEDROP_VIEWS;
+
+/** The services with a Campaigns tab: their summary tables hold one row per campaign. */
+const hasCampaigns = (service: CampaignService) => service === 'voicedrop' || service === 'conference';
+
 const VIEW_META: Record<View, { column: string; icon: typeof Radio }> = {
   account: { column: 'Account', icon: Users },
   campaigns: { column: 'Campaign', icon: Megaphone },
@@ -64,7 +78,9 @@ function searchPlaceholder(view: View, service: CampaignService): string {
       ? 'Search by account or CRN…'
       : 'Search by account, CRN or CPIN…';
   }
-  if (view === 'campaigns') return 'Search by CRN, account, client or name…';
+  if (view === 'campaigns') {
+    return service === 'conference' ? 'Search by account, CRN, Conf Num, PIN, DID or name…' : 'Search by CRN, account, client or name…';
+  }
   return view === 'provider' ? 'Search service provider…' : 'Search location…';
 }
 
@@ -114,9 +130,23 @@ export function CampaignMetricsPage({ service }: CampaignMetricsPageProps) {
 }
 
 function Metrics({ service, status }: { service: CampaignService; status: CdrStatus }) {
-  const { date } = useCampaignDate(status);
-  const [view, setView] = useState<View>('account');
-  const [search, setSearch] = useState('');
+  const { date, setDate } = useCampaignDate(status);
+  // A Summary page links here as ?view=campaigns&date=…&search=<account>.
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useState<View>(() => {
+    const asked = params.get('view');
+    if (asked === 'campaigns') return hasCampaigns(service) ? 'campaigns' : 'account';
+    return asked === 'provider' || asked === 'location' ? asked : 'account';
+  });
+  const [search, setSearch] = useState(() => params.get('search') ?? '');
+  // One account's campaigns (?account=): set by clicking an account on
+  // Account wise, or by a Summary page's link. An exact match on the account,
+  // unlike the free-text search.
+  const [account, setAccount] = useState(() => params.get('account') ?? '');
+  // The campaign whose charts are open, if any.
+  const [charting, setCharting] = useState<{ account: string; crn: string } | null>(null);
+  // The conference room whose details are open (Conference › Campaigns).
+  const [room, setRoom] = useState<RoomRef | null>(null);
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it
@@ -128,9 +158,35 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   if (searchFor !== service) {
     setSearchFor(service);
     setSearch('');
-    // Campaigns exists on Voicedrop only; leaving it lands on Account wise.
-    if (view === 'campaigns' && service !== 'voicedrop') setView('account');
+    setAccount('');
+    // Campaigns exists on Voicedrop and Conference; leaving them lands on Account wise.
+    if (view === 'campaigns' && !hasCampaigns(service)) setView('account');
   }
+
+  // The view, the day and the search live in the URL (?view=&date=&search=),
+  // so any table here can be linked to, and a link from a Summary page opens
+  // straight on its day. A date arriving in the URL is applied to the date
+  // control first; until it has been, the URL is left as it arrived.
+  const arrivedDate = useRef(params.get('date'));
+  useEffect(() => {
+    const asked = arrivedDate.current;
+    if (asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) && asked !== date) setDate(asked);
+    else arrivedDate.current = null;
+    // On arrival only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (arrivedDate.current && date !== arrivedDate.current) return;
+    arrivedDate.current = null;
+    const next = new URLSearchParams();
+    if (view !== 'account') next.set('view', view);
+    if (date) next.set('date', date);
+    if (account && view === 'campaigns') next.set('account', account);
+    if (search.trim()) next.set('search', search.trim());
+    if (next.toString() !== window.location.search.replace(/^\?/, '')) setParams(next, { replace: true });
+    // setParams is stable enough here; the URL follows these only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, date, search, account]);
 
   const filters: CampaignFilter = { date, service };
   const enabled = status.available;
@@ -163,12 +219,19 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     queryFn: () => campaignApi.campaigns(filters),
     enabled: view === 'campaigns' && service === 'voicedrop',
   });
+  const conferenceQuery = useQuery({
+    queryKey: ['conference-summary', 'records', filters.date],
+    queryFn: () => conferenceSummaryApi.records(filters.date),
+    enabled: view === 'campaigns' && service === 'conference',
+  });
 
   const active =
     view === 'account'
       ? accountQuery
       : view === 'campaigns'
-        ? campaignsQuery
+        ? service === 'conference'
+          ? conferenceQuery
+          : campaignsQuery
         : view === 'provider'
           ? providerQuery
           : locationQuery;
@@ -195,13 +258,37 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
   // Campaign rows are one day's tens of campaigns, filtered here.
   const campaignRows = useMemo((): CampaignTableRow[] | undefined => {
-    const rows = campaignsQuery.data?.rows.map(withConnectedShare);
+    const all = campaignsQuery.data?.rows.map(withConnectedShare);
+    const rows = account ? all?.filter((r) => String(r.account_id) === account) : all;
     if (!rows || !term) return rows;
     return rows.filter((r) =>
       [r.crn, r.account_id, r.client_id, r.name ?? '', r.booking_reference ?? '']
         .some((value) => String(value).toLowerCase().includes(term)),
     );
-  }, [campaignsQuery.data, term]);
+  }, [campaignsQuery.data, term, account]);
+  // Conference rooms for the day, filtered the same way, across their own columns.
+  const conferenceRows = useMemo((): ConferenceRow[] | undefined => {
+    const all = conferenceQuery.data?.rows.map((r) => ({
+      ...r,
+      conference_name: r.conference_name ?? '',
+      account_name: r.account_name ?? '',
+      start_time: r.start_time ?? '',
+      connect_rate: r.ringed ? Math.round((r.connected / r.ringed) * 1000) / 10 : 0,
+    }));
+    const rows = account ? all?.filter((r) => String(r.account_id) === account) : all;
+    if (!rows || !term) return rows;
+    return rows.filter((r) =>
+      [r.account_id, r.account_name, r.crn, r.conf_num, r.conference_name, r.pin ?? '', ...r.dids].some((v) =>
+        String(v).toLowerCase().includes(term),
+      ),
+    );
+  }, [conferenceQuery.data, term, account]);
+  // Conference rooms always read in start-time order.
+  const conferenceSorted = useMemo(
+    () => conferenceRows && [...conferenceRows].sort((a, b) => a.start_time.localeCompare(b.start_time) || a.crn - b.crn),
+    [conferenceRows],
+  );
+
   const campaignSort = useSortableRows<CampaignTableRow, CampaignSortKey>(campaignRows, {
     key: 'start_time',
     direction: 'asc',
@@ -220,6 +307,21 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
   const handleExport = () => {
     const stamp = `${service}-${view}-${date}`;
+    if (view === 'campaigns' && service === 'conference') {
+      downloadCsv(
+        `campaign-${stamp}.csv`,
+        [
+          'Account ID', 'Account Name', 'Call Date', 'CRN', 'Conf Num', 'Start Time', 'End Time', 'Conference Name',
+          'PIN', 'DID', 'Total Ringed Calls', 'Total Connected Calls', 'Total Call Duration (Mins)',
+          'Total Attended Duration (Mins)', 'Peak Port Used',
+        ],
+        (conferenceSorted ?? []).map((r) => [
+          r.account_id, r.account_name, r.date, r.crn, r.conf_num, r.start_time, r.end_time, r.conference_name,
+          r.pin, r.dids.join(', '), r.ringed, r.connected, r.call_minutes, r.attended_minutes, r.peak_port,
+        ]),
+      );
+      return;
+    }
     if (view === 'campaigns') {
       downloadCsv(
         `campaign-${stamp}.csv`,
@@ -263,7 +365,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     view === 'account'
       ? (accountSort.rows?.length ?? 0)
       : view === 'campaigns'
-        ? (campaignSort.rows?.length ?? 0)
+        ? service === 'conference'
+          ? (conferenceSorted?.length ?? 0)
+          : (campaignSort.rows?.length ?? 0)
         : (simpleSort.rows?.length ?? 0);
 
   return (
@@ -313,13 +417,14 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
 
         <div className="shrink-0">
           <MetricsToolbar
-            tabs={service === 'voicedrop' ? VOICEDROP_VIEWS : VIEWS}
+            tabs={service === 'voicedrop' ? VOICEDROP_VIEWS : service === 'conference' ? CONFERENCE_VIEWS : VIEWS}
             active={view}
             onTab={(next) => {
               setView(next);
               // The term belongs to the column it was typed against; carrying
               // "109775" into Location wise would silently show an empty table.
               setSearch('');
+              setAccount('');
             }}
             onExport={handleExport}
             canExport={visibleCount > 0}
@@ -330,10 +435,35 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             what hands the overflow to the table's own scroll region instead of
             the page. */}
         <div className="flex-1 min-h-0 flex flex-col">
+          {view === 'campaigns' && account && (
+            <div className="mb-3 flex shrink-0 items-center gap-2 text-sm">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#93b8f3] bg-[#eef4fd] py-1 pl-3 pr-1 text-[#1d4ed8] dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300">
+                Account <strong className="font-semibold tabular-nums">{account}</strong>
+                <button
+                  type="button"
+                  onClick={() => setAccount('')}
+                  aria-label="Show every account"
+                  className="rounded-full px-2 py-0.5 text-[12px] font-medium hover:bg-white/70 dark:hover:bg-white/10"
+                >
+                  Show all ✕
+                </button>
+              </span>
+              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its campaigns on {date}</span>
+            </div>
+          )}
           {!status.available ? (
             <div className="px-5 py-12 text-center rounded-md border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
               Campaign Metrics needs a readable CDR export directory.
             </div>
+          ) : view === 'campaigns' && service === 'conference' ? (
+            <RecordsTable
+              rows={conferenceSorted}
+              isLoading={conferenceQuery.isPending}
+              error={conferenceQuery.error}
+              openKey={room ? roomKey(room) : null}
+              onOpen={(r) => setRoom({ date: r.date, account: r.account_id, crn: r.crn, conf_num: r.conf_num, name: r.conference_name })}
+              onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
+            />
           ) : view === 'campaigns' ? (
             <CampaignsTable
               rows={campaignSort.rows}
@@ -341,6 +471,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               error={campaignsQuery.error}
               sort={campaignSort.sort}
               onSort={campaignSort.toggle}
+              onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
             />
           ) : view === 'account' ? (
             <AccountWiseTable
@@ -351,6 +482,16 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={accountSort.sort}
               onSort={accountSort.toggle}
               showCpin={service !== 'voicedrop'}
+              // Voicedrop and Conference: an account opens its campaigns.
+              onOpenAccount={
+                hasCampaigns(service)
+                  ? (acct) => {
+                      setView('campaigns');
+                      setSearch('');
+                      setAccount(acct);
+                    }
+                  : undefined
+              }
             />
           ) : (
             <SimpleMetricsTable
@@ -371,6 +512,11 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           )}
         </div>
       </div>
+
+      {room && <ConferenceRoomDrawer key={roomKey(room)} room={room} onClose={() => setRoom(null)} />}
+      {charting && (
+        <AccountInsightDialog filters={filters} account={charting.account} crn={charting.crn} onClose={() => setCharting(null)} />
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { AlertTriangle, ChevronRight, Download, Filter, SearchX, X } from 'lucide-react';
 import { downloadCsv } from '../../campaign-metrics/exportCsv';
 import type { RegistrationMatch, SearchCriteria } from '../api';
-import { dateLabel, focus, sourceLabel, surface } from '../lookup';
+import { dateLabel, fieldFocus, focus, sourceLabel, surface } from '../lookup';
 import { Avatar, Hit } from './shared';
 
 const TH = 'sticky top-0 z-10 bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-500 shadow-[inset_0_-1px_0_theme(colors.zinc.200)] dark:bg-surface-dark dark:text-zinc-400 dark:shadow-[inset_0_-1px_0_theme(colors.zinc.800)]';
@@ -55,7 +55,7 @@ export function ResultsTable({ rows, totalRows, truncated, criteria, filter, onF
         <span className="sr-only">Filter these results</span>
         <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
         <input value={filter} onChange={(event) => onFilter(event.target.value)} placeholder="Filter these results" autoComplete="off"
-          className={clsx('h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-white', focus)} />
+          className={clsx('h-9 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-white', fieldFocus)} />
         {filter && <button type="button" onClick={() => onFilter('')} aria-label="Clear filter" className={clsx('absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200', focus)}><X className="h-3.5 w-3.5" /></button>}
       </label>}
       <button type="button" onClick={() => exportAccounts(rows)} disabled={rows.length === 0}

@@ -99,7 +99,7 @@ def _metrics(window_days, monkeypatch, **args):
 def test_windowed_metrics_equal_one_query_over_the_range(two_day_lake, monkeypatch, group_by):
     measures = ["calls", "connected", "not_connected", "connect_rate", "minutes",
                 "phone_numbers", "conferences", "accounts", "participants",
-                "connected_participants", "not_connected_participants"]
+                "connected_participants", "not_connected_participants", "participant_connect_rate"]
     single = _metrics(30, monkeypatch, measures=measures, group_by=group_by)
     windowed = _metrics(1, monkeypatch, measures=measures, group_by=group_by)
     key = lambda r: json.dumps(r, sort_keys=True)  # noqa: E731

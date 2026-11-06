@@ -5,9 +5,12 @@ import { isIncomplete } from '../campaignRows';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { SortState } from '../useSortableRows';
 import { ConnectedBar } from './ConnectedBar';
-import { SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
+import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
 import { campaignApi } from '../api';
 import { downloadCsv } from '../exportCsv';
+import { SummaryLink } from './SummaryLink';
+import { ChartButton } from './ChartButton';
+import { summaryPath } from '../links';
 
 interface CampaignsTableProps {
   rows: CampaignTableRow[] | undefined;
@@ -15,6 +18,8 @@ interface CampaignsTableProps {
   error: Error | null;
   sort: SortState<CampaignSortKey>;
   onSort: (key: CampaignSortKey) => void;
+  /** Opens the charts for one campaign (its account and CRN). */
+  onChart?: (row: CampaignTableRow) => void;
 }
 
 /** The numeric columns, in reading order: what was loaded, what was dialled, how it went. */
@@ -40,7 +45,7 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * pinned header. A campaign with numbers left unblasted did not finish — its
  * row is tinted red, so it stands out without being searched for.
  */
-export function CampaignsTable({ rows, isLoading, error, sort, onSort }: CampaignsTableProps) {
+export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }: CampaignsTableProps) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -52,6 +57,8 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
           <table className="w-full border-collapse">
             <thead>
               <tr>
+                <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
+                <SortableHeader label="Client" sortKey="client_id" sort={sort} onSort={onSort} />
                 <SortableHeader label="Time" sortKey="start_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
                 <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
@@ -79,12 +86,12 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
                   onSort={onSort}
                   align="right"
                 />
-                <th className={`${TH_CLASS} w-14`} />
+                <th className={`${TH_CLASS} w-28`} />
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} />
+                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} onChart={onChart} />
               ))}
             </tbody>
           </table>
@@ -94,7 +101,7 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort }: Campaig
   );
 }
 
-function CampaignRow({ row }: { row: CampaignTableRow }) {
+function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: CampaignTableRow) => void }) {
   const incomplete = isIncomplete(row);
 
   return (
@@ -103,18 +110,32 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
         'border-b transition-colors',
         incomplete
           ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
-          : 'border-zinc-100 hover:bg-zinc-50 dark:border-zinc-800/40 dark:hover:bg-zinc-800/30',
+          : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
       )}
     >
       {/* The red stripe on the leading edge keeps an incomplete row findable
-          even while scanning only the left of the table. */}
+          even while scanning only the left of the table. Account and client
+          open their Summary — the client alone, for the client. */}
       <td
         className={clsx(
           CELL,
-          'whitespace-nowrap',
+          'whitespace-nowrap text-sm font-semibold tabular-nums text-zinc-900 dark:text-white',
           incomplete && 'shadow-[inset_3px_0_0_theme(colors.red.500)]',
         )}
       >
+        <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
+          {row.account_id}
+        </SummaryLink>
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums text-zinc-700 dark:text-zinc-300')}>
+        <SummaryLink
+          to={summaryPath('voicedrop', row.account_id, row.client_id)!}
+          title={`Open client ${row.client_id} of account ${row.account_id}`}
+        >
+          {row.client_id}
+        </SummaryLink>
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap')}>
         <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">
           {short(row.start_time)} – {short(row.end_time)}
         </span>
@@ -132,10 +153,11 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
             {row.name ?? '—'}
           </span>
         </span>
-        <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-          AC {row.account_id} · Client {row.client_id}
-          {row.booking_reference != null && ` · Ref ${row.booking_reference}`}
-        </span>
+        {row.booking_reference != null && (
+          <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+            Ref {row.booking_reference}
+          </span>
+        )}
       </td>
 
       <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300')}>
@@ -172,7 +194,10 @@ function CampaignRow({ row }: { row: CampaignTableRow }) {
         {row.connected_duration.toLocaleString()}
       </td>
       <td className={clsx(CELL, 'text-right')}>
-        <RecordsDownload row={row} />
+        <span className="inline-flex items-center gap-1.5">
+          {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
+          <RecordsDownload row={row} />
+        </span>
       </td>
     </tr>
   );
@@ -231,10 +256,11 @@ function RecordsDownload({ row }: { row: CampaignTableRow }) {
             : 'Download call records (CSV)'
       }
       className={clsx(
-        'inline-flex items-center justify-center h-8 w-8 rounded-lg border bg-white dark:bg-zinc-900 transition-colors disabled:cursor-wait',
+        ROW_ACTION_CLASS,
+        'disabled:cursor-wait',
         state === 'failed'
           ? 'border-red-300 text-red-600 dark:border-red-500/50 dark:text-red-400'
-          : 'border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10',
+          : ROW_ACTION_IDLE_CLASS,
       )}
     >
       {state === 'loading' ? (

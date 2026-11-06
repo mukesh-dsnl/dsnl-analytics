@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
+import { Check, Loader2, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import { aiApi } from '../api';
 import type { ConversationSummary } from '../api';
@@ -302,7 +302,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
           aria-label="New chat"
           className="w-full flex items-center justify-center py-2.5 rounded-xl text-white hover:bg-white/15 transition-colors"
         >
-          <MessageSquarePlus className="w-5 h-5" />
+          <Plus className="w-5 h-5" />
         </button>
       </div>
     );
@@ -319,7 +319,7 @@ export function ConversationList({ isCollapsed }: ConversationListProps) {
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
                      text-white/90 hover:text-white hover:bg-white/15 transition-colors"
         >
-          <MessageSquarePlus className="w-5 h-5 shrink-0" />
+          <Plus className="w-5 h-5 shrink-0" />
           <span className="whitespace-nowrap">New chat</span>
         </button>
 

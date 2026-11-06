@@ -100,6 +100,9 @@ export interface InsightCarrier {
   total: number;
   connected: number;
   connect_percentage: number;
+  /** Dial attempts through this carrier, and their share of all attempts (sums to 100%). */
+  attempts: number;
+  attempt_percentage: number;
 }
 
 /** One AID group's four bars, plus the dial-out total its dotted line marks. */

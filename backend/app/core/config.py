@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     # Hard ceiling on rows any single query may return, so a broad request
     # can't try to materialise a whole range.
     CDR_MAX_ROWS_PER_QUERY: int = 5000
+    # The account and client master lists, as parquet beside the lake
+    # (<share>/dump/accounts/accounts.parquet, <share>/dump/clients/
+    # clients.parquet). Only the id and name columns are ever read — the
+    # clients file also carries passwords and contact details. Unset means
+    # the folders beside CDR_LAKE_PATH.
+    ACCOUNTS_PARQUET_PATH: Optional[str] = None
+    CLIENTS_PARQUET_PATH: Optional[str] = None
 
     # ── AI chat ──────────────────────────────────────────────────────────
     # Optional throughout. None of these may be required at import time: the

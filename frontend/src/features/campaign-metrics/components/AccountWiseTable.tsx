@@ -1,14 +1,23 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { campaignApi } from '../api';
 import type { CampaignFilter, AccountMetricsRow } from '../api';
 import type { SortState } from '../useSortableRows';
 import { usePagination } from '../usePagination';
+import { SummaryLink } from './SummaryLink';
+import { summaryPath } from '../links';
 import { ConnectedBar } from './ConnectedBar';
-import { SortableHeader, TableCard, TablePager, TableStatus, TH_CLASS } from './TableChrome';
+import {
+  SortableHeader,
+  TableCard,
+  TablePager,
+  TableStatus,
+  TH_CLASS,
+} from './TableChrome';
 import { AccountInsightDialog } from './AccountInsightDialog';
+import { ChartButton } from './ChartButton';
 
 type SortKey = keyof AccountMetricsRow;
 
@@ -25,6 +34,12 @@ interface AccountWiseTableProps {
    * has none and would otherwise carry a column empty on every row.
    */
   showCpin: boolean;
+  /**
+   * Where a row leads instead of expanding: Voicedrop and Conference open the
+   * account's campaigns on the Campaigns tab. Unset (MultiCall), a row
+   * expands into its CRNs as before.
+   */
+  onOpenAccount?: (account: string) => void;
 }
 
 /** The five measures, shared by the account rows and the CRN rows beneath them. */
@@ -57,6 +72,7 @@ export function AccountWiseTable({
   sort,
   onSort,
   showCpin,
+  onOpenAccount,
 }: AccountWiseTableProps) {
   // Paged from the already-sorted list, so sorting reorders the whole table
   // rather than shuffling only the page in view.
@@ -113,6 +129,7 @@ export function AccountWiseTable({
                     row={row}
                     showCpin={showCpin}
                     onChart={(crn) => setCharting({ account: row.account, crn })}
+                    onOpen={onOpenAccount}
                   />
                 ))}
               </tbody>
@@ -141,10 +158,13 @@ interface AccountRowProps {
   row: AccountMetricsRow;
   showCpin: boolean;
   onChart: (crn?: string) => void;
+  onOpen?: (account: string) => void;
 }
 
-function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
-  const [isOpen, setIsOpen] = useState(false);
+function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps) {
+  const [expanded, setIsOpen] = useState(false);
+  // A row that leads elsewhere never expands.
+  const isOpen = !onOpen && expanded;
 
   const { data, isPending, error } = useQuery({
     queryKey: ['campaign-account-crn', filters.date, filters.service, row.account],
@@ -165,22 +185,25 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
       {/* The whole row toggles — the chevron is an affordance, not the only
           target. The chart button stops propagation so it doesn't also expand. */}
       <tr
-        onClick={() => setIsOpen((v) => !v)}
-        aria-expanded={isOpen}
+        onClick={() => (onOpen ? onOpen(row.account) : setIsOpen((v) => !v))}
+        aria-expanded={onOpen ? undefined : isOpen}
+        title={onOpen ? `Show account ${row.account}'s campaigns` : undefined}
         className={clsx(
           'cursor-pointer transition-colors',
           isOpen
             ? 'border-t border-blue-200 dark:border-blue-500/30'
-            : 'border-b border-zinc-100 dark:border-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/30',
+            : 'border-b border-[#eef2f8] dark:border-zinc-800/40 hover:bg-[#f4f8fd] dark:hover:bg-white/[0.03]',
         )}
       >
         <td className={clsx('pl-4 py-3', openCell)}>
-          <ChevronRight
-            className={clsx(
-              'w-4 h-4 text-zinc-400 transition-transform',
-              isOpen && 'rotate-90 text-blue-500',
-            )}
-          />
+          {!onOpen && (
+            <ChevronRight
+              className={clsx(
+                'w-4 h-4 text-zinc-400 transition-transform',
+                isOpen && 'rotate-90 text-blue-500',
+              )}
+            />
+          )}
         </td>
         <td className={clsx('px-4 py-3', openCell)}>
           <span className="flex items-center gap-2.5">
@@ -196,7 +219,13 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
               AC
             </span>
             <span className="text-sm font-semibold text-zinc-900 dark:text-white">
-              {row.account}
+              {summaryPath(filters.service, row.account) ? (
+                <SummaryLink to={summaryPath(filters.service, row.account)!} title={`Open account ${row.account}'s summary`}>
+                  {row.account}
+                </SummaryLink>
+              ) : (
+                row.account
+              )}
             </span>
           </span>
         </td>
@@ -278,7 +307,17 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
               </td>
               {showCpin && (
                 <td className="px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-400 tabular-nums">
-                  {child.cpin ?? '—'}
+                  {/* On MultiCall a CPIN opens its registrations, searched for it. */}
+                  {child.cpin && filters.service === 'multicall' ? (
+                    <SummaryLink
+                      to={`/analytics/multicall/registry?cpins=${encodeURIComponent(child.cpin)}`}
+                      title={`Look up CPIN ${child.cpin} in the registration lookup`}
+                    >
+                      {child.cpin}
+                    </SummaryLink>
+                  ) : (
+                    (child.cpin ?? '—')
+                  )}
                 </td>
               )}
               <td className={NUM_CHILD}>{child.total_size.toLocaleString()}</td>
@@ -315,23 +354,6 @@ function AccountRow({ filters, row, showCpin, onChart }: AccountRowProps) {
  * that does something *else* has to look like a control at rest, or it reads as
  * part of the row and gets found by accident.
  */
-function ChartButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      aria-label={label}
-      title="View charts"
-      className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10 transition-colors"
-    >
-      <BarChart3 className="w-4 h-4" />
-    </button>
-  );
-}
-
 function SubRowMessage({
   children,
   span,
