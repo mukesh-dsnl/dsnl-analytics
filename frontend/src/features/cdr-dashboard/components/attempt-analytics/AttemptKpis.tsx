@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { AlertTriangle, Hash, Layers, Loader2, Phone, Timer, Users } from 'lucide-react';
+import { AlertTriangle, Hash, Layers, Phone, Timer, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -259,7 +259,8 @@ export function Kpi({
         </span>
       </div>
       {isLoading ? (
-        <Loader2 className="mt-4 h-6 w-6 animate-spin text-[#50a6d5]" />
+        // Holds the figure's height while the page's loading bar runs.
+        <div className="mt-2.5 h-[44px]" aria-busy="true" />
       ) : error ? (
         <p className="mt-4 flex items-center gap-1.5 text-[12px] text-red-600 dark:text-red-400">
           <AlertTriangle className="h-3.5 w-3.5" />

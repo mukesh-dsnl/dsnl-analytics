@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { PageLoadingBar } from '../../../components/Loading';
 import { cdrApi } from '../api';
 import type { CallCubeRow, CdrFilters } from '../api';
 import { AttemptCharts } from './attempt-analytics/AttemptCharts';
@@ -21,7 +22,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
   // One request fills the whole page. The backend reads each daily parquet
   // file once and derives every panel from that single pass — eight separate
   // requests would re-read the same files eight times over a network share.
-  const { data, isPending, error } = useQuery({
+  const { data, isPending, isFetching, error } = useQuery({
     queryKey: ['cdr', 'dashboard', filters],
     queryFn: () => cdrApi.dashboard(filters),
   });
@@ -45,6 +46,9 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
 
   return (
     <HoverTooltipProvider>
+      {/* While the page's data loads (first open or a changed filter): one
+          loading bar along the very top of the content panel, not one per card. */}
+      {isFetching && <PageLoadingBar />}
       <div className="space-y-6">
         <AttemptKpis data={data} isLoading={isPending} error={error} showConferences={showConferences} />
         <AttemptCharts

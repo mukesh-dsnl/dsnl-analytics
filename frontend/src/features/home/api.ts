@@ -26,6 +26,8 @@ export interface ServiceCard {
   period?: CardFigures & { label: string };
   series?: { date: string; total: number; connected: number }[];
   has_minutes?: boolean;
+  /** MultiCall: how many of the lake's latest days were searched when none had calls. */
+  window_days?: number;
 }
 
 async function get<T>(path: string): Promise<T> {

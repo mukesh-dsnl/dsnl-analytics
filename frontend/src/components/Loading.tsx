@@ -1,5 +1,8 @@
+import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
+
+import { useContentPanel } from './ContentPanelSlot';
 
 /**
  * The app's loading look, first designed for Port Analyzer: a blue stripe
@@ -48,4 +51,10 @@ export function LoadingBlock({ height = 420, className }: { height?: number; cla
       <ProcessingChip />
     </div>
   );
+}
+
+/** One sweeping stripe along the very top of the content panel — a whole page loading. */
+export function PageLoadingBar() {
+  const panel = useContentPanel();
+  return panel ? createPortal(<ProgressSweep className="z-30" />, panel) : null;
 }

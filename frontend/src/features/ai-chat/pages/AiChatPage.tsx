@@ -128,11 +128,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  // The assistant's turn is not a card. Only the question is boxed — the
-  // answer is the page's own text, which is what gives a long breakdown room
-  // to breathe and stops every reply looking like a notification.
-  // An error is the exception: it needs to read as a thing that went wrong,
-  // so it keeps a tinted panel.
+  // The answer sits on a plain white card: the page behind it is the grid
+  // backdrop, and text read straight off the grid is harder work. The steps
+  // above it and the time / copy line under it stay off the card.
+  // An error keeps its tinted panel instead: it needs to read as a thing that
+  // went wrong.
   return (
     <li data-message-id={message.id} className="flex justify-start">
       <div className="w-full min-w-0 text-sm text-zinc-800 dark:text-zinc-200">
@@ -171,8 +171,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             </div>
           ) : (
             <>
-              <AnswerBody text={message.text} animate={message.animate} chart={message.chart} />
-              {!!message.exports?.length && <ExportFiles exports={message.exports} />}
+              {/* As wide as its text, up to the column — a chart needs the full width to draw. */}
+              <div
+                className={clsx(
+                  'rounded-2xl border border-[#e3e8ef] bg-white px-5 py-4 shadow-[0_1px_3px_rgba(17,24,39,0.05)] dark:border-white/[0.08] dark:bg-surface-dark',
+                  message.chart ? 'w-full' : 'w-fit max-w-full',
+                )}
+              >
+                <AnswerBody text={message.text} animate={message.animate} chart={message.chart} />
+                {!!message.exports?.length && <ExportFiles exports={message.exports} />}
+              </div>
               <div className="mt-2 flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500">
                 {message.createdAt && (
                   <time dateTime={message.createdAt} title={new Date(message.createdAt).toLocaleString()}>

@@ -186,16 +186,8 @@ export function Layout() {
   const isMulticallRegistry = location.pathname.startsWith('/analytics/multicall/registry');
   // Home, the services overview, has no date control: each card says its own day.
   const isHome = location.pathname === '/';
-  // The attempt-metrics and campaign-metrics pages (every service) use the
-  // redesign, which paints the whole panel — header included — with its blue
-  // canvas (see .vd-canvas).
   // Both Summary pages carry their own controls in the header slot.
   const isSummary = /^\/analytics\/(voicedrop|conference)\/(summary|accounts)/.test(location.pathname);
-  const isRedesigned =
-    isHome ||
-    location.pathname.startsWith('/analytics/ports') ||
-    isSummary ||
-    /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt|campaign)-metrics\/?$/.test(location.pathname);
 
   // Where "Analytics" goes back to. Remembering the page the chat was opened
   // from means the round trip returns you to the dashboard you were reading,
@@ -445,11 +437,12 @@ export function Layout() {
           ref={setContentPanel}
           className={clsx(
             'vd-edge relative h-full flex flex-col rounded-2xl overflow-hidden shadow-lg shadow-black/10 dark:shadow-[0_0_32px_-14px_rgba(34,211,238,0.12)]',
-            isRedesigned
-              ? 'vd-canvas'
-              : 'bg-zinc-50 dark:bg-canvas-dark',
+            'bg-white dark:bg-canvas-dark',
           )}
         >
+          {/* Every page sits on the grid backdrop: it runs from the very top of
+            the panel, behind the header, and fades out by the middle. */}
+          <div aria-hidden className="grid-backdrop pointer-events-none absolute inset-x-0 top-0 h-[80vh]" />
           {/* The date control lives here rather than on the page: it applies to
             every route in its module, so it belongs above the outlet. Campaign
             Metrics gets its own single-date control instead of the analytics
@@ -461,12 +454,8 @@ export function Layout() {
             on the way out would read as a layout bug, not as a transition. */}
           <header
             className={clsx(
-              'h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 border-b transition-opacity duration-300',
-              // On the redesigned page the header is glass over the gradient, so
-              // the blue runs through it instead of stopping at a white band.
-              isRedesigned
-                ? 'bg-white/45 backdrop-blur-md border-[#dfe7f1] dark:bg-white/[0.03] dark:border-white/[0.06]'
-                : 'bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800/60',
+              // Clear, so the grid runs through it instead of stopping at a white band.
+              'relative h-[72px] flex items-center gap-5 px-6 shrink-0 z-10 bg-transparent transition-opacity duration-300',
               isLoggingOut && 'opacity-0 pointer-events-none',
             )}
           >
@@ -513,7 +502,9 @@ export function Layout() {
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-              className="p-2 rounded-lg shrink-0 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/50 transition-colors"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              // The icon alone, no box: dark on the pale header, white in dark mode.
+              className="shrink-0 rounded-md p-1 text-[#45556e] transition-colors hover:text-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3] dark:text-white dark:hover:text-sky-300"
             >
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>

@@ -2,7 +2,7 @@ import type { ClipboardEvent, FormEvent } from 'react';
 import clsx from 'clsx';
 import { Loader2, RotateCcw, Search, X } from 'lucide-react';
 import type { SearchField } from '../api';
-import { MAX_VALUES, SEARCH_FIELDS, fieldFocus, focus, parseValues, surface } from '../lookup';
+import { MAX_VALUES, SEARCH_FIELDS, fieldFocus, focus, parseValues } from '../lookup';
 import type { FieldMeta } from '../lookup';
 
 interface SearchPanelProps {
@@ -32,8 +32,8 @@ export function SearchPanel({ drafts, onChange, onSubmit, onReset, docked, pendi
     if (canSearch) onSubmit();
   }
 
-  return <form onSubmit={submit} role="search" aria-label="Registration lookup"
-    className={clsx(surface.replace('rounded-xl', 'rounded-2xl'), 'p-3 transition-shadow duration-300 sm:p-4', !docked && 'shadow-lg')}>
+  // No card behind the row, before or after searching: the boxes sit straight on the grid backdrop.
+  return <form onSubmit={submit} role="search" aria-label="Registration lookup">
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
       {SEARCH_FIELDS.map((field, index) => <SearchBox key={field.key} field={field} value={drafts[field.key]} count={counts[index]}
         disabled={pending} autoFocus={!docked && index === 0} onChange={(value) => onChange(field.key, value)} />)}
@@ -77,7 +77,7 @@ function SearchBox({ field, value, count, disabled, autoFocus, onChange }: {
   }
 
   return <label htmlFor={id} className="block min-w-0">
-    <span className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+    <span className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-800 dark:text-zinc-300">
       {field.label}
       {count > 1 && <span className={clsx('rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal', over ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300')}>{count} values</span>}
     </span>

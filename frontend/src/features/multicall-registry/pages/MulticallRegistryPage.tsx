@@ -133,7 +133,9 @@ export function MulticallRegistryPage() {
   const duplicateRegs = submitted ? submitted.reg_nums.filter(isDuplicateRegNum) : [];
   const searchedTotal = submitted ? SEARCH_FIELDS.reduce((sum, field) => sum + submitted[field.key].length, 0) : 0;
 
-  return <div ref={topRef} className="mx-auto max-w-[1600px] scroll-mt-4 p-4 pb-12 sm:p-6 lg:p-8">
+  // The grid backdrop behind this page is drawn by Layout, so it runs up behind the header.
+  return <div className="relative min-h-full">
+    <div ref={topRef} className="relative mx-auto max-w-[1600px] scroll-mt-4 p-4 pb-12 sm:p-6 lg:p-8">
     {/* The page's name lives in the layout header, at its left edge. */}
     {headerSlot && createPortal(
       <div className="flex min-w-0 items-center gap-2">
@@ -174,6 +176,7 @@ export function MulticallRegistryPage() {
       : <ResultsTable rows={rows} totalRows={allRows.length} truncated={search.data.truncated} criteria={submitted!}
           filter={filter} onFilter={setFilter} onOpen={(row) => openAccount(String(row.reg_num))} recent={recent} />}
     </div>}
+    </div>
   </div>;
 }
 

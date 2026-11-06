@@ -14,7 +14,6 @@ import {
   BellRing,
   CheckCircle2,
   ChevronDown,
-  Loader2,
   MapPin,
   MousePointer2,
   PhoneOff,
@@ -255,9 +254,7 @@ export function Card({
       </div>
       <div className={clsx('flex-1 p-[18px]', bodyClassName)}>
         {isLoading ? (
-          <div className="flex h-full min-h-[180px] items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-[#50a6d5]" />
-          </div>
+          <div className="h-full min-h-[180px]" aria-busy="true" />
         ) : error ? (
           <div className="flex items-start gap-2 text-[12px] text-red-600 dark:text-red-400">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

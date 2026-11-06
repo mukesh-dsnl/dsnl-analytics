@@ -485,6 +485,25 @@ body {
     transform: translateX(400%);
   }
 }
+/* A grid backdrop for the top half of a page (Registration Lookup): fine blue
+   lines over a pale blue wash, both fading to nothing by the bottom edge. */
+.grid-backdrop {
+  background-image:
+    linear-gradient(to right, rgba(59, 130, 246, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, #e8f2fd 0%, rgba(232, 242, 253, 0.55) 50%, rgba(232, 242, 253, 0) 100%);
+  background-size: 64px 64px, 64px 64px, 100% 100%;
+  background-position: -1px -1px, -1px -1px, 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 50%, transparent 100%);
+}
+.dark .grid-backdrop {
+  background-image:
+    linear-gradient(to right, rgba(148, 197, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 197, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 120, 220, 0.12), rgba(56, 120, 220, 0));
+}
+
 /* A details sheet sliding in from the right of the content panel, over a dimming page. */
 .drawer-in {
   animation: drawer-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);

@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { AlertTriangle, ArrowRight, House } from 'lucide-react';
+import { AlertTriangle, ChevronRight, House, Server } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import { SERVICES as SERVICE_META, SERVICE_ORDER } from '../../../components/services';
 import type { ServiceId } from '../../../components/services';
@@ -11,23 +13,29 @@ import { useHeaderSlot } from '../../../components/HeaderSlot';
 import { useAuthStore, useUIStore } from '../../../store';
 import { HoverTooltipProvider } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { compact, fmt } from '../../cdr-dashboard/components/attempt-analytics/design';
+import { useCdrStatus } from '../../campaign-metrics/hooks';
+import { analyzePorts } from '../../port-analyzer/api';
+import { DEFAULT_FROM, DEFAULT_TO, clock, defaultDay } from '../../port-analyzer/params';
 import { DailyVolume } from '../../summary/components/DailyVolume';
-import { dayLabel, shortDay } from '../../summary/format';
+import { dayLabel } from '../../summary/format';
 import { homeApi } from '../api';
 import type { ServiceCard } from '../api';
 
-/** What each card's figures are, in its service's words, and where they come from. */
-const FIGURES: Record<ServiceId, { units: string; total: string; minutes: string | null; source: string; barDays: number }> = {
-  voicedrop: { units: 'campaigns', total: 'dialed out', minutes: 'connected minutes', source: 'voicedrop_summary', barDays: 30 },
-  conference: { units: 'conferences', total: 'parties ringed', minutes: 'attended minutes', source: 'conference_summary', barDays: 30 },
+/** What each card's figures are, in its service's words. */
+const FIGURES: Record<ServiceId, { units: string; total: string; barDays: number }> = {
+  voicedrop: { units: 'campaigns', total: 'dialed out', barDays: 30 },
+  conference: { units: 'conferences', total: 'parties ringed', barDays: 30 },
   // The lake rollup is a few days only.
-  multicall: { units: 'conferences', total: 'dial attempts', minutes: null, source: 'CDR lake', barDays: 5 },
+  multicall: { units: 'conferences', total: 'dial attempts', barDays: 5 },
 };
 
+const PORT_TILE = 'bg-[#e6f4fb] text-[#0284c7] dark:bg-sky-500/15 dark:text-sky-300';
+
 /**
- * Home, the app's landing page: the three services at a glance. Each card
- * opens its service — the sidebar's switcher then lists that service's
- * pages — and links straight to each of them.
+ * Home, the app's landing page: four cards — the three services and Port
+ * Analyzer — each with its latest figure, a small chart of the days before,
+ * and a plain list of links straight to its pages. Kept quiet on purpose:
+ * white cards, one accent colour, text links that underline on hover.
  */
 export function HomePage() {
   const headerSlot = useHeaderSlot();
@@ -41,14 +49,12 @@ export function HomePage() {
           </div>,
           headerSlot,
         )}
-      <div className="vd-design mx-auto max-w-[1500px] p-8">
+      <div className="mx-auto max-w-[1500px] px-8 py-9 font-sans">
         <Overview />
       </div>
     </HoverTooltipProvider>
   );
 }
-
-// ── The overview ────────────────────────────────────────────────────────────
 
 /** "admin" → "Admin". */
 const displayName = (name: string | null) =>
@@ -70,165 +76,243 @@ function Overview() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[13px] text-[#6a7d96] dark:text-zinc-400">{name ? `${greeting}, ${name}` : greeting}</p>
-          <h1 className="mt-0.5 text-[22px] font-semibold tracking-[-0.3px] text-[#16213a] dark:text-white">Services overview</h1>
-        </div>
-        <p className="text-[12px] text-[#7a899f] dark:text-zinc-500">Each card shows its latest day · the bars, the days before it</p>
+      <div className="mb-7">
+        <p className="text-[13px] text-[#5f6b7c] dark:text-zinc-400">{name ? `${greeting}, ${name}` : greeting}</p>
+        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.4px] text-[#111827] dark:text-white">Welcome to DSNL Analytics</h1>
+        <p className="mt-1.5 text-[14px] text-[#5f6b7c] dark:text-zinc-400">Pick a service to see its latest activity, or jump straight to a page.</p>
       </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 2xl:grid-cols-4">
         {SERVICE_ORDER.map((id) => (
-          <ServiceTile key={id} id={id} {...cards[id]} />
+          <ServiceCardView key={id} id={id} {...cards[id]} />
         ))}
+        <PortCard />
       </div>
     </>
   );
 }
 
-function ServiceTile({
-  id,
-  card,
-  isLoading,
-  error,
-}: {
-  id: ServiceId;
-  card?: ServiceCard;
-  isLoading: boolean;
-  error: Error | null;
-}) {
-  const meta = SERVICE_META[id];
-  const info = FIGURES[id];
-  const Icon = meta.icon;
-  const navigate = useNavigate();
-  const setNavService = useUIStore((s) => s.setNavService);
-  const open = (path: string) => {
-    setNavService(id);
-    navigate(path);
-  };
-  const problem = error?.message ?? card?.error;
-  const day = card?.day;
-  const period = card?.period;
+// ── The card frame ───────────────────────────────────────────────────────────
 
+function Frame({
+  icon: Icon,
+  tile,
+  title,
+  asOf,
+  children,
+  links,
+}: {
+  icon: LucideIcon;
+  tile: string;
+  title: string;
+  asOf?: string | null;
+  children: ReactNode;
+  links: ReactNode;
+}) {
   return (
-    <article className="group flex min-w-0 flex-col rounded-2xl border border-[#e9eef5] bg-white p-5 shadow-[0_6px_20px_#1c305408] transition-[border-color,box-shadow] hover:border-[#c9daf2] hover:shadow-[0_10px_28px_#1c30540d] dark:border-[#1c2a42] dark:bg-[#0e192c] dark:hover:border-[#2b4266]">
-      <header className="flex items-center gap-3">
-        <span className={clsx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', meta.tile)}>
+    <article className="flex min-w-0 flex-col rounded-xl border border-[#e3e8ef] bg-white transition-[border-color,box-shadow] hover:border-[#cfd8e3] hover:shadow-[0_4px_16px_rgba(17,24,39,0.06)] dark:border-[#1c2a42] dark:bg-[#0e192c] dark:hover:border-[#2b4266]">
+      <header className="flex items-center gap-3 px-5 pt-5">
+        <span className={clsx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', tile)}>
           <Icon className="h-[18px] w-[18px]" />
         </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[14px] font-semibold text-[#16213a] dark:text-white">{meta.name}</h2>
-          <p className="truncate text-[11px] text-[#7a899f] dark:text-zinc-500">{meta.blurb}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => open(meta.pages[0].path)}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-[#2563eb] transition-colors hover:bg-[#eef4fd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#42b9e9] dark:text-sky-300 dark:hover:bg-sky-500/10"
-        >
-          Open
-          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-        </button>
+        <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[#111827] dark:text-white">{title}</h2>
+        {asOf && <span className="shrink-0 text-[11.5px] text-[#6b7685] dark:text-zinc-500">{dayLabel(asOf)}</span>}
       </header>
-
-      {isLoading ? (
-        <Skeleton />
-      ) : problem ? (
-        <p className="mt-5 flex items-start gap-2 text-[12px] text-red-600 dark:text-red-400">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="break-words">{problem}</span>
-        </p>
-      ) : !card?.as_of || !day || !period ? (
-        <p className="mt-5 text-[12px] text-[#8a99ad]">No data yet.</p>
-      ) : (
-        <>
-          <div className="mt-5 flex items-baseline justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[28px] font-semibold leading-none tracking-[-0.6px] tabular-nums text-[#16213a] dark:text-white">
-                {compact(day.total)}
-              </p>
-              <p className="mt-1.5 text-[12px] text-[#6a7d96] dark:text-zinc-400">
-                {info.total} on <span className="font-medium text-[#35415a] dark:text-zinc-200">{dayLabel(card.as_of)}</span>
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[18px] font-semibold leading-none tabular-nums text-[#2563eb] dark:text-sky-300">{day.connect_rate}%</p>
-              <p className="mt-1.5 text-[11px] text-[#7a899f] dark:text-zinc-500">{compact(day.connected)} connected</p>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <DailyVolume
-              days={card.series ?? []}
-              asOf={card.as_of}
-              span={info.barDays}
-              totalLabel={info.total}
-              compact
-            />
-            <div className="mt-1 flex justify-between text-[10px] text-[#9aa7b8] dark:text-zinc-600">
-              <span>{shortDay(shiftIso(card.as_of, -(info.barDays - 1)))}</span>
-              <span>{shortDay(card.as_of)}</span>
-            </div>
-          </div>
-
-          <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-[#eef2f7] pt-3.5 dark:border-white/[0.06]">
-            <Stat label={info.units} value={fmt(period.units)} />
-            <Stat label="accounts" value={fmt(period.accounts)} />
-            {info.minutes ? (
-              <Stat label={info.minutes.replace(' minutes', ' min')} value={compact(period.minutes)} />
-            ) : (
-              <Stat label="connect rate" value={`${period.connect_rate}%`} />
-            )}
-          </dl>
-          <p className="mt-2 text-[10px] text-[#9aa7b8] dark:text-zinc-600">
-            {period.label === 'month' ? 'This month so far' : `The ${period.label}`} · from {info.source}
-          </p>
-        </>
-      )}
-
-      {/* Straight to any of the service's pages. */}
-      <nav className="mt-4 flex flex-wrap gap-1.5 border-t border-[#eef2f7] pt-3.5 dark:border-white/[0.06]" aria-label={`${meta.name} pages`}>
-        {meta.pages.map((p) => (
-          <Link
-            key={p.key}
-            to={p.path}
-            onClick={() => setNavService(id)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#e3eaf3] px-2.5 py-1 text-[11px] font-medium text-[#45556e] transition-colors hover:border-[#bcd6ef] hover:bg-[#f3f8fd] hover:text-[#1d4ed8] dark:border-white/[0.08] dark:text-zinc-300 dark:hover:bg-white/[0.04] dark:hover:text-sky-300"
-          >
-            <p.icon className="h-3.5 w-3.5" />
-            {p.label}
-          </Link>
-        ))}
+      <div className="px-5 pt-5 pb-4">{children}</div>
+      {/* Straight to each page: plain links, underlined on hover. */}
+      <nav className="mt-auto border-t border-[#edf0f4] px-5 py-3.5 dark:border-white/[0.06]">
+        <ul className="space-y-0.5">{links}</ul>
       </nav>
     </article>
   );
 }
 
-function Stat({ label, value }: { label: string; value: ReactNode }) {
+function PageLink({ to, icon: Icon, label, onClick }: { to: string; icon: LucideIcon; label: string; onClick?: () => void }) {
   return (
-    <div className="min-w-0">
-      <dt className="truncate text-[10px] uppercase tracking-[0.5px] text-[#8a99ad] dark:text-zinc-500">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-semibold tabular-nums text-[#1f2b45] dark:text-zinc-100">{value}</dd>
+    <li>
+      <Link
+        to={to}
+        onClick={onClick}
+        className="group/link -mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13.5px] font-medium text-[#1a56db] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3] dark:text-sky-300"
+      >
+        <Icon className="h-4 w-4 shrink-0 text-[#6b7685] group-hover/link:text-[#1a56db] dark:text-zinc-500 dark:group-hover/link:text-sky-300" />
+        <span className="underline-offset-[3px] group-hover/link:underline">{label}</span>
+        <ChevronRight className="ml-auto h-4 w-4 text-[#c3cad5] opacity-0 transition-opacity group-hover/link:opacity-100 dark:text-zinc-600" />
+      </Link>
+    </li>
+  );
+}
+
+function Headline({ value, label, side, sideLabel }: { value: string; label: string; side?: string; sideLabel?: string }) {
+  return (
+    <div className="flex items-end justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[30px] font-semibold leading-none tracking-[-0.8px] tabular-nums text-[#111827] dark:text-white">{value}</p>
+        <p className="mt-2 text-[12.5px] text-[#5f6b7c] dark:text-zinc-400">{label}</p>
+      </div>
+      {side && (
+        <div className="shrink-0 text-right">
+          <p className="text-[17px] font-semibold leading-none tabular-nums text-[#1a56db] dark:text-sky-300">{side}</p>
+          <p className="mt-2 text-[11.5px] text-[#6b7685] dark:text-zinc-500">{sideLabel}</p>
+        </div>
+      )}
     </div>
+  );
+}
+
+function Problem({ message }: { message: string }) {
+  return (
+    <p className="flex min-h-[150px] items-start gap-2 text-[12.5px] text-red-600 dark:text-red-400">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="break-words">{message}</span>
+    </p>
   );
 }
 
 function Skeleton() {
   return (
-    <div className="mt-5 animate-pulse space-y-3" aria-hidden>
-      <div className="h-7 w-28 rounded-md bg-[#eef2f7] dark:bg-white/[0.06]" />
-      <div className="h-3 w-40 rounded bg-[#eef2f7] dark:bg-white/[0.06]" />
-      <div className="h-14 rounded-md bg-[#f3f6fa] dark:bg-white/[0.04]" />
-      <div className="grid grid-cols-3 gap-2 pt-2">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-8 rounded bg-[#f3f6fa] dark:bg-white/[0.04]" />
-        ))}
-      </div>
+    <div className="min-h-[150px] animate-pulse space-y-3" aria-hidden>
+      <div className="h-8 w-28 rounded-md bg-[#eef1f5] dark:bg-white/[0.06]" />
+      <div className="h-3 w-40 rounded bg-[#eef1f5] dark:bg-white/[0.06]" />
+      <div className="h-14 rounded-md bg-[#f3f5f8] dark:bg-white/[0.04]" />
     </div>
   );
 }
 
-const shiftIso = (iso: string, n: number) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  const day = new Date(y, m - 1, d + n);
-  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-};
+// ── A service ────────────────────────────────────────────────────────────────
+
+function ServiceCardView({ id, card, isLoading, error }: { id: ServiceId; card?: ServiceCard; isLoading: boolean; error: Error | null }) {
+  const meta = SERVICE_META[id];
+  const info = FIGURES[id];
+  const setNavService = useUIStore((s) => s.setNavService);
+  const problem = error?.message ?? card?.error;
+  const day = card?.day;
+  const period = card?.period;
+
+  return (
+    <Frame
+      icon={meta.icon}
+      tile={meta.tile}
+      title={meta.name}
+      asOf={card?.as_of}
+      links={meta.pages.map((p) => (
+        <PageLink key={p.key} to={p.path} icon={p.icon} label={p.label} onClick={() => setNavService(id)} />
+      ))}
+    >
+      {isLoading ? (
+        <Skeleton />
+      ) : problem ? (
+        <Problem message={problem} />
+      ) : !card?.as_of || !day || !period ? (
+        <p className="min-h-[150px] text-[12.5px] leading-relaxed text-[#6b7685] dark:text-zinc-500">
+          {card?.window_days
+            ? `No ${meta.name} calls in the CDR export's last ${card.window_days} days.`
+            : 'No data yet.'}
+        </p>
+      ) : (
+        <>
+          <Headline value={compact(day.total)} label={`${info.total} on the latest day`} side={`${day.connect_rate}%`} sideLabel="connected" />
+          <div className="mt-5">
+            <DailyVolume days={card.series ?? []} asOf={card.as_of} span={info.barDays} totalLabel={info.total} compact />
+          </div>
+          <p className="mt-3 text-[12px] text-[#6b7685] dark:text-zinc-500">
+            {period.label === 'month' ? 'This month' : `The ${period.label}`}:{' '}
+            <span className="font-medium text-[#374151] dark:text-zinc-300">
+              {fmt(period.units)} {info.units} · {fmt(period.accounts)} accounts
+            </span>
+          </p>
+        </>
+      )}
+    </Frame>
+  );
+}
+
+// ── Port Analyzer ────────────────────────────────────────────────────────────
+
+const PORT_LINKS: { label: string; service?: ServiceId }[] = [
+  { label: 'Open Port Analyzer' },
+  { label: 'Voicedrop ports', service: 'voicedrop' },
+  { label: 'Audio Conference ports', service: 'conference' },
+  { label: 'MultiCall ports', service: 'multicall' },
+];
+
+/** Yesterday's ports in use, 9 AM to 9 PM, every service — the Port Analyzer's own opening view. */
+function PortCard() {
+  const status = useCdrStatus();
+  const maxDate = status.data?.cdr?.date_max ?? null;
+  const day = maxDate ? defaultDay(status.data?.cdr?.date_min ?? null, maxDate) : null;
+  const ports = useQuery({
+    queryKey: ['home', 'ports', day],
+    queryFn: () =>
+      analyzePorts({
+        date: day!,
+        service: 'all',
+        time_from: DEFAULT_FROM,
+        time_to: DEFAULT_TO,
+        resolution: '1m',
+        group_by: 'none',
+        service_providers: [],
+        accounts: [],
+        locations: [],
+        top: 8,
+        capacity: null,
+      }),
+    enabled: !!day,
+    staleTime: 10 * 60_000,
+  });
+  const problem = status.error?.message ?? (status.data && !maxDate ? 'The CDR lake has no days yet.' : null) ?? ports.error?.message;
+  const summary = ports.data?.summary;
+
+  return (
+    <Frame
+      icon={Server}
+      tile={PORT_TILE}
+      title="Port Analyzer"
+      asOf={day}
+      links={PORT_LINKS.map((l) => (
+        <PageLink key={l.label} to={l.service ? `/analytics/ports?service=${l.service}` : '/analytics/ports'} icon={Server} label={l.label} />
+      ))}
+    >
+      {problem ? (
+        <Problem message={problem} />
+      ) : status.isPending || ports.isPending || !summary ? (
+        <Skeleton />
+      ) : (
+        <>
+          <Headline
+            value={fmt(summary.peak)}
+            label="peak ports in use, 9 AM – 9 PM"
+            side={clock(summary.peak_at).slice(0, 5)}
+            sideLabel="at the peak"
+          />
+          <div className="mt-5">
+            <Sparkline values={ports.data?.total ?? []} />
+          </div>
+          <p className="mt-3 text-[12px] text-[#6b7685] dark:text-zinc-500">
+            Average <span className="font-medium text-[#374151] dark:text-zinc-300">{fmt(Math.round(summary.avg_ports))} ports</span> ·{' '}
+            <span className="font-medium text-[#374151] dark:text-zinc-300">{compact(summary.calls)} calls</span>
+          </p>
+        </>
+      )}
+    </Frame>
+  );
+}
+
+/** A minute-by-minute line folded to its highest point per slot, drawn to fit the card. */
+function Sparkline({ values }: { values: number[] }) {
+  const { line, area } = useMemo(() => {
+    const slots = 72;
+    const size = Math.max(1, Math.ceil(values.length / slots));
+    const folded: number[] = [];
+    for (let i = 0; i < values.length; i += size) folded.push(Math.max(...values.slice(i, i + size)));
+    const top = Math.max(1, ...folded);
+    const points = folded.map((v, i) => [(i / Math.max(1, folded.length - 1)) * 100, 54 - (v / top) * 50] as const);
+    const path = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+    return { line: path, area: `${path} L100,56 L0,56 Z` };
+  }, [values]);
+  return (
+    <svg viewBox="0 0 100 56" preserveAspectRatio="none" className="h-14 w-full" aria-hidden>
+      <path d={area} className="fill-[#0284c7]/10 dark:fill-sky-400/10" />
+      <path d={line} fill="none" className="stroke-[#0284c7] dark:stroke-sky-400" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
