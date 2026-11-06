@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   BellRing,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   MapPin,
   MousePointer2,
@@ -848,6 +849,9 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
 
 const blastNumber = (label: string) => Number(label.match(/(\d+)\s*$/)?.[1] ?? 0);
 
+/** Repeat attempts shows Blast 0–5 until expanded: some days run to dozens of blasts. */
+const COLLAPSED_LAST_BLAST = 5;
+
 function aidSections(breakdown: ReblastAidDatum[], label: string) {
   const aids = breakdown.find((b) => b.label === label)?.aid ?? [];
   const connected = aids.reduce((t, a) => t + a.connected, 0);
@@ -885,6 +889,10 @@ function RetryCard({
   const repeat = data?.reblast.total ?? retries.reduce((t, s) => t + s.value, 0);
   const max = Math.max(...stages.map((s) => s.value), 1);
   const breakdown = data?.reblast_aid ?? [];
+  const [expanded, setExpanded] = useState(false);
+  const hidden = stages.filter((s) => blastNumber(s.label) > COLLAPSED_LAST_BLAST);
+  const shown = expanded ? stages : stages.filter((s) => blastNumber(s.label) <= COLLAPSED_LAST_BLAST);
+  const hiddenTotal = hidden.reduce((t, s) => t + s.value, 0);
   const tip = (s: CategoryDatum) => () => (
     <TipBody
       eyebrow="Repeat attempts"
@@ -911,7 +919,7 @@ function RetryCard({
         </small>
       </div>
       <div className="flex flex-col gap-[15px]">
-        {stages.map((s) => (
+        {shown.map((s) => (
           <BarRow
             key={s.label}
             label={s.label}
@@ -924,6 +932,19 @@ function RetryCard({
           />
         ))}
       </div>
+      {hidden.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7ebf2] bg-[#f7f9fc] py-2 text-[11px] font-medium text-[#5b6a82] transition-colors hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-zinc-800/60 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:text-sky-300"
+        >
+          {expanded
+            ? 'Show Blast 0–5 only'
+            : `Show ${hidden.length} more blast${hidden.length === 1 ? '' : 's'} · ${fmt(hiddenTotal)} attempts`}
+          <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+        </button>
+      )}
     </Card>
   );
 }

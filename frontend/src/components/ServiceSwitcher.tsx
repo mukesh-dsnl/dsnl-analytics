@@ -50,10 +50,7 @@ export function ServiceSwitcher({
           </span>
           {!collapsed && (
             <>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#6b7a90]">Service</span>
-                <span className="block truncate text-sm font-semibold leading-tight">{current.name}</span>
-              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{current.name}</span>
               <ChevronsUpDown className="h-4 w-4 shrink-0 text-[#6b7a90]" />
             </>
           )}

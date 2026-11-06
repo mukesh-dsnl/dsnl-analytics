@@ -19,7 +19,8 @@ export interface RoomRef {
   name?: string;
 }
 
-const MONO = 'font-mono tabular-nums';
+// Numbers line up without a monospace face: Inter's tabular digits.
+const MONO = 'tabular-nums';
 
 // The sheet's width: dragged on its left edge, remembered per browser.
 const WIDTH_KEY = 'conference-room-drawer-width';
@@ -93,7 +94,7 @@ export function ConferenceRoomDrawer({ room, onClose }: { room: RoomRef; onClose
         aria-modal="true"
         aria-label={`Conference ${room.crn} details`}
         style={{ width: Math.min(width, maxWidth()) }}
-        className="drawer-in vd-design absolute inset-y-0 right-0 flex max-w-full flex-col border-l border-[#e3eaf3] bg-white text-[#35415a] shadow-[-24px_0_60px_rgba(15,35,64,0.16)] dark:border-white/[0.06] dark:bg-[#0e192c] dark:text-zinc-200"
+        className="drawer-in font-sans antialiased absolute inset-y-0 right-0 flex max-w-full flex-col border-l border-[#e3eaf3] bg-white text-[#35415a] shadow-[-24px_0_60px_rgba(15,35,64,0.16)] dark:border-white/[0.06] dark:bg-[#0e192c] dark:text-zinc-200"
       >
         {/* The resize handle, along the left edge. */}
         <div
@@ -131,7 +132,7 @@ export function ConferenceRoomDrawer({ room, onClose }: { room: RoomRef; onClose
               </IconButton>
             </div>
           </div>
-          <p className={clsx(MONO, 'mt-3 text-[11.5px] text-[#6a7d96] dark:text-zinc-400')}>
+          <p className={clsx(MONO, 'mt-2 text-[12.5px] text-[#6a7d96] dark:text-zinc-400')}>
             CRN {room.crn} · Conf {room.conf_num} · {dayLabel(room.date)}
           </p>
         </header>
@@ -223,10 +224,10 @@ function Details({ room }: { room: ConferenceRoom }) {
                   title={c.joined ? 'Joined the room' : 'Called, never joined'}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words text-[13px] font-medium text-[#16213a] dark:text-white">{c.name ?? 'No name'}</span>
-                  <span className={clsx(MONO, 'block text-[12px] text-[#5b6a82] dark:text-zinc-400')}>{c.phone ?? 'No number'}</span>
+                  <span className="block break-words text-[13.5px] font-semibold text-[#1d4ed8] dark:text-sky-300">{c.name ?? 'No name'}</span>
+                  <span className={clsx(MONO, 'block text-[12.5px] text-[#2563eb] dark:text-sky-400')}>{c.phone ?? 'No number'}</span>
                 </span>
-                <span className={clsx(MONO, 'shrink-0 text-right text-[11px] text-[#8a99ad] dark:text-zinc-500')}>
+                <span className={clsx(MONO, 'shrink-0 text-right text-[12px] text-[#8a99ad] dark:text-zinc-500')}>
                   {c.first_call && <span className="block">{c.first_call}</span>}
                   {c.legs > 1 && <span className="block">{c.legs} calls</span>}
                 </span>
@@ -242,7 +243,7 @@ function Details({ room }: { room: ConferenceRoom }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mb-5 last:mb-1">
-      <h3 className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#2f5a8c] dark:text-sky-300">{title}</h3>
+      <h3 className="mb-1.5 px-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#2f5a8c] dark:text-sky-300">{title}</h3>
       <div className="rounded-xl border border-[#e6ecf4] bg-white px-3.5 shadow-[0_1px_2px_#1c305408] dark:border-white/[0.06] dark:bg-white/[0.025]">{children}</div>
     </section>
   );
@@ -251,8 +252,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Row({ label, mono, children }: { label: string; mono?: boolean; children: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[#eef2f7] py-2.5 last:border-0 dark:border-white/[0.05]">
-      <span className={clsx(MONO, 'shrink-0 whitespace-nowrap pt-px text-[11.5px] uppercase tracking-wide text-[#8a99ad] dark:text-zinc-500')}>{label}</span>
-      <span className={clsx('min-w-0 break-words text-right text-[13px] text-[#16213a] dark:text-zinc-100', mono && MONO)}>{children}</span>
+      <span className="shrink-0 whitespace-nowrap text-[13px] font-semibold text-[#0f172a] dark:text-zinc-100">{label}</span>
+      <span className={clsx('min-w-0 break-words text-right text-[13.5px] font-medium text-[#1d4ed8] dark:text-sky-300', mono && MONO)}>{children}</span>
     </div>
   );
 }
@@ -261,10 +262,10 @@ function IdName({ id, name }: { id: number; name: string | null }) {
   const label = cleanName(name, id);
   return (
     <span>
-      <span className={clsx(MONO, 'font-semibold text-[#1d4ed8] dark:text-sky-300')}>{id}</span>
+      <span className={clsx(MONO, 'font-bold text-[#1d4ed8] dark:text-sky-300')}>{id}</span>
       {label && (
         <>
-          <span className="mx-1.5 text-[#8a99ad] dark:text-zinc-600">-</span>
+          <span className="mx-1.5 text-[#93b0e0] dark:text-zinc-600">-</span>
           {label}
         </>
       )}
@@ -272,7 +273,7 @@ function IdName({ id, name }: { id: number; name: string | null }) {
   );
 }
 
-const Dash = () => <span className="text-[#9aa7b8] dark:text-zinc-600">—</span>;
+const Dash = () => <span className="text-[#93b0e0] dark:text-zinc-600">—</span>;
 
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
@@ -356,18 +357,18 @@ function printRoom(room: ConferenceRoom) {
     : `<p class="note">${escapeHtml(room.cdr_note ?? 'No chairperson called in.')}</p>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(room.conference_name ?? `CRN ${room.crn}`)}</title>
 <style>
-  body { font: 13px/1.45 'Segoe UI', system-ui, sans-serif; color: #16213a; margin: 32px; }
+  body { font: 13px/1.5 Inter, 'Segoe UI', system-ui, sans-serif; font-variant-numeric: tabular-nums; color: #16213a; margin: 32px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
-  .meta { font: 12px ui-monospace, Consolas, monospace; color: #5b6a82; margin-bottom: 20px; }
+  .meta { font-size: 12px; color: #5b6a82; margin-bottom: 20px; }
   h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #2f5a8c; margin: 18px 0 6px; }
   table { width: 100%; border-collapse: collapse; }
-  .kv th { width: 34%; text-align: left; font: 11px ui-monospace, Consolas, monospace; text-transform: uppercase; color: #6a7d96; padding: 6px 0; vertical-align: top; }
-  .kv td { padding: 6px 0; border-bottom: 1px solid #eef2f7; }
+  .kv th { width: 34%; text-align: left; font-weight: 600; font-size: 13px; color: #0f172a; padding: 6px 0; vertical-align: top; }
+  .kv td { padding: 6px 0; border-bottom: 1px solid #eef2f7; color: #1d4ed8; font-weight: 500; }
   .kv tr:last-child td { border-bottom: 0; }
-  .list th { text-align: left; font-size: 11px; color: #2f5a8c; border-bottom: 1px solid #cfe0f3; padding: 6px 8px 6px 0; }
-  .list td { padding: 6px 8px 6px 0; border-bottom: 1px solid #eef2f7; }
-  .id { color: #1d4ed8; font-family: ui-monospace, Consolas, monospace; }
-  .mono { font-family: ui-monospace, Consolas, monospace; }
+  .list th { text-align: left; font-size: 11px; color: #0f172a; border-bottom: 1px solid #cfe0f3; padding: 6px 8px 6px 0; }
+  .list td { padding: 6px 8px 6px 0; border-bottom: 1px solid #eef2f7; color: #1d4ed8; }
+  .id { color: #1d4ed8; }
+  .mono { font-variant-numeric: tabular-nums; }
   .note { color: #6a7d96; }
   @page { margin: 14mm; }
 </style></head><body>
