@@ -528,3 +528,14 @@ body {
     animation-duration: 3s;
   }
 }
+
+/* The clock / calendar glyph inside a native time or date field is drawn by
+   the browser in black, so on a dark field it vanished. Inverted here, once,
+   for every such field. (The filter bar used to try this per field with
+   `[&::-webkit-calendar-picker-indicator]:dark:invert`, but that order puts
+   the dark selector *after* the pseudo-element, which is not valid CSS, so the
+   rule was dropped; Port Analyzer's time fields had no rule at all.) */
+.dark input[type='time']::-webkit-calendar-picker-indicator,
+.dark input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}

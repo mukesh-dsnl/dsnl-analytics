@@ -2,7 +2,7 @@ import type { ClipboardEvent, FormEvent } from 'react';
 import clsx from 'clsx';
 import { Loader2, RotateCcw, Search, X } from 'lucide-react';
 import type { SearchField } from '../api';
-import { MAX_VALUES, SEARCH_FIELDS, fieldFocus, focus, parseValues } from '../lookup';
+import { MAX_VALUES, SEARCH_FIELDS, VALUE_RULE, fieldFocus, focus, invalidValues, parseValues } from '../lookup';
 import type { FieldMeta } from '../lookup';
 
 interface SearchPanelProps {
@@ -21,10 +21,16 @@ interface SearchPanelProps {
  * returns any main account that matches at least one value.
  */
 export function SearchPanel({ drafts, onChange, onSubmit, onReset, docked, pending }: SearchPanelProps) {
-  const counts = SEARCH_FIELDS.map((field) => parseValues(drafts[field.key], field.key === 'emails').length);
+  const values = SEARCH_FIELDS.map((field) => parseValues(drafts[field.key], field.key === 'emails'));
+  const counts = values.map((list) => list.length);
+  // Checked before searching: a Reg Num of "abc" used to be sent, find nothing,
+  // and come back as a "Reg Num: 1" chip that said neither what was searched
+  // nor why it could not match.
+  const invalid = SEARCH_FIELDS.map((field, index) => invalidValues(field.key, values[index]));
+  const hasInvalid = invalid.some((list) => list.length > 0);
   const total = counts.reduce((sum, count) => sum + count, 0);
   const overLimit = counts.some((count) => count > MAX_VALUES);
-  const canSearch = total > 0 && !overLimit && !pending;
+  const canSearch = total > 0 && !overLimit && !hasInvalid && !pending;
   const hasText = SEARCH_FIELDS.some((field) => drafts[field.key].trim());
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -35,7 +41,7 @@ export function SearchPanel({ drafts, onChange, onSubmit, onReset, docked, pendi
   // No card behind the row, before or after searching: the boxes sit straight on the grid backdrop.
   return <form onSubmit={submit} role="search" aria-label="Registration lookup">
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
-      {SEARCH_FIELDS.map((field, index) => <SearchBox key={field.key} field={field} value={drafts[field.key]} count={counts[index]}
+      {SEARCH_FIELDS.map((field, index) => <SearchBox key={field.key} field={field} value={drafts[field.key]} count={counts[index]} invalid={invalid[index].length > 0}
         disabled={pending} autoFocus={!docked && index === 0} onChange={(value) => onChange(field.key, value)} />)}
 
       <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
@@ -50,16 +56,20 @@ export function SearchPanel({ drafts, onChange, onSubmit, onReset, docked, pendi
     </div>
 
     {overLimit && <p role="alert" className="mt-3 text-xs font-medium text-red-600 dark:text-red-400">Each box accepts up to {MAX_VALUES} values per search.</p>}
+    {invalid.map((list, index) => list.length > 0 && <p key={SEARCH_FIELDS[index].key} role="alert" className="mt-3 text-xs font-medium text-red-600 dark:text-red-400">
+      {SEARCH_FIELDS[index].label} takes {VALUE_RULE[SEARCH_FIELDS[index].key]}. Remove {list.slice(0, 5).map((value) => `“${value}”`).join(', ')}{list.length > 5 ? ` and ${list.length - 5} more` : ''} to search.
+    </p>)}
   </form>;
 }
 
-function SearchBox({ field, value, count, disabled, autoFocus, onChange }: {
-  field: FieldMeta; value: string; count: number; disabled: boolean; autoFocus: boolean;
+function SearchBox({ field, value, count, invalid, disabled, autoFocus, onChange }: {
+  field: FieldMeta; value: string; count: number; invalid: boolean; disabled: boolean; autoFocus: boolean;
   onChange: (value: string) => void;
 }) {
   const Icon = field.icon;
   const id = `mc-search-${field.key}`;
-  const over = count > MAX_VALUES;
+  // Red for either reason the box cannot be searched: too many values, or one of the wrong shape.
+  const over = count > MAX_VALUES || invalid;
 
   // A single-line input silently drops line breaks, which would glue a pasted
   // spreadsheet column into one value. Turn them into commas instead.

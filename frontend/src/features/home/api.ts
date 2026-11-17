@@ -9,7 +9,7 @@ export type ServiceId = 'voicedrop' | 'conference' | 'multicall';
 export interface CardFigures {
   /** Campaigns · conferences · conferences (distinct CRNs). */
   units: number;
-  /** Dialed out · parties ringed · dial attempts. */
+  /** Dialed out · parties called · dial attempts. */
   total: number;
   connected: number;
   minutes: number;

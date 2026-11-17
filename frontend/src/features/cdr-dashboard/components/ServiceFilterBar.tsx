@@ -31,7 +31,7 @@ const INPUT_CLASS =
   'h-10 px-3 rounded-lg border bg-white dark:bg-surface-dark border-zinc-200 dark:border-zinc-800 ' +
   'text-zinc-900 dark:text-white text-sm placeholder:text-zinc-400 ' +
   'field-focus outline-none ' +
-  '[&::-webkit-calendar-picker-indicator]:dark:invert [&::-webkit-calendar-picker-indicator]:opacity-50';
+  '[&::-webkit-calendar-picker-indicator]:opacity-50';
 
 /**
  * A native time input's own clear "x" only shows up reliably in some

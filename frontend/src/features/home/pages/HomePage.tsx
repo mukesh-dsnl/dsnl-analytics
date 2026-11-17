@@ -24,7 +24,7 @@ import type { ServiceCard } from '../api';
 /** What each card's figures are, in its service's words. */
 const FIGURES: Record<ServiceId, { units: string; total: string; barDays: number }> = {
   voicedrop: { units: 'campaigns', total: 'dialed out', barDays: 30 },
-  conference: { units: 'conferences', total: 'parties ringed', barDays: 30 },
+  conference: { units: 'conferences', total: 'parties called', barDays: 30 },
   // The lake rollup is a few days only.
   multicall: { units: 'conferences', total: 'dial attempts', barDays: 5 },
 };
@@ -120,7 +120,10 @@ function Frame({
       <div className="px-5 pt-5 pb-4">{children}</div>
       {/* Straight to each page: plain links, underlined on hover. */}
       <nav className="mt-auto border-t border-[#edf0f4] px-5 py-3.5 dark:border-white/[0.06]">
-        <ul className="space-y-0.5">{links}</ul>
+        {/* Room for four links on every card. The nav is pinned to the card's
+            bottom, so a card with three (MultiCall) used to start its list one
+            row lower than its neighbours; with one height they line up. */}
+        <ul className="min-h-[134px] space-y-0.5">{links}</ul>
       </nav>
     </article>
   );
@@ -214,8 +217,19 @@ function ServiceCardView({ id, card, isLoading, error }: { id: ServiceId; card?:
           <div className="mt-5">
             <DailyVolume days={card.series ?? []} asOf={card.as_of} span={info.barDays} totalLabel={info.total} compact />
           </div>
-          <p className="mt-3 text-[12px] text-[#6b7685] dark:text-zinc-500">
-            {period.label === 'month' ? 'This month' : `The ${period.label}`}:{' '}
+          <p
+            className="mt-3 text-[12px] text-[#6b7685] dark:text-zinc-500"
+            // MultiCall has no summary table: its card is read from the call
+            // records, which are kept to a few days per query. The other two
+            // cards read tables that hold the whole month.
+            title={
+              period.label === 'month'
+                ? undefined
+                : `${meta.name} has no monthly summary table, so this card covers the ${period.label} of call records rather than the month.`
+            }
+          >
+            {period.label === 'month' ? 'This month' : `The ${period.label}`}
+            {period.label !== 'month' && <span className="text-[#9aa3b0] dark:text-zinc-600"> (no monthly table)</span>}:{' '}
             <span className="font-medium text-[#374151] dark:text-zinc-300">
               {fmt(period.units)} {info.units} · {fmt(period.accounts)} accounts
             </span>
