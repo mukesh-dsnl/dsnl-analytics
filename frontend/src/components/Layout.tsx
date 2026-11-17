@@ -1,7 +1,9 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
+  Activity,
   House,
+  Megaphone,
   Server,
   LayoutGrid,
   LogOut,
@@ -51,6 +53,14 @@ const OVERVIEW: NavSection = {
     { label: 'Port Analyzer', path: '/analytics/ports', icon: Server },
   ],
 };
+/**
+ * The one page of the all-services view. It belongs to no service, so on it
+ * the switcher reads "All services" and the list under it is this entry
+ * alone, rather than the pages of whichever service was chosen last.
+ */
+const ALL_SERVICES_PAGES: NavItem[] = [
+  { label: 'Attempt Metrics', path: '/analytics/all/attempt-metrics', icon: Activity },
+];
 // The assistant is deliberately not a nav entry: the floating button in the
 // corner is its way in, and two controls for one destination in the same
 // column is one too many.
@@ -126,23 +136,12 @@ export function Layout() {
   /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
-  // Collapsed, the rail opens while the pointer is over it and closes when it
-  // leaves — as an overlay over the content, so nothing behind it moves. A
-  // short delay each way keeps a pointer passing across it from flickering it.
-  const [peek, setPeek] = useState(false);
-  const peekTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
-  const openPeek = () => {
-    if (!isSidebarCollapsed) return;
-    window.clearTimeout(peekTimer.current);
-    peekTimer.current = window.setTimeout(() => setPeek(true), 120);
-  };
-  const closePeek = () => {
-    window.clearTimeout(peekTimer.current);
-    peekTimer.current = window.setTimeout(() => setPeek(false), 180);
-  };
-  // What the sidebar draws: the icon rail only when collapsed and not hovered.
-  const narrow = isSidebarCollapsed && !peek;
+  // Collapsed, the sidebar is an icon rail, and stays one until it is opened
+  // with a click (the expand button at the top left of the header). It used to
+  // open while the pointer was over it, as an overlay — which covered the
+  // content whenever the pointer crossed the rail on its way elsewhere, and
+  // could strand a chart's hover readout underneath it.
+  const narrow = isSidebarCollapsed;
   /** The corner button's opening/closing circle — null when nothing is moving. */
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
@@ -166,6 +165,8 @@ export function Layout() {
   // new one (Campaign Metrics stays Campaign Metrics), or its first page when
   // it has no such page; anywhere else it only changes the list.
   const isPorts = location.pathname.startsWith('/analytics/ports');
+  // All services › Attempt Metrics: every service's attempts on one page.
+  const isAllServices = location.pathname.startsWith('/analytics/all/');
   const switchService = (next: ServiceId) => {
     setNavService(next);
     // Port Analyzer covers every service: switching sets its service filter.
@@ -175,10 +176,29 @@ export function Layout() {
       navigate(`/analytics/ports?${params}`);
       return;
     }
+    // The all-services page has no service of its own to swap out, so choosing
+    // one there opens that service's Attempt Metrics. Before, the switcher only
+    // changed the list under it and the page went on showing every service.
+    if (isAllServices) {
+      navigate(`/analytics/${next}/attempt-metrics`);
+      return;
+    }
     if (!routeService || next === routeService) return;
     const here = SERVICES[routeService].pages.find((p) => isActivePath(p.path));
     const there = SERVICES[next].pages.find((p) => p.key === here?.key) ?? SERVICES[next].pages[0];
     navigate(there.path);
+  };
+
+  // Attempt Metrics and Campaign Metrics exist once per service and look the
+  // same on each, so the header says which one this is. (Every other page puts
+  // its own title into the header slot.)
+  const titled = location.pathname.match(
+    /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt-metrics|campaign-metrics)$/,
+  );
+  const pageTitle = titled && {
+    service: titled[1] === 'all' ? 'All services' : SERVICES[titled[1] as ServiceId].name,
+    page: titled[2] === 'attempt-metrics' ? 'Attempt Metrics' : 'Campaign Metrics',
+    icon: titled[2] === 'attempt-metrics' ? Activity : Megaphone,
   };
 
   /** The chat route is the one page with no date control of its own. */
@@ -242,14 +262,9 @@ export function Layout() {
         style={{ transition: 'width 300ms' }}
       >
       <aside
-        onMouseEnter={openPeek}
-        onMouseLeave={closePeek}
         className={clsx(
           'app-sidebar-scrim absolute inset-y-0 left-0 flex flex-col overflow-hidden',
           narrow ? 'w-20' : 'w-60',
-          // Opened by hover: it floats over the panel, so it takes the shell's
-          // own ground (fixed, so it lines up with the field behind) and a shadow.
-          peek && 'app-ground app-shell shadow-[8px_0_32px_rgba(0,0,0,0.35)]',
           isLoggingOut && 'opacity-0 pointer-events-none',
         )}
         // Width for the collapse, opacity for the logout fade — each at its own
@@ -277,15 +292,12 @@ export function Layout() {
           {!narrow && (
             <button
               type="button"
-              onClick={() => {
-                toggleSidebar();
-                setPeek(false);
-              }}
-              aria-label={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
-              title={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
               className="ml-auto shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
             >
-              {peek ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+              <PanelLeftClose className="h-5 w-5" />
             </button>
           )}
         </div>
@@ -362,13 +374,13 @@ export function Layout() {
                   <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">Services</div>
                 )}
                 <div className="pb-1.5">
-                  <ServiceSwitcher value={shownService} onChange={switchService} collapsed={narrow} />
+                  <ServiceSwitcher value={shownService} allServices={isAllServices} onChange={switchService} collapsed={narrow} />
                 </div>
-                {SERVICES[shownService].pages.map((item) => (
+                {(isAllServices ? ALL_SERVICES_PAGES : SERVICES[shownService].pages).map((item) => (
                   <NavLink
                     key={item.path}
                     item={item}
-                    section={SERVICES[shownService].name}
+                    section={isAllServices ? 'All services' : SERVICES[shownService].name}
                     active={isActivePath(item.path)}
                     collapsed={narrow}
                   />
@@ -485,6 +497,17 @@ export function Layout() {
               >
                 <PanelLeftOpen className="w-5 h-5" />
               </button>
+            )}
+            {pageTitle && (
+              <h1 className="hidden shrink-0 items-center gap-2.5 lg:flex">
+                <pageTitle.icon className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span className="flex flex-col whitespace-nowrap leading-tight">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    {pageTitle.service}
+                  </span>
+                  <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{pageTitle.page}</span>
+                </span>
+              </h1>
             )}
             <div
               ref={setHeaderSlot}
