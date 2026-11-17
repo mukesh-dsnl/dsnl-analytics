@@ -26,7 +26,15 @@ export function HoverTooltipProvider({ children }: { children: ReactNode }) {
   // A tooltip pinned to where the pointer was is wrong once the page moves.
   useEffect(() => {
     window.addEventListener('scroll', hide, { passive: true, capture: true });
-    return () => window.removeEventListener('scroll', hide, { capture: true });
+    // …or once the pointer has left the page or the window lost focus: no
+    // mouseleave reaches the chart then, and the card used to stay where it was.
+    window.addEventListener('blur', hide);
+    document.documentElement.addEventListener('mouseleave', hide);
+    return () => {
+      window.removeEventListener('scroll', hide, { capture: true });
+      window.removeEventListener('blur', hide);
+      document.documentElement.removeEventListener('mouseleave', hide);
+    };
   }, [hide]);
 
   return (
@@ -91,6 +99,7 @@ export function TipBody({
   value,
   share,
   sections = [],
+  note,
 }: {
   eyebrow: string;
   title: string;
@@ -98,6 +107,8 @@ export function TipBody({
   /** "41.2% of attempts" — shown beside the figure. */
   share?: string;
   sections?: TipSection[];
+  /** A sentence under everything else: what the figure counts, or why another page differs. */
+  note?: string;
 }) {
   const shown = sections.filter((s) => s.rows.length > 0);
   return (
@@ -123,6 +134,9 @@ export function TipBody({
             </div>
           ))}
         </div>
+      )}
+      {note && (
+        <p className="mt-2 max-w-[300px] border-t border-white/[0.07] pt-2 text-[10px] leading-[15px] text-[#a2b1c9]">{note}</p>
       )}
     </>
   );

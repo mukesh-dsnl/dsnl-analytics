@@ -42,7 +42,7 @@ export function StatementTable<T extends StatementBase>({
   rowTitle?: (line: T) => string;
 }) {
   const byName = lines.some((l) => l.name != null);
-  const cell = (column: StatementColumn<T>, value: number) => (column.percent ? `${value}%` : fmt(value));
+  const cell = (column: StatementColumn<T>, value: number) => (column.percent ? `${value.toFixed(1)}%` : fmt(value));
   const td = (...extra: string[]) => clsx(TD, onRow && TD_LINK, ...extra);
   return (
     <div className="max-h-[460px] overflow-auto rounded-xl border border-[#e9eef5] [scrollbar-width:thin] dark:border-white/[0.06]">
@@ -53,7 +53,11 @@ export function StatementTable<T extends StatementBase>({
             {showAccount && <th className={clsx(TH, 'text-left')}>Account</th>}
             {showAccount && <th className={clsx(TH, 'text-left')}>{byName ? 'Name' : 'Clients'}</th>}
             {columns.map((c) => (
-              <th key={c.key} className={clsx(TH, 'text-right')}>
+              <th
+                key={c.key}
+                title={c.title}
+                className={clsx(TH, 'text-right', c.title && 'cursor-help underline decoration-dotted decoration-current/40 underline-offset-4')}
+              >
                 {c.label}
               </th>
             ))}

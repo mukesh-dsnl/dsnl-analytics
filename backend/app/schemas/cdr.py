@@ -156,6 +156,12 @@ class CategoryDatum(BaseModel):
     value: float
 
 
+class ReasonDatum(CategoryDatum):
+    """A disconnect reason; the "Unnamed codes" group also lists the codes it holds."""
+
+    codes: list[CategoryDatum] = []
+
+
 class PeakPortDatum(BaseModel):
     bucket: str
     peak: float
@@ -229,7 +235,7 @@ class CdrDashboardResponse(BaseModel):
     service_provider: list[CategoryDatum]
     reblast: CdrReblast
     reblast_aid: list[ReblastAidDatum]
-    disconnect_reason: list[CategoryDatum]
+    disconnect_reason: list[ReasonDatum]
     location: list[CategoryDatum]
     minutes_by_location: list[LocationMinutesDatum]
     call_funnel: list[CategoryDatum]

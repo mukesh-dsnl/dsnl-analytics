@@ -17,6 +17,8 @@ export interface StatementColumn<T> {
   label: string;
   /** Printed with a % sign. */
   percent?: boolean;
+  /** A hover note on the header: what the column counts. */
+  title?: string;
   /** The Total row's figure; summed when not given. */
   total?: (lines: T[]) => number;
 }

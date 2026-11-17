@@ -58,7 +58,7 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           loading bar along the very top of the content panel, not one per card. */}
       {isFetching && <PageLoadingBar />}
       <div className="space-y-6">
-        <AttemptKpis data={data} isLoading={isPending} error={error} showConferences={showConferences} />
+        <AttemptKpis data={data} isLoading={isPending} error={error} showConferences={showConferences} service={filters.service} />
         <AttemptCharts
           data={data}
           cubeRows={cubeRows}

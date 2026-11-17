@@ -92,6 +92,11 @@ export interface CategoryDatum {
   value: number;
 }
 
+/** A disconnect reason; the "Unnamed codes" group also lists the codes it holds. */
+export interface ReasonDatum extends CategoryDatum {
+  codes?: CategoryDatum[];
+}
+
 export interface PeakPortDatum {
   bucket: string;
   peak: number;
@@ -151,7 +156,7 @@ export interface CdrDashboard {
   service_provider: CategoryDatum[];
   reblast: CdrReblast;
   reblast_aid: ReblastAidDatum[];
-  disconnect_reason: CategoryDatum[];
+  disconnect_reason: ReasonDatum[];
   location: CategoryDatum[];
   /** Connected-call minutes by location, split by dial direction — the Minutes Usage KPI's hover. */
   minutes_by_location: LocationMinutesDatum[];

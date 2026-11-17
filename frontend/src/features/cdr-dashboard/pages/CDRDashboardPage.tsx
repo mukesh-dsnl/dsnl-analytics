@@ -7,7 +7,7 @@ import { PageLoadingBar } from '../../../components/Loading';
 import { filtersForDay } from '../api';
 import type { CdrFilters, CdrService, CdrStatus } from '../api';
 import { spanDays } from '../dateRange';
-import { useCdrStatus, useDateRange, useDebouncedValue } from '../hooks';
+import { useCdrStatus, useDateRange } from '../hooks';
 import { CDRDashboard } from '../components/CDRDashboard';
 import { ServiceFilterBar } from '../components/ServiceFilterBar';
 import type { DetailField } from '../components/ServiceFilterBar';
@@ -112,21 +112,12 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
 
   const fields = SERVICE_FIELDS[service];
 
-  // Only the typed fields are debounced, and deliberately so. Holding the
-  // dates back too would mean that widening the range fires a query for the
-  // *old* range first and makes the backend read a month of files nobody is
-  // waiting for. Dates are discrete clicks, so they apply at once.
-  const { account_id, crn, conf_num, cpin, time_from, time_to } = filters;
-  const typed = useMemo(
-    () => ({ account_id, crn, conf_num, cpin, time_from, time_to }),
-    [account_id, crn, conf_num, cpin, time_from, time_to],
-  );
-  const debouncedTyped = useDebouncedValue(typed, 400);
-  const isSettling = typed !== debouncedTyped;
-
+  // The typed fields reach `filters` only when the bar's Apply is pressed (see
+  // ServiceFilterBar), so there is nothing to debounce here. Dates are discrete
+  // clicks in the header and apply at once.
   const query = useMemo<CdrFilters>(
-    () => ({ ...filters, ...debouncedTyped, service, date_from: from, date_to: to }),
-    [filters, debouncedTyped, service, from, to],
+    () => ({ ...filters, service, date_from: from, date_to: to }),
+    [filters, service, from, to],
   );
 
   const span = spanDays(query.date_from, query.date_to);
@@ -167,7 +158,6 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
               fields={fields}
               value={filters}
               onChange={setFilters}
-              isPending={isSettling}
             />,
             headerSlot,
           )}

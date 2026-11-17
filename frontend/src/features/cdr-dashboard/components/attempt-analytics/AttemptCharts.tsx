@@ -35,7 +35,7 @@ import {
   colorAt,
   compact,
   fmt,
-  niceCeiling,
+  niceTicks,
   pct,
 } from './design';
 import { HoverTooltipProvider, TipBody } from './HoverTooltip';
@@ -396,9 +396,9 @@ function ActivityCard({ data, total, ...state }: CardStateProps & { data?: CdrDa
         })}
       </div>
       <div className="mt-[15px] ml-[127px] mr-[146px] flex justify-between text-[10px] text-[#91a1b7] dark:text-zinc-500">
-        <span>0</span>
-        <span>{compact(total / 2)}</span>
-        <span>{compact(total)}</span>
+        <span>0%</span>
+        <span>50%</span>
+        <span>100% · {compact(total)} attempts</span>
       </div>
     </Card>
   );
@@ -497,13 +497,16 @@ function ConnectionCard({
   );
 }
 
-const durationLabel = (label: string) => `${label.replace('-', '–')} s`;
+// "60+" is strictly longer than 60 s (the group before it ends at 60), so it is
+// written "Over 60 s" rather than left to read as overlapping "31–60 s".
+const durationLabel = (label: string) => (label === '60+' ? 'Over 60 s' : `${label.replace('-', '–')} s`);
 
 function DurationCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) {
   const buckets = data?.call_duration ?? [];
   const splits = data?.call_duration_direction ?? [];
   const connected = buckets.reduce((t, b) => t + b.value, 0);
-  const max = niceCeiling(Math.max(...buckets.map((b) => b.value), 1));
+  const ticks = niceTicks(Math.max(...buckets.map((b) => b.value), 1));
+  const max = ticks[ticks.length - 1];
 
   return (
     <Card
@@ -515,19 +518,18 @@ function DurationCard({ data, ...state }: CardStateProps & { data?: CdrDashboard
     >
       <div className="mb-[5px] grid h-[156px] grid-cols-[35px_1fr] gap-[9px]">
         <div className="flex flex-col justify-between pb-7 text-[10px] text-[#8599b3] dark:text-zinc-500">
-          <span>{compact(max)}</span>
-          <span>{compact((max / 3) * 2)}</span>
-          <span>{compact(max / 3)}</span>
-          <span>0</span>
+          {[...ticks].reverse().map((t) => (
+            <span key={t}>{compact(t)}</span>
+          ))}
         </div>
         <div className="relative">
           {/* Gridlines at the four tick heights */}
           <div className="absolute inset-x-0 top-0 bottom-7 border-b border-[#e5ebf2] dark:border-zinc-800">
-            {[0, 1, 2].map((i) => (
+            {ticks.slice(1).map((t) => (
               <span
-                key={i}
+                key={t}
                 className="absolute inset-x-0 block h-px bg-[#eef2f6] dark:bg-white/[0.05]"
-                style={{ top: `${(i / 3) * 100}%` }}
+                style={{ top: `${(1 - t / max) * 100}%` }}
               />
             ))}
           </div>
@@ -778,6 +780,17 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
   const points = data?.peak_ports ?? [];
   const peak = Math.max(0, ...points.map((p) => p.peak));
   const tick = { fill: '#8193ad', fontSize: 10, fontFamily: 'Dashboard, sans-serif' };
+  // Buckets arrive as "2026-11-16 09:00". On a single day the date is the same
+  // on every label, so the axis shows the time alone and the date goes in the
+  // footer once; across days it shows day/month and time.
+  const first = points[0]?.bucket ?? '';
+  const timed = first.length > 10;
+  const oneDay = timed && first.slice(0, 10) === points[points.length - 1].bucket.slice(0, 10);
+  const bucketTick = (bucket: string) =>
+    !timed ? bucket : oneDay ? bucket.slice(11) : `${bucket.slice(8, 10)}/${bucket.slice(5, 7)} ${bucket.slice(11)}`;
+  // Labels on the hour (09:00, 10:00), not wherever the chart happens to put them.
+  const hourTicks = timed ? points.filter((p) => p.bucket.endsWith(':00')).map((p) => p.bucket) : [];
+  const portTicks = niceTicks(peak);
 
   return (
     <Card
@@ -805,8 +818,26 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="#eaf0f6" strokeDasharray="3 5" className="dark:opacity-20" />
-          <XAxis dataKey="bucket" tick={tick} tickLine={false} axisLine={false} minTickGap={40} interval="preserveStartEnd" />
-          <YAxis tick={tick} tickLine={false} axisLine={false} width={44} allowDecimals={false} tickFormatter={compact} />
+          <XAxis
+            dataKey="bucket"
+            tick={tick}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={40}
+            interval="preserveStartEnd"
+            ticks={hourTicks.length > 1 ? hourTicks : undefined}
+            tickFormatter={bucketTick}
+          />
+          <YAxis
+            tick={tick}
+            tickLine={false}
+            axisLine={false}
+            width={44}
+            allowDecimals={false}
+            ticks={portTicks}
+            domain={[0, portTicks[portTicks.length - 1]]}
+            tickFormatter={compact}
+          />
           <Tooltip
             cursor={{ stroke: '#8bbbd8', strokeDasharray: '3 3' }}
             content={({ active, payload, label }) =>
@@ -838,6 +869,7 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
           <Dot color={COLORS.blue} />
           Concurrent ports
         </span>
+        {oneDay && <span>{first.slice(0, 10)}</span>}
         <span>Timezone: IST</span>
       </div>
     </Card>
@@ -845,6 +877,9 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
 }
 
 const blastNumber = (label: string) => Number(label.match(/(\d+)\s*$/)?.[1] ?? 0);
+// "Blast 0" is the first dial of a number and "Blast N" its Nth retry
+// (CONFDIAL_REBLAST_COUNT), so the chart says that; the hover keeps the blast number.
+const blastName = (label: string) => (blastNumber(label) === 0 ? 'First try' : `Retry ${blastNumber(label)}`);
 
 /** Repeat attempts shows Blast 0–5 until expanded: some days run to dozens of blasts. */
 const COLLAPSED_LAST_BLAST = 5;
@@ -893,7 +928,7 @@ function RetryCard({
   const tip = (s: CategoryDatum) => () => (
     <TipBody
       eyebrow="Repeat attempts"
-      title={blastNumber(s.label) === 0 ? 'Blast 0 · first dial' : s.label}
+      title={`${blastName(s.label)} · ${s.label}`}
       value={s.value}
       share={`${pct(s.value, total)} of attempts`}
       sections={aidSections(breakdown, s.label)}
@@ -905,12 +940,12 @@ function RetryCard({
       {...state}
       span={5}
       title="Repeat attempts"
-      subtitle="Make every follow-up count"
+      subtitle="The first dial, then each retry of numbers that did not connect"
       isEmpty={stages.length === 0}
     >
       <div className="mb-5 flex items-baseline gap-[13px] border-b border-[#e7ebf2] pb-[19px] dark:border-zinc-800/60">
         <strong className="text-[24px] font-semibold tracking-[-0.5px] tabular-nums text-[#445775] dark:text-white">{fmt(repeat)}</strong>
-        <span className="text-[11px] text-[#98a4b5] dark:text-zinc-500">reblasted</span>
+        <span className="text-[11px] text-[#98a4b5] dark:text-zinc-500">retry attempts</span>
         <small className="ml-auto rounded bg-[#f2f5fa] px-[7px] py-1 text-[10px] text-[#8d9cb1] dark:bg-white/[0.06] dark:text-zinc-400">
           {pct(repeat, total)} of attempts
         </small>
@@ -919,7 +954,7 @@ function RetryCard({
         {shown.map((s) => (
           <BarRow
             key={s.label}
-            label={s.label}
+            label={blastName(s.label)}
             value={s.value}
             max={max}
             base={total}
@@ -937,8 +972,8 @@ function RetryCard({
           className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7ebf2] bg-[#f7f9fc] py-2 text-[11px] font-medium text-[#5b6a82] transition-colors hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-zinc-800/60 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:text-sky-300"
         >
           {expanded
-            ? 'Show Blast 0–5 only'
-            : `Show ${hidden.length} more blast${hidden.length === 1 ? '' : 's'} · ${fmt(hiddenTotal)} attempts`}
+            ? 'Show first try to retry 5 only'
+            : `Show ${hidden.length} more ${hidden.length === 1 ? 'retry' : 'retries'} · ${fmt(hiddenTotal)} attempts`}
           <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
         </button>
       )}
@@ -974,7 +1009,18 @@ function ReasonsCard({
             columns="grid-cols-[minmax(150px,250px)_1fr_80px_44px]"
             trackHeight="h-2"
             tip={() => (
-              <TipBody eyebrow="Disconnect reasons" title={r.label} value={r.value} share={`${pct(r.value, total)} of attempts`} />
+              <TipBody
+                eyebrow="Disconnect reasons"
+                title={r.label}
+                value={r.value}
+                share={`${pct(r.value, total)} of attempts`}
+                sections={r.codes?.length ? [{ title: 'Codes in this group', base: r.value, rows: r.codes }] : []}
+                note={
+                  r.codes?.length
+                    ? 'These attempts do carry a disconnect code, but the reason list has no name for it yet. Add the codes to the list to name them.'
+                    : undefined
+                }
+              />
             )}
           />
         ))}

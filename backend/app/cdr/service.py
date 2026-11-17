@@ -606,13 +606,31 @@ def _scalar(rows: list[dict[str, Any]], label: str) -> float:
     return 0
 
 
+# The group for codes disconnect_reasons.json has no name for. It used to be
+# "Unknown", which read as "the switch did not say why" — but every one of these
+# attempts does carry a code; it is the name list that is short. On 2026-11-16
+# the group is 37.4% of Voicedrop attempts, nearly all of it three codes (153,
+# 224, 130), so the row also carries which codes it holds, largest first.
+UNNAMED_REASON = "Unnamed codes"
+_UNNAMED_CODES_SHOWN = 8
+
+
 def _map_disconnect_reasons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fold raw codes onto their labels; an unmapped code becomes "Unknown"."""
+    """Fold raw codes onto their names; codes with no name share one group that lists them."""
     totals: dict[str, float] = {}
+    unnamed: list[dict[str, Any]] = []
     for row in rows:
-        reason = _DISCONNECT_REASONS.get(str(row["label"]), "Unknown")
+        code = str(row["label"])
+        reason = _DISCONNECT_REASONS.get(code)
+        if reason is None:
+            reason = UNNAMED_REASON
+            unnamed.append({"label": f"Code {code}" if code not in ("None", "") else "No code", "value": row["value"]})
         totals[reason] = totals.get(reason, 0) + row["value"]
-    return _by_value([{"label": r, "value": v} for r, v in totals.items()])
+    out = _by_value([{"label": r, "value": v} for r, v in totals.items()])
+    for item in out:
+        if item["label"] == UNNAMED_REASON:
+            item["codes"] = _by_value(unnamed)[:_UNNAMED_CODES_SHOWN]
+    return out
 
 
 def _trailing_int(label: str) -> int:
