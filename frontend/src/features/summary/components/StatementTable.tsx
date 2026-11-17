@@ -26,11 +26,18 @@ export function StatementTable<T extends StatementBase>({
   showAccount,
   onRow,
   rowTitle,
+  totals,
 }: {
   lines: T[];
   columns: StatementColumn<T>[];
   showMonth: boolean;
   showAccount: boolean;
+  /**
+   * Total-row figures that cannot be had by adding the lines up, by column
+   * key. "Active days" across accounts is the case: each line is one
+   * account's days, and their sum counts a day once per account.
+   */
+  totals?: Partial<Record<string, number>>;
   onRow?: (line: T) => void;
   rowTitle?: (line: T) => string;
 }) {
@@ -89,7 +96,7 @@ export function StatementTable<T extends StatementBase>({
               </td>
               {columns.map((c) => (
                 <td key={c.key} className={clsx(TD, 'text-right font-semibold')}>
-                  {cell(c, columnTotal(lines, c))}
+                  {cell(c, totals?.[c.key] ?? columnTotal(lines, c))}
                 </td>
               ))}
             </tr>

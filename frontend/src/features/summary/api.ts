@@ -160,7 +160,7 @@ export const summaryApi = {
   account: (accountId: number, clientId?: number | null) =>
     get<AccountHistory>(`account/${accountId}${clientId ? `?client=${clientId}` : ''}`),
   statement: (month: string | null) =>
-    get<{ month: string | null; rows: StatementRow[] }>(
+    get<{ month: string | null; rows: StatementRow[]; active_days: number }>(
       `statement${month ? `?month=${encodeURIComponent(month)}` : ''}`,
     ),
 };

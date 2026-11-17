@@ -405,12 +405,29 @@ def account(account_id: int, client_id: Optional[int] = None) -> Optional[dict[s
     }
 
 
-def statement(month: Optional[str] = None) -> list[dict[str, Any]]:
+def statement_active_days(rows: list[dict[str, Any]], month: Optional[str] = None) -> int:
+    """
+    The distinct days anything ran in the statement's scope — the Total row's
+    "Active days". Each line's own figure is that account's days, so adding the
+    lines up counts a day once per account that was active on it (179 for the
+    26 accounts of October 2026, a month of 31 days).
+    """
+    return len({row["day"] for row in rows if month is None or _month_key(row["day"]) == month})
+
+
+def statement_report(month: Optional[str] = None) -> dict[str, Any]:
+    """The statement's lines, with the scope's distinct active days — one read of the table."""
+    rows = _daily_rows()
+    return {"rows": statement(month, rows), "active_days": statement_active_days(rows, month)}
+
+
+def statement(month: Optional[str] = None, rows: Optional[list[dict[str, Any]]] = None) -> list[dict[str, Any]]:
     """
     Per account, per month: campaigns, dialed, connected and minutes — the
     billing statement. One month, or every month when none is given.
     """
-    rows = _daily_rows()
+    if rows is None:
+        rows = _daily_rows()
     clients = _client_ids()
     names = directory.accounts()
     by_key: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)

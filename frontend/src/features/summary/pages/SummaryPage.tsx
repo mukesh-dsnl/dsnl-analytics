@@ -293,6 +293,7 @@ function MonthlyStatement({ months, asOf, onAccount }: { months: string[]; asOf:
             columns={VOICEDROP_COLUMNS}
             showMonth={month === 'all'}
             showAccount
+            totals={query.data ? { active_days: query.data.active_days } : undefined}
             onRow={(line) => onAccount(line.account_id, 'monthly')}
             rowTitle={(line) => `Open account ${line.account_id}'s monthly statement`}
           />
