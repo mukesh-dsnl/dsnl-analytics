@@ -1,5 +1,6 @@
 import { Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
 export interface ToolbarTab<T extends string> {
@@ -14,6 +15,8 @@ interface MetricsToolbarProps<T extends string> {
   onTab: (id: T) => void;
   onExport: () => void;
   canExport: boolean;
+  /** The colour key for the table below, shown at the left. */
+  legend?: ReactNode;
 }
 
 /**
@@ -33,11 +36,12 @@ export function MetricsToolbar<T extends string>({
   onTab,
   onExport,
   canExport,
+  legend,
 }: MetricsToolbarProps<T>) {
   return (
     <div className="border-b border-zinc-200 dark:border-zinc-800/60">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
-        <span aria-hidden="true" />
+        <div className="min-w-0 self-center">{legend}</div>
 
         <div className="flex items-center gap-1 justify-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((tab) => {

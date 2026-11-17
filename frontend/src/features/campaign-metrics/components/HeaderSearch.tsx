@@ -4,6 +4,8 @@ interface HeaderSearchProps {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  /** Everything the box matches, when the placeholder has to be shorter than that. */
+  hint?: string;
   /** Shown while the debounced term is still catching up with what's typed. */
   isPending?: boolean;
 }
@@ -15,7 +17,7 @@ interface HeaderSearchProps {
  * on the other pages, so the header keeps one control height whichever module
  * is mounted.
  */
-export function HeaderSearch({ value, onChange, placeholder, isPending }: HeaderSearchProps) {
+export function HeaderSearch({ value, onChange, placeholder, hint, isPending }: HeaderSearchProps) {
   return (
     // `mx-auto` centres it in the free space while it fits and collapses to
     // zero when it doesn't — the same trick the analytics filter row uses.
@@ -26,7 +28,8 @@ export function HeaderSearch({ value, onChange, placeholder, isPending }: Header
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        aria-label={placeholder}
+        aria-label={hint ?? placeholder}
+        title={hint}
         className="w-72 lg:w-96 h-10 pl-9 pr-8 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-surface-dark text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 field-focus outline-none"
       />
       {value && (

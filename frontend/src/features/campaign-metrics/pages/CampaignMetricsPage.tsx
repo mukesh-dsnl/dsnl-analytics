@@ -30,6 +30,8 @@ import type { RoomRef } from '../../conference-summary/components/ConferenceRoom
 import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
+import { ConnectedKey } from '../components/ConnectedBar';
+import { SMALL_GROUP, isNoAccount, measureLabels } from '../labels';
 
 interface CampaignMetricsPageProps {
   service: CampaignService;
@@ -51,8 +53,19 @@ const VOICEDROP_VIEWS: ToolbarTab<View>[] = [
   ...VIEWS.slice(1),
 ];
 
-// Conference's Campaigns are its rooms, from conference_summary.
-const CONFERENCE_VIEWS: ToolbarTab<View>[] = VOICEDROP_VIEWS;
+// Conference's "campaigns" are its rooms, from conference_summary — so the tab
+// says what it lists.
+const CONFERENCE_VIEWS: ToolbarTab<View>[] = VOICEDROP_VIEWS.map((v) =>
+  v.id === 'campaigns' ? { ...v, label: 'Conferences' } : v,
+);
+
+/**
+ * A percentage over a handful of numbers is noise (4 of 4 is 100%), so when a
+ * table is ordered by Connected % those rows go after the rest, whichever way
+ * it is sorted — the top of the list is then accounts big enough to mean it.
+ */
+const smallLast = (row: { total_size: number }, key: string) =>
+  key === 'connected_percentage' && row.total_size < SMALL_GROUP;
 
 /** The services with a Campaigns tab: their summary tables hold one row per campaign. */
 const hasCampaigns = (service: CampaignService) => service === 'voicedrop' || service === 'conference';
@@ -74,14 +87,21 @@ const VIEW_META: Record<View, { column: string; icon: typeof Radio }> = {
  */
 function searchPlaceholder(view: View, service: CampaignService): string {
   if (view === 'account') {
-    return service === 'voicedrop'
-      ? 'Search by account or CRN…'
-      : 'Search by account, CRN or CPIN…';
+    return service === 'voicedrop' ? 'Search account or CRN…' : 'Search account, CRN or CPIN…';
   }
   if (view === 'campaigns') {
-    return service === 'conference' ? 'Search by account, CRN, Conf Num, PIN, DID or name…' : 'Search by CRN, account, client or name…';
+    // Short enough to fit the box; searchHint below lists everything it matches.
+    return service === 'conference' ? 'Search account, CRN, PIN…' : 'Search CRN, account or name…';
   }
   return view === 'provider' ? 'Search service provider…' : 'Search location…';
+}
+
+/** Everything the box matches, for the views whose list is too long for a placeholder. */
+function searchHint(view: View, service: CampaignService): string | undefined {
+  if (view !== 'campaigns') return undefined;
+  return service === 'conference'
+    ? 'Matches account, CRN, Conf Num, PIN, DID or conference name'
+    : 'Matches CRN, account, client, campaign name or booking reference';
 }
 
 function Banner({ children }: { children: ReactNode }) {
@@ -248,7 +268,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const simpleRows = useMemo((): SimpleRow[] | undefined => {
     const rows =
       view === 'provider'
-        ? providerQuery.data?.rows.map((r) => ({ ...r, label: r.service_provider }))
+        ? providerQuery.data?.rows.map((r) => ({ ...r, label: `Provider ${r.service_provider}` }))
         : view === 'location'
           ? locationQuery.data?.rows.map((r) => ({ ...r, label: r.location }))
           : undefined;
@@ -294,16 +314,18 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     direction: 'asc',
   });
 
-  const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(accountRows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
-  const simpleSort = useSortableRows<SimpleRow, SimpleSortKey>(simpleRows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
+  const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(
+    accountRows,
+    { key: 'total_size', direction: 'desc' },
+    smallLast,
+  );
+  const simpleSort = useSortableRows<SimpleRow, SimpleSortKey>(simpleRows, { key: 'total_size', direction: 'desc' }, smallLast);
 
   const meta = VIEW_META[view];
+  const labels = measureLabels(service);
+  // The day counted once comes from the backend; a search narrows the rows,
+  // and then the Total row adds up what is shown instead.
+  const breakdown = view === 'provider' ? providerQuery.data : view === 'location' ? locationQuery.data : undefined;
 
   const handleExport = () => {
     const stamp = `${service}-${view}-${date}`;
@@ -336,9 +358,10 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     if (view === 'account') {
       downloadCsv(
         `campaign-${stamp}.csv`,
-        ['Account', 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %', 'Total Minutes'],
+        ['Account', 'Account Name', labels.total, labels.connected, labels.notConnected, labels.percent, 'Minutes'],
         (accountSort.rows ?? []).map((r) => [
-          r.account,
+          isNoAccount(r.account) ? 'No account' : r.account,
+          r.account_name ?? '',
           r.total_size,
           r.connected_size,
           r.not_connected_size,
@@ -350,7 +373,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
     }
     downloadCsv(
       `campaign-${stamp}.csv`,
-      [meta.column, 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %'],
+      [meta.column, labels.total, labels.connected, labels.notConnected, labels.percent],
       (simpleSort.rows ?? []).map((r) => [
         r.label,
         r.total_size,
@@ -410,6 +433,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               value={search}
               onChange={setSearch}
               placeholder={searchPlaceholder(view, service)}
+              hint={searchHint(view, service)}
               isPending={isSearchPending}
             />,
             headerSlot,
@@ -428,6 +452,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             }}
             onExport={handleExport}
             canExport={visibleCount > 0}
+            legend={<ConnectedKey unit={labels.unit} />}
           />
         </div>
 
@@ -448,7 +473,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
                   Show all ✕
                 </button>
               </span>
-              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its campaigns on {date}</span>
+              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its {labels.campaignWord} on {date}</span>
             </div>
           )}
           {!status.available ? (
@@ -482,6 +507,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={accountSort.sort}
               onSort={accountSort.toggle}
               showCpin={service !== 'voicedrop'}
+              labels={labels}
               // Voicedrop and Conference: an account opens its campaigns.
               onOpenAccount={
                 hasCampaigns(service)
@@ -502,6 +528,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               error={active.error}
               sort={simpleSort.sort}
               onSort={simpleSort.toggle}
+              labels={labels}
+              total={term ? undefined : breakdown?.total}
+              overlap={term ? 0 : (breakdown?.overlap ?? 0)}
             />
           )}
 

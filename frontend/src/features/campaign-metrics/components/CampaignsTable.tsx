@@ -106,6 +106,11 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
 
   return (
     <tr
+      title={
+        incomplete
+          ? `Not finished: ${row.unblast_count.toLocaleString()} of this campaign's numbers were never dialled (Unblast)`
+          : undefined
+      }
       className={clsx(
         'border-b transition-colors',
         incomplete

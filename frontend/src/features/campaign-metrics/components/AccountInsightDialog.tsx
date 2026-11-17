@@ -462,7 +462,9 @@ function FailedCard({ failed }: { failed: AccountInsight['failed'] }) {
   );
 }
 
-const reasonLabel = (reason: string) => (reason === 'Other' ? 'Other' : `Reason ${reason}`);
+// The backend already names each reason from the list Attempt Metrics uses
+// ("Ringing Not Answered"); a code that list does not cover arrives as "Code 153".
+const reasonLabel = (reason: string) => reason;
 
 function ReasonsCard({ reasons }: { reasons: AccountInsight['disconnect_reasons'] }) {
   const total = reasons.reduce((t, r) => t + r.count, 0);
@@ -504,26 +506,26 @@ function CarrierCard({ carriers: raw }: { carriers: AccountInsight['carriers'] }
   return (
     <BreakdownCard
       icon={RadioTower}
-      title="Carrier performance"
+      title="Provider performance"
       subtitle="Share of all dial attempts"
-      empty="No carrier data."
+      empty="No provider data."
       extra={
         carriers.length > 0 && (
           <span className="shrink-0 rounded-md border border-[#e3e8f0] px-2 py-0.5 text-[12px] text-[#5b6a82] dark:border-zinc-700 dark:text-zinc-400">
-            {carriers.length} {carriers.length === 1 ? 'carrier' : 'carriers'}
+            {carriers.length} {carriers.length === 1 ? 'provider' : 'providers'}
           </span>
         )
       }
       items={carriers.map((c) => ({
-        label: `Carrier ${c.carrier}`,
+        label: `Provider ${c.carrier}`,
         share: c.attempt_percentage,
         value: c.attempts,
         percentage: c.attempts > 0 && c.attempt_percentage < 0.1 ? '<0.1%' : `${c.attempt_percentage.toFixed(1)}%`,
         color: C.green,
         tip: () => (
           <TipBody
-            eyebrow="Carrier performance"
-            title={`Carrier ${c.carrier}`}
+            eyebrow="Provider performance"
+            title={`Provider ${c.carrier}`}
             value={c.attempts}
             share={`${c.attempt_percentage.toFixed(2)}% of attempts`}
             sections={[
@@ -866,13 +868,13 @@ function exportReport(insight: AccountInsight, filters: CampaignFilter, account:
     ['Failed attempts', 'Rang, unanswered', failed.rang_unanswered, `${failed.rang_unanswered_percentage.toFixed(1)}%`],
     ...disconnect_reasons.map((r) => [
       'Disconnect reasons',
-      r.reason === 'Other' ? 'Other' : `Reason ${r.reason}`,
+      reasonLabel(r.reason),
       r.count,
       `${r.percentage.toFixed(1)}%`,
     ]),
     ...carriers.flatMap((c) => [
-      ['Carrier performance', `Carrier ${c.carrier} · attempts`, c.attempts, `${c.attempt_percentage.toFixed(2)}%`],
-      ['Carrier performance', `Carrier ${c.carrier} · connected`, `${c.connected} of ${c.total}`, `${c.connect_percentage.toFixed(2)}%`],
+      ['Provider performance', `Provider ${c.carrier} · attempts`, c.attempts, `${c.attempt_percentage.toFixed(2)}%`],
+      ['Provider performance', `Provider ${c.carrier} · connected`, `${c.connected} of ${c.total}`, `${c.connect_percentage.toFixed(2)}%`],
     ]),
     ...blasts.flatMap((b) =>
       b.aids.flatMap((a) => [

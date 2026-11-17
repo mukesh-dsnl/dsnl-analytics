@@ -66,6 +66,9 @@ class CampaignMetricsRow(BaseModel):
 
 class AccountMetricsRow(CampaignMetricsRow):
     account: str
+    # From the account master list; null when the id is not in it, and for
+    # ACCOUNTID 0, which is "no account" rather than an account.
+    account_name: Optional[str] = None
     total_minutes: int = 0
 
 
@@ -96,10 +99,17 @@ class CampaignAccountCrnResponse(BaseModel):
 
 class CampaignServiceProviderResponse(BaseModel):
     rows: list[ServiceProviderMetricsRow]
+    # The day counted once. Not the sum of the rows: a conferee tried through
+    # two providers is in both rows, and `overlap` is how many times that
+    # happened (sum of the rows' total_size minus total.total_size).
+    total: CampaignMetricsRow = Field(default_factory=CampaignMetricsRow)
+    overlap: int = 0
 
 
 class CampaignLocationResponse(BaseModel):
     rows: list[LocationMetricsRow]
+    total: CampaignMetricsRow = Field(default_factory=CampaignMetricsRow)
+    overlap: int = 0
 
 
 class VoicedropCampaignRow(BaseModel):

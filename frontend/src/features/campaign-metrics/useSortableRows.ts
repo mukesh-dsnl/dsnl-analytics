@@ -18,10 +18,15 @@ export interface SortState<K extends string> {
  * Numeric columns compare as numbers and text columns via localeCompare with
  * `numeric`, so an account list reads 17, 193, 109775 rather than the
  * lexicographic 109775, 17, 193.
+ *
+ * `demote` names rows that go after all the others whichever way the column
+ * is sorted — used to keep groups too small for their percentage to mean
+ * anything off the top of a Connected % ordering.
  */
 export function useSortableRows<T, K extends string & keyof T>(
   rows: T[] | undefined,
   initial: SortState<K>,
+  demote?: (row: T, key: K) => boolean,
 ) {
   const [sort, setSort] = useState<SortState<K>>(initial);
 
@@ -29,6 +34,10 @@ export function useSortableRows<T, K extends string & keyof T>(
     if (!rows) return undefined;
     const factor = sort.direction === 'asc' ? 1 : -1;
     return [...rows].sort((a, b) => {
+      if (demote) {
+        const lower = Number(demote(a, sort.key)) - Number(demote(b, sort.key));
+        if (lower) return lower;
+      }
       const left = a[sort.key];
       const right = b[sort.key];
       if (typeof left === 'number' && typeof right === 'number') return (left - right) * factor;
@@ -36,7 +45,7 @@ export function useSortableRows<T, K extends string & keyof T>(
         String(left).localeCompare(String(right), undefined, { numeric: true }) * factor
       );
     });
-  }, [rows, sort]);
+  }, [rows, sort, demote]);
 
   /** Clicking the active column flips it; clicking another switches to it, descending first. */
   const toggle = (key: K) =>

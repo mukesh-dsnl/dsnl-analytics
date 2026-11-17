@@ -15,9 +15,12 @@ import {
   TablePager,
   TableStatus,
   TH_CLASS,
+  TOTAL_CELL,
 } from './TableChrome';
 import { AccountInsightDialog } from './AccountInsightDialog';
 import { ChartButton } from './ChartButton';
+import { SMALL_GROUP, isNoAccount } from '../labels';
+import type { MeasureLabels } from '../labels';
 
 type SortKey = keyof AccountMetricsRow;
 
@@ -34,6 +37,8 @@ interface AccountWiseTableProps {
    * has none and would otherwise carry a column empty on every row.
    */
   showCpin: boolean;
+  /** The measure columns' names, in the service's own words. */
+  labels: MeasureLabels;
   /**
    * Where a row leads instead of expanding: Voicedrop and Conference open the
    * account's campaigns on the Campaigns tab. Unset (MultiCall), a row
@@ -43,12 +48,12 @@ interface AccountWiseTableProps {
 }
 
 /** The five measures, shared by the account rows and the CRN rows beneath them. */
-const MEASURE_COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'total_size', label: 'Total Size' },
-  { key: 'connected_size', label: 'Connected Size' },
-  { key: 'not_connected_size', label: 'Not Connected Size' },
-  { key: 'connected_percentage', label: 'Connected %' },
-  { key: 'total_minutes', label: 'Total Minutes' },
+const measureColumns = (labels: MeasureLabels): { key: SortKey; label: string; title?: string }[] => [
+  { key: 'total_size', label: labels.total },
+  { key: 'connected_size', label: labels.connected },
+  { key: 'not_connected_size', label: labels.notConnected },
+  { key: 'connected_percentage', label: labels.percent, title: labels.percentNote },
+  { key: 'total_minutes', label: 'Minutes' },
 ];
 
 /** Numeric cells share one class so the two row levels align on the decimal. */
@@ -72,6 +77,7 @@ export function AccountWiseTable({
   sort,
   onSort,
   showCpin,
+  labels,
   onOpenAccount,
 }: AccountWiseTableProps) {
   // Paged from the already-sorted list, so sorting reorders the whole table
@@ -108,7 +114,7 @@ export function AccountWiseTable({
                       rows aligned with the account row above them, and the
                       sub-header names it where it actually carries values. */}
                   {showCpin && <th className={`${TH_CLASS} w-32`} />}
-                  {MEASURE_COLUMNS.map((column) => (
+                  {measureColumns(labels).map((column) => (
                     <SortableHeader
                       key={column.key}
                       label={column.label}
@@ -116,6 +122,7 @@ export function AccountWiseTable({
                       sort={sort}
                       onSort={onSort}
                       align="right"
+                      title={column.title}
                     />
                   ))}
                   <th className={`${TH_CLASS} w-14`} />
@@ -128,11 +135,13 @@ export function AccountWiseTable({
                     filters={filters}
                     row={row}
                     showCpin={showCpin}
+                    labels={labels}
                     onChart={(crn) => setCharting({ account: row.account, crn })}
                     onOpen={onOpenAccount}
                   />
                 ))}
               </tbody>
+              {rows && rows.length > 1 && <AccountTotalRow rows={rows} showCpin={showCpin} />}
             </table>
           </div>
         )}
@@ -157,12 +166,16 @@ interface AccountRowProps {
   filters: CampaignFilter;
   row: AccountMetricsRow;
   showCpin: boolean;
+  labels: MeasureLabels;
   onChart: (crn?: string) => void;
   onOpen?: (account: string) => void;
 }
 
-function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps) {
+function AccountRow({ filters, row, showCpin, labels, onChart, onOpen }: AccountRowProps) {
   const [expanded, setIsOpen] = useState(false);
+  // ACCOUNTID 0 is "no account", not an account called 0 — nearly all of MultiCall.
+  const noAccount = isNoAccount(row.account);
+  const who = noAccount ? 'calls with no account' : `account ${row.account}`;
   // A row that leads elsewhere never expands.
   const isOpen = !onOpen && expanded;
 
@@ -187,7 +200,7 @@ function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps
       <tr
         onClick={() => (onOpen ? onOpen(row.account) : setIsOpen((v) => !v))}
         aria-expanded={onOpen ? undefined : isOpen}
-        title={onOpen ? `Show account ${row.account}'s campaigns` : undefined}
+        title={onOpen ? `Show the ${labels.campaignWord} of ${who}` : undefined}
         className={clsx(
           'cursor-pointer transition-colors',
           isOpen
@@ -218,13 +231,25 @@ function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps
             >
               AC
             </span>
-            <span className="text-sm font-semibold text-zinc-900 dark:text-white">
-              {summaryPath(filters.service, row.account) ? (
-                <SummaryLink to={summaryPath(filters.service, row.account)!} title={`Open account ${row.account}'s summary`}>
-                  {row.account}
-                </SummaryLink>
-              ) : (
-                row.account
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-zinc-900 dark:text-white">
+                {noAccount ? (
+                  <span title="Calls that carry no account (ACCOUNTID 0)">No account</span>
+                ) : summaryPath(filters.service, row.account) ? (
+                  <SummaryLink to={summaryPath(filters.service, row.account)!} title={`Open account ${row.account}'s summary`}>
+                    {row.account}
+                  </SummaryLink>
+                ) : (
+                  row.account
+                )}
+              </span>
+              {row.account_name && (
+                <span
+                  className="block max-w-[340px] truncate text-xs font-normal text-zinc-500 dark:text-zinc-400"
+                  title={row.account_name}
+                >
+                  {row.account_name}
+                </span>
               )}
             </span>
           </span>
@@ -235,12 +260,12 @@ function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps
         <td className={clsx(NUM_PARENT, openCell)}>{row.connected_size.toLocaleString()}</td>
         <td className={clsx(NUM_PARENT, openCell)}>{row.not_connected_size.toLocaleString()}</td>
         <td className={clsx('px-4 py-3', openCell)}>
-          <ConnectedBar value={row.connected_percentage} />
+          <ConnectedBar value={row.connected_percentage} muted={row.total_size < SMALL_GROUP} unit={labels.unit} />
         </td>
         <td className={clsx(NUM_PARENT, openCell)}>{row.total_minutes.toLocaleString()}</td>
         <td className={clsx('px-4 py-3 text-right', openCell)}>
           <ChartButton
-            label={`View charts for account ${row.account}`}
+            label={`View charts for ${who}`}
             onClick={() => onChart(undefined)}
           />
         </td>
@@ -262,7 +287,7 @@ function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps
                 CPIN
               </td>
             )}
-            {MEASURE_COLUMNS.map((column) => (
+            {measureColumns(labels).map((column) => (
               <td
                 key={column.key}
                 className="px-4 pt-2 pb-1.5 text-right text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500"
@@ -343,6 +368,37 @@ function AccountRow({ filters, row, showCpin, onChart, onOpen }: AccountRowProps
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The day's totals, pinned under the rows. An account's row is its own CRNs
+ * and nothing else, so unlike the provider table these do add up: the Total is
+ * the plain sum of every row (all pages, not only the one in view).
+ */
+function AccountTotalRow({ rows, showCpin }: { rows: AccountMetricsRow[]; showCpin: boolean }) {
+  const total = rows.reduce((t, r) => t + r.total_size, 0);
+  const connected = rows.reduce((t, r) => t + r.connected_size, 0);
+  const minutes = rows.reduce((t, r) => t + r.total_minutes, 0);
+  return (
+    <tfoot>
+      <tr>
+        <td className={TOTAL_CELL} />
+        <td className={clsx(TOTAL_CELL, 'px-4 py-3 text-sm font-semibold text-zinc-900 dark:text-white')}>
+          Total
+          <span className="font-normal text-zinc-500 dark:text-zinc-400"> · {rows.length.toLocaleString()} accounts</span>
+        </td>
+        {showCpin && <td className={TOTAL_CELL} />}
+        <td className={clsx(TOTAL_CELL, NUM_PARENT)}>{total.toLocaleString()}</td>
+        <td className={clsx(TOTAL_CELL, NUM_PARENT)}>{connected.toLocaleString()}</td>
+        <td className={clsx(TOTAL_CELL, NUM_PARENT)}>{(total - connected).toLocaleString()}</td>
+        <td className={clsx(TOTAL_CELL, 'px-4 py-3')}>
+          <ConnectedBar value={total ? (connected / total) * 100 : 0} />
+        </td>
+        <td className={clsx(TOTAL_CELL, NUM_PARENT)}>{minutes.toLocaleString()}</td>
+        <td className={TOTAL_CELL} />
+      </tr>
+    </tfoot>
   );
 }
 

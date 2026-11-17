@@ -92,19 +92,19 @@ def account_insight(body: AccountInsightRequest) -> AccountInsightResponse:
 @router.post("/campaign/service-provider-wise", response_model=CampaignServiceProviderResponse)
 def service_provider_wise(body: CampaignFilter) -> CampaignServiceProviderResponse:
     try:
-        rows = service.query_service_provider_wise(body)
+        result = service.query_service_provider_wise(body)
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
-    return CampaignServiceProviderResponse(rows=rows)
+    return CampaignServiceProviderResponse(**result)
 
 
 @router.post("/campaign/location-wise", response_model=CampaignLocationResponse)
 def location_wise(body: CampaignFilter) -> CampaignLocationResponse:
     try:
-        rows = service.query_location_wise(body)
+        result = service.query_location_wise(body)
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
-    return CampaignLocationResponse(rows=rows)
+    return CampaignLocationResponse(**result)
 
 
 @router.post("/campaign/campaigns", response_model=VoicedropCampaignsResponse)
