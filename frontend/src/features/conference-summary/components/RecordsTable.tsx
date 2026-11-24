@@ -7,7 +7,7 @@ import type { SortState } from '../../campaign-metrics/useSortableRows';
 import { roomKey } from '../api';
 import type { ConferenceRecord } from '../api';
 import { SummaryLink } from '../../campaign-metrics/components/SummaryLink';
-import { ChartButton } from '../../campaign-metrics/components/ChartButton';
+import { ChartButton, DetailsButton } from '../../campaign-metrics/components/ChartButton';
 import { summaryPath } from '../../campaign-metrics/links';
 import { useClickToOpen } from '../../../lib/useClickToOpen';
 
@@ -93,7 +93,7 @@ export function RecordsTable({
                 {MINUTES.map((m) => (
                   <SortableHeader key={m.key} label={m.label} sortKey={m.key} sort={sort} onSort={onSort} align="right" title={m.title} />
                 ))}
-                {onChart && <th className={`${TH_CLASS} w-16`} />}
+                {(onChart || onOpen) && <th className={`${TH_CLASS} w-28`} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
@@ -155,9 +155,12 @@ export function RecordsTable({
                         {nf.format(row[m.key])}
                       </td>
                     ))}
-                    {onChart && (
+                    {(onChart || onOpen) && (
                       <td className={clsx(CELL, 'text-right')} onClick={(e) => e.stopPropagation()}>
-                        <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />
+                        <span className="inline-flex items-center gap-1.5">
+                          {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
+                          {onOpen && <DetailsButton label={`Show details for CRN ${row.crn}`} onClick={() => onOpen(row)} />}
+                        </span>
                       </td>
                     )}
                   </tr>

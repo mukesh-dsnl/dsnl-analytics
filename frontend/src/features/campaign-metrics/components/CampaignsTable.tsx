@@ -1,16 +1,12 @@
-import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { AlertTriangle, Download, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { isIncomplete } from '../campaignRows';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { SortState } from '../useSortableRows';
 import { ConnectedBar } from './ConnectedBar';
-import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
-import { campaignApi } from '../api';
-import { downloadCsv } from '../exportCsv';
+import { SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
 import { SummaryLink } from './SummaryLink';
-import { ChartButton } from './ChartButton';
+import { ChartButton, DetailsButton } from './ChartButton';
 import { summaryPath } from '../links';
 import { useClickToOpen } from '../../../lib/useClickToOpen';
 
@@ -246,7 +242,7 @@ function CampaignRow({
       <td className={clsx(CELL, 'text-right')} {...keep}>
         <span className="inline-flex items-center gap-1.5">
           {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
-          <RecordsDownload row={row} />
+          {onOpen && <DetailsButton label={`Show details for CRN ${row.crn}`} onClick={() => onOpen(row)} />}
         </span>
       </td>
     </tr>
@@ -267,59 +263,4 @@ function span(start: string | null, end: string | null): string {
   };
   const minutes = Math.max(Math.round((seconds(end) - seconds(start)) / 60), 0);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
-}
-
-/**
- * Downloads one campaign's call records as CSV — the reporting team's
- * per-number query for this row's date, account and CRN, every row.
- */
-function RecordsDownload({ row }: { row: CampaignTableRow }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'failed'>('idle');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const download = async () => {
-    if (!row.date || state === 'loading') return;
-    setState('loading');
-    setProblem(null);
-    try {
-      const { columns, rows } = await campaignApi.campaignRecords(row.date, row.account_id, row.crn);
-      if (rows.length === 0) throw new Error('No call records for this campaign in the CDR export.');
-      downloadCsv(`campaign-${row.crn}-${row.account_id}-${row.date}.csv`, columns, rows);
-      setState('idle');
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : 'The download failed.');
-      setState('failed');
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={download}
-      disabled={state === 'loading'}
-      aria-label={`Download call records for CRN ${row.crn} as CSV`}
-      title={
-        state === 'loading'
-          ? 'Preparing CSV…'
-          : state === 'failed'
-            ? `${problem} Click to retry.`
-            : 'Download call records (CSV)'
-      }
-      className={clsx(
-        ROW_ACTION_CLASS,
-        'disabled:cursor-wait',
-        state === 'failed'
-          ? 'border-red-300 text-red-600 dark:border-red-500/50 dark:text-red-400'
-          : ROW_ACTION_IDLE_CLASS,
-      )}
-    >
-      {state === 'loading' ? (
-        <Loader2 className="w-4 h-4 animate-spin" />
-      ) : state === 'failed' ? (
-        <AlertTriangle className="w-4 h-4" />
-      ) : (
-        <Download className="w-4 h-4" />
-      )}
-    </button>
-  );
 }
