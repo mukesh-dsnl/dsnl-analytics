@@ -879,9 +879,7 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
 }
 
 const blastNumber = (label: string) => Number(label.match(/(\d+)\s*$/)?.[1] ?? 0);
-// "Blast 0" is the first dial of a number and "Blast N" its Nth retry
-// (CONFDIAL_REBLAST_COUNT), so the chart says that; the hover keeps the blast number.
-const blastName = (label: string) => (blastNumber(label) === 0 ? 'First try' : `Retry ${blastNumber(label)}`);
+
 
 /** Repeat attempts shows Blast 0–5 until expanded: some days run to dozens of blasts. */
 const COLLAPSED_LAST_BLAST = 5;
@@ -930,7 +928,7 @@ function RetryCard({
   const tip = (s: CategoryDatum) => () => (
     <TipBody
       eyebrow="Repeat attempts"
-      title={`${blastName(s.label)} · ${s.label}`}
+      title={blastNumber(s.label) === 0 ? 'Blast 0 · first dial' : s.label}
       value={s.value}
       share={`${pct(s.value, total)} of attempts`}
       sections={aidSections(breakdown, s.label)}
@@ -942,12 +940,12 @@ function RetryCard({
       {...state}
       span={5}
       title="Repeat attempts"
-      subtitle="The first dial, then each retry of numbers that did not connect"
+      subtitle="Make every follow-up count"
       isEmpty={stages.length === 0}
     >
       <div className="mb-5 flex items-baseline gap-[13px] border-b border-[#e7ebf2] pb-[19px] dark:border-zinc-800/60">
         <strong className="text-[24px] font-semibold tracking-[-0.5px] tabular-nums text-[#445775] dark:text-white">{fmt(repeat)}</strong>
-        <span className="text-[11px] text-[#98a4b5] dark:text-zinc-500">retry attempts</span>
+        <span className="text-[11px] text-[#98a4b5] dark:text-zinc-500">reblasted</span>
         <small className="ml-auto rounded bg-[#f2f5fa] px-[7px] py-1 text-[10px] text-[#8d9cb1] dark:bg-white/[0.06] dark:text-zinc-400">
           {pct(repeat, total)} of attempts
         </small>
@@ -956,7 +954,7 @@ function RetryCard({
         {shown.map((s) => (
           <BarRow
             key={s.label}
-            label={blastName(s.label)}
+            label={s.label}
             value={s.value}
             max={max}
             base={total}
@@ -974,8 +972,8 @@ function RetryCard({
           className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7ebf2] bg-[#f7f9fc] py-2 text-[11px] font-medium text-[#5b6a82] transition-colors hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-zinc-800/60 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:text-sky-300"
         >
           {expanded
-            ? 'Show first try to retry 5 only'
-            : `Show ${hidden.length} more ${hidden.length === 1 ? 'retry' : 'retries'} · ${fmt(hiddenTotal)} attempts`}
+            ? 'Show Blast 0–5 only'
+            : `Show ${hidden.length} more blast${hidden.length === 1 ? '' : 's'} · ${fmt(hiddenTotal)} attempts`}
           <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
         </button>
       )}
