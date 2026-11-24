@@ -989,23 +989,24 @@ function ReasonsCard({
   ...state
 }: CardStateProps & { data?: CdrDashboard; total: number }) {
   // Two views of the same attempts. "Reasons" (the default) groups codes under
-  // plain names; "Cause codes" shows each raw code with the system's own
-  // cause message, for when the exact switch-level reason is needed.
-  const [view, setView] = useState<'reasons' | 'causes'>('reasons');
+  // plain names; "Detailed" shows each raw code with the system's own cause
+  // message, for when the exact switch-level reason is needed. Detailed opens
+  // on its largest few codes; the arrow below opens every one.
+  const [view, setView] = useState<'reasons' | 'detailed'>('reasons');
+  const [expanded, setExpanded] = useState(false);
   const causes = data?.disconnect_cause ?? [];
   const rows = [...(data?.disconnect_reason ?? [])].sort((a, b) => b.value - a.value);
   const max = Math.max(...rows.map((r) => r.value), 1);
-  const shownCauses = causes.slice(0, CAUSES_SHOWN);
-  const restCauses = causes.slice(CAUSES_SHOWN);
-  const restTotal = restCauses.reduce((t, c) => t + c.value, 0);
-  const causeMax = Math.max(...shownCauses.map((c) => c.value), restTotal, 1);
+  const shownCauses = expanded ? causes : causes.slice(0, CAUSES_COLLAPSED);
+  const hiddenCount = causes.length - CAUSES_COLLAPSED;
+  const causeMax = Math.max(...causes.map((c) => c.value), 1);
 
   return (
     <Card
       {...state}
       span={7}
       title="Disconnect reasons"
-      subtitle={view === 'reasons' ? 'Reported reasons across all attempts' : 'System cause code for every attempt'}
+      subtitle={view === 'reasons' ? 'Reported reasons across all attempts' : 'System cause code behind each attempt'}
       isEmpty={rows.length === 0}
       extra={
         causes.length > 0 && (
@@ -1015,13 +1016,14 @@ function ReasonsCard({
             onChange={setView}
             options={[
               { id: 'reasons', label: 'Reasons' },
-              { id: 'causes', label: 'Cause codes' },
+              { id: 'detailed', label: 'Detailed' },
             ]}
           />
         )
       }
     >
-      {view === 'causes' ? (
+      {view === 'detailed' ? (
+        <>
         <div className="flex flex-col gap-3.5">
           {shownCauses.map((c, i) => (
             <BarRow
@@ -1043,33 +1045,19 @@ function ReasonsCard({
               )}
             />
           ))}
-          {restCauses.length > 0 && (
-            <BarRow
-              label={`${restCauses.length} other codes`}
-              value={restTotal}
-              max={causeMax}
-              base={total}
-              color={COLORS.pale}
-              columns="grid-cols-[minmax(150px,250px)_1fr_80px_44px]"
-              trackHeight="h-2"
-              tip={() => (
-                <TipBody
-                  eyebrow="Cause codes"
-                  title={`${restCauses.length} other codes`}
-                  value={restTotal}
-                  share={`${pct(restTotal, total)} of attempts`}
-                  sections={[
-                    {
-                      title: 'Codes',
-                      base: restTotal,
-                      rows: restCauses.map((c) => ({ label: c.code ? `${c.code} · ${c.label}` : c.label, value: c.value })),
-                    },
-                  ]}
-                />
-              )}
-            />
-          )}
         </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7ebf2] bg-[#f7f9fc] py-2 text-[11px] font-medium text-[#5b6a82] transition-colors hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-zinc-800/60 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:text-sky-300"
+          >
+            {expanded ? `Show top ${CAUSES_COLLAPSED} only` : `Show all ${causes.length} cause codes`}
+            <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+          </button>
+        )}
+        </>
       ) : (
       <div className="flex flex-col gap-3.5">
         {rows.map((r, i) => (
@@ -1091,7 +1079,7 @@ function ReasonsCard({
                 sections={r.codes?.length ? [{ title: 'Codes in this group', base: r.value, rows: r.codes }] : []}
                 note={
                   r.codes?.length
-                    ? 'These attempts do carry a disconnect code, but the reason list has no name for it yet. Switch to Cause codes to see what each one means.'
+                    ? 'These attempts do carry a disconnect code, but the reason list has no name for it yet. Switch to Detailed to see what each one means.'
                     : undefined
                 }
               />
@@ -1104,5 +1092,5 @@ function ReasonsCard({
   );
 }
 
-/** Cause codes listed one by one before the rest are folded into one row. */
-const CAUSES_SHOWN = 10;
+/** Cause codes the Detailed view shows before its arrow is opened. */
+const CAUSES_COLLAPSED = 6;

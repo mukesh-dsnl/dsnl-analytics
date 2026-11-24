@@ -764,9 +764,10 @@ def _cause_codes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         code = str(row["label"])
         if code in ("None", ""):
-            code, name = "", "No code recorded"
+            code, name = "", "Unknown"
         else:
-            name = _CAUSE_CODES.get(code, "Not in the cause-code list")
+            # A code the cause-code list does not cover is shown as Unknown.
+            name = _CAUSE_CODES.get(code, "Unknown")
         out.append({"code": code, "label": name, "value": row["value"]})
     return sorted(out, key=lambda r: r["value"], reverse=True)
 
