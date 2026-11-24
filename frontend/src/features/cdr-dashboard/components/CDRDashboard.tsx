@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageLoadingBar } from '../../../components/Loading';
 import { cdrApi } from '../api';
@@ -5,6 +6,9 @@ import type { CallCubeRow, CdrFilters } from '../api';
 import { AttemptCharts } from './attempt-analytics/AttemptCharts';
 import { AttemptKpis } from './attempt-analytics/AttemptKpis';
 import { HoverTooltipProvider } from './attempt-analytics/HoverTooltip';
+import { ExportMenu } from '../../../components/ExportMenu';
+import { useHeaderActions } from '../../../components/HeaderSlot';
+import { attemptReport } from '../attemptReport';
 
 /** Stable reference so a still-loading cube doesn't hand every readout a fresh empty array. */
 const EMPTY_CUBE_ROWS: CallCubeRow[] = [];
@@ -43,6 +47,8 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
     ...KEEP_FOR_SESSION,
   });
   const cubeRows = cube?.rows ?? EMPTY_CUBE_ROWS;
+  // The Export icon sits in the app header, between the date control and the theme toggle.
+  const headerActions = useHeaderActions();
 
   // Call activity and Call duration chart dial-out stages (initiated, rang),
   // which only Voicedrop has.
@@ -58,6 +64,15 @@ export function CDRDashboard({ filters }: CDRDashboardProps) {
           loading bar along the very top of the content panel, not one per card. */}
       {isFetching && <PageLoadingBar />}
       <div className="space-y-6">
+        {headerActions &&
+          createPortal(
+            <ExportMenu
+              label="Export Attempt Metrics"
+              disabled={!data || isFetching}
+              build={() => attemptReport(data!, filters, cubeRows)}
+            />,
+            headerActions,
+          )}
         <AttemptKpis data={data} isLoading={isPending} error={error} showConferences={showConferences} service={filters.service} />
         <AttemptCharts
           data={data}

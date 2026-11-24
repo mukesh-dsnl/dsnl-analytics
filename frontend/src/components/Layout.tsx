@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
 import { HeaderAttemptDay } from '../features/cdr-dashboard/components/HeaderAttemptDay';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
-import { HeaderSlotContext } from './HeaderSlot';
+import { HeaderActionsContext, HeaderSlotContext } from './HeaderSlot';
 import { BrandMark } from './BrandMark';
 import { AnalyticsAiIcon } from './AnalyticsAiIcon';
 import { ContentPanelContext } from './ContentPanelSlot';
@@ -131,6 +131,8 @@ export function Layout() {
   // *value* to portal into, so it has to survive a render, and a plain ref
   // would still be null on the render the children mount in.
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
+  // The page's actions (its Export menu), between the date control and the theme toggle.
+  const [headerActions, setHeaderActions] = useState<HTMLDivElement | null>(null);
   // Same reasoning for the panel itself: page-owned overlays portal into it so
   // they centre on the card rather than on the viewport (see ContentPanelSlot).
   const [contentPanel, setContentPanel] = useState<HTMLDivElement | null>(null);
@@ -545,6 +547,8 @@ export function Layout() {
             ) : (
               <HeaderDateRange />
             )}
+            {/* Empty unless the page puts its actions here. */}
+            <div ref={setHeaderActions} className="flex shrink-0 items-center gap-2 empty:hidden" />
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -565,9 +569,11 @@ export function Layout() {
             )}
           >
             <HeaderSlotContext.Provider value={headerSlot}>
-              <ContentPanelContext.Provider value={contentPanel}>
-                <Outlet />
-              </ContentPanelContext.Provider>
+              <HeaderActionsContext.Provider value={headerActions}>
+                <ContentPanelContext.Provider value={contentPanel}>
+                  <Outlet />
+                </ContentPanelContext.Provider>
+              </HeaderActionsContext.Provider>
             </HeaderSlotContext.Provider>
           </main>
         </div>

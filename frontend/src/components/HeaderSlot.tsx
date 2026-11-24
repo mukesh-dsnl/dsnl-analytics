@@ -17,3 +17,13 @@ export const HeaderSlotContext = createContext<HTMLElement | null>(null);
 export function useHeaderSlot(): HTMLElement | null {
   return useContext(HeaderSlotContext);
 }
+
+/**
+ * A second header node, between the date control and the theme toggle, for a
+ * page's actions (its Export menu). Same portal pattern as HeaderSlotContext.
+ */
+export const HeaderActionsContext = createContext<HTMLElement | null>(null);
+
+export function useHeaderActions(): HTMLElement | null {
+  return useContext(HeaderActionsContext);
+}
