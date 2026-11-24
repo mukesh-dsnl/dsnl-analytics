@@ -58,9 +58,10 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             <thead>
               <tr>
                 <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="B Ref" sortKey="booking_reference" sort={sort} onSort={onSort} title="Booking reference" />
+                {/* A no-break space keeps "Book Ref" on one line in its narrow column. */}
+                <SortableHeader label={'Book\u00a0Ref'} sortKey="booking_reference" sort={sort} onSort={onSort} />
                 <SortableHeader label="Start" sortKey="start_time" sort={sort} onSort={onSort} />
-                <SortableHeader label="End" sortKey="end_time" sort={sort} onSort={onSort} title="End time, with how long the room ran under it" />
+                <SortableHeader label="End" sortKey="end_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
                 <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
                 {MEASURES.map((m) => (
@@ -138,7 +139,7 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
             to={summaryPath('voicedrop', row.account_id, row.client_id)!}
             title={`Open client ${row.client_id} of account ${row.account_id}`}
           >
-            Client {row.client_id}
+            {row.client_id}
           </SummaryLink>
         </span>
       </td>
