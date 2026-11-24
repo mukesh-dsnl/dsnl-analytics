@@ -9,8 +9,7 @@ import { SMALL_GROUP } from '../labels';
  * legible without it, never the thing you have to read.
  *
  * Bands are a readability convention, not a business rule: there is no
- * documented "good" connect rate in the data dictionary. ConnectedKey below
- * prints them above the table, so the colours are not left to be guessed.
+ * documented "good" connect rate in the data dictionary.
  */
 const BANDS = [
   { from: 70, label: '70% and above', bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
@@ -60,27 +59,5 @@ export function ConnectedBar({
         {value.toFixed(1)}%
       </span>
     </div>
-  );
-}
-
-/** The key to ConnectedBar's colours, for the bar above a table that uses it. */
-export function ConnectedKey({ unit }: { unit: string }) {
-  const items = [
-    ...[...BANDS].reverse().map((b) => ({ swatch: b.bar, label: b.label })),
-    { swatch: MUTED.bar, label: `Under ${SMALL_GROUP} ${unit}` },
-  ];
-  return (
-    <ul
-      aria-label="Connected % colour key"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-[11px] text-zinc-500 dark:text-zinc-400"
-    >
-      <li className="font-semibold text-zinc-600 dark:text-zinc-300">Connected %</li>
-      {items.map((item) => (
-        <li key={item.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-          <span aria-hidden="true" className={clsx('h-2 w-2 rounded-full', item.swatch)} />
-          {item.label}
-        </li>
-      ))}
-    </ul>
   );
 }

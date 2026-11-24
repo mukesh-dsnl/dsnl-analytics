@@ -30,7 +30,6 @@ import type { RoomRef } from '../../conference-summary/components/ConferenceRoom
 import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
-import { ConnectedKey } from '../components/ConnectedBar';
 import { SMALL_GROUP, isNoAccount, measureLabels } from '../labels';
 import { providerName } from '../../../lib/providers';
 
@@ -454,7 +453,6 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             }}
             onExport={handleExport}
             canExport={visibleCount > 0}
-            legend={<ConnectedKey unit={labels.unit} />}
           />
         </div>
 
