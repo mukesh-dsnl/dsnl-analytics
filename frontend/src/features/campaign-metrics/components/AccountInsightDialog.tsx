@@ -9,7 +9,6 @@ import {
   CalendarDays,
   ChevronDown,
   CloudUpload,
-  Download,
   FileText,
   Loader2,
   MousePointer2,
@@ -26,8 +25,9 @@ import clsx from 'clsx';
 import { useContentPanel } from '../../../components/ContentPanelSlot';
 import { campaignApi } from '../api';
 import type { AccountInsight, CampaignFilter, InsightAid } from '../api';
-import { downloadCsv } from '../exportCsv';
 import { providerName } from '../../../lib/providers';
+import { ExportMenu } from '../../../components/ExportMenu';
+import { insightReport } from '../insightReport';
 import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { useHover } from '../../cdr-dashboard/components/attempt-analytics/tooltipContext';
 
@@ -153,15 +153,7 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => data && exportReport(data, filters, account, crn)}
-              disabled={!data}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#212665] px-4 text-[13px] font-medium text-white shadow-[0_3px_6px_#21266520] transition-colors hover:bg-[#303b7e] disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              Export report
-            </button>
+            <ExportMenu label="Export this report" disabled={!data} build={() => insightReport(data!, filters, account, crn)} />
             <button
               type="button"
               onClick={onClose}
@@ -852,38 +844,3 @@ function BlastTable({ aids }: { aids: InsightAid[] }) {
 }
 
 // ── Export ────────────────────────────────────────────────────────────────
-
-/** Everything the popup shows, as one CSV: section, item, value, share. */
-function exportReport(insight: AccountInsight, filters: CampaignFilter, account: string, crn?: string | null) {
-  const { summary, failed, disconnect_reasons, blasts } = insight;
-  const carriers = insight.carriers.map((c) => ({ ...c, attempts: c.attempts ?? 0, attempt_percentage: c.attempt_percentage ?? 0 }));
-  const rows: (string | number)[][] = [
-    ['Summary', 'Total uploaded', summary.total_uploaded, ''],
-    ['Summary', 'Dial attempts', summary.dial_attempts, ''],
-    ['Summary', 'Connected users', summary.connected_users, ''],
-    ['Summary', 'Connected dial in', summary.connected_dial_in, ''],
-    ['Summary', 'Connected dial out', summary.connected_dial_out, ''],
-    ['Summary', 'Connection rate', '', `${summary.connect_percentage.toFixed(2)}%`],
-    ['Failed attempts', 'Total', failed.total, ''],
-    ['Failed attempts', 'Never rang', failed.never_rang, `${failed.never_rang_percentage.toFixed(1)}%`],
-    ['Failed attempts', 'Rang, unanswered', failed.rang_unanswered, `${failed.rang_unanswered_percentage.toFixed(1)}%`],
-    ...disconnect_reasons.map((r) => [
-      'Disconnect reasons',
-      reasonLabel(r.reason),
-      r.count,
-      `${r.percentage.toFixed(1)}%`,
-    ]),
-    ...carriers.flatMap((c) => [
-      ['Provider performance', `${providerName(c.carrier)} · attempts`, c.attempts, `${c.attempt_percentage.toFixed(2)}%`],
-      ['Provider performance', `${providerName(c.carrier)} · connected`, `${c.connected} of ${c.total}`, `${c.connect_percentage.toFixed(2)}%`],
-    ]),
-    ...blasts.flatMap((b) =>
-      b.aids.flatMap((a) => [
-        ...STAGES.map((s) => [`${b.label} · ${a.label}`, s.label, a[s.key], '']),
-        [`${b.label} · ${a.label}`, 'Total initiated', a.total_initiated, ''],
-      ]),
-    ),
-  ];
-  const name = `campaign-${filters.service}-${account}${crn ? `-${crn}` : ''}-${filters.date}.csv`;
-  downloadCsv(name, ['Section', 'Item', 'Value', 'Share'], rows);
-}

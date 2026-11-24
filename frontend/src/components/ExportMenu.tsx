@@ -69,7 +69,7 @@ export function ExportMenu({
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="z-[60] w-[250px] border-[#e4eaf2] bg-white p-1.5 text-[#0f172a] shadow-[0_16px_40px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#13213a] dark:text-zinc-100"
+        className="w-[250px] border-[#e4eaf2] bg-white p-1.5 text-[#0f172a] shadow-[0_16px_40px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#13213a] dark:text-zinc-100"
       >
         <p className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#6a7d96] dark:text-zinc-400">{label}</p>
         {(['xlsx', 'pdf'] as const).map((id) => {
