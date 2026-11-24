@@ -58,8 +58,9 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             <thead>
               <tr>
                 <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="Client" sortKey="client_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="Time" sortKey="start_time" sort={sort} onSort={onSort} />
+                <SortableHeader label="B Ref" sortKey="booking_reference" sort={sort} onSort={onSort} title="Booking reference" />
+                <SortableHeader label="Start" sortKey="start_time" sort={sort} onSort={onSort} />
+                <SortableHeader label="End" sortKey="end_time" sort={sort} onSort={onSort} title="End time, with how long the room ran under it" />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
                 <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
                 {MEASURES.map((m) => (
@@ -131,20 +132,26 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
         <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
           {row.account_id}
         </SummaryLink>
+        {/* The client, under its account: a client belongs to one account. */}
+        <span className="block text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          <SummaryLink
+            to={summaryPath('voicedrop', row.account_id, row.client_id)!}
+            title={`Open client ${row.client_id} of account ${row.account_id}`}
+          >
+            Client {row.client_id}
+          </SummaryLink>
+        </span>
       </td>
       <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums text-zinc-700 dark:text-zinc-300')}>
-        <SummaryLink
-          to={summaryPath('voicedrop', row.account_id, row.client_id)!}
-          title={`Open client ${row.client_id} of account ${row.account_id}`}
-        >
-          {row.client_id}
-        </SummaryLink>
+        {row.booking_reference ?? '—'}
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-900 dark:text-white')}>
+        {short(row.start_time)}
       </td>
       <td className={clsx(CELL, 'whitespace-nowrap')}>
-        <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">
-          {short(row.start_time)} – {short(row.end_time)}
-        </span>
-        <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+        <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{short(row.end_time)}</span>
+        {/* How long the room ran, start to end. */}
+        <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400" title="Room duration">
           {span(row.start_time, row.end_time)}
         </span>
       </td>
@@ -158,11 +165,6 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
             {row.name ?? '—'}
           </span>
         </span>
-        {row.booking_reference != null && (
-          <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-            Ref {row.booking_reference}
-          </span>
-        )}
       </td>
 
       <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300')}>
