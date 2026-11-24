@@ -71,7 +71,6 @@ export function AttemptKpis({ data, isLoading, error, showConferences, service }
             eyebrow="Total attempts"
             title="Every dial attempt, retries included"
             value={attempts}
-            note="Connected % of attempts: each retry of a number counts again. Campaign Metrics shows connected % of numbers, counting each number once, so its figure is higher."
             sections={[
               {
                 title: 'Outcome',
@@ -105,14 +104,6 @@ export function AttemptKpis({ data, isLoading, error, showConferences, service }
               {
                 title: 'Phone numbers',
                 rows: [{ label: 'Total phone numbers', value: data?.summary.total_phone_numbers ?? 0, share: '' }],
-              },
-              {
-                title: 'Call direction (attempts)',
-                base: dialled,
-                rows: [
-                  { label: 'Dial out', value: dialOut },
-                  { label: 'Dial in', value: dialIn },
-                ],
               },
             ]}
           />
