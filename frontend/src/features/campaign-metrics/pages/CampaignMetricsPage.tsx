@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin, Megaphone } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -10,10 +10,11 @@ import { campaignApi } from '../api';
 import type { AccountMetricsRow, CampaignFilter, CampaignService } from '../api';
 import { useCdrStatus, useCampaignDate } from '../hooks';
 import { useDebouncedValue } from '../../cdr-dashboard/hooks';
-import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { useHeaderActions, useHeaderSlot } from '../../../components/HeaderSlot';
+import { ExportMenu } from '../../../components/ExportMenu';
+import { campaignReport } from '../campaignReport';
 import { HeaderSearch } from '../components/HeaderSearch';
 import { useSortableRows } from '../useSortableRows';
-import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
 import { AccountWiseTable } from '../components/AccountWiseTable';
 import { AccountInsightDialog } from '../components/AccountInsightDialog';
@@ -21,7 +22,7 @@ import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
 import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
 import { MetricsToolbar } from '../components/MetricsToolbar';
 import { CampaignsTable } from '../components/CampaignsTable';
-import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
+import { withConnectedShare } from '../campaignRows';
 import { conferenceSummaryApi } from '../../conference-summary/api';
 import { RecordsTable } from '../../conference-summary/components/RecordsTable';
 import type { ConferenceRow, ConferenceSortKey } from '../../conference-summary/components/RecordsTable';
@@ -31,7 +32,7 @@ import type { RoomRef } from '../../conference-summary/components/ConferenceRoom
 import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
-import { SMALL_GROUP, isNoAccount, measureLabels } from '../labels';
+import { SMALL_GROUP, measureLabels } from '../labels';
 import { providerName } from '../../../lib/providers';
 
 interface CampaignMetricsPageProps {
@@ -332,61 +333,33 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   // and then the Total row adds up what is shown instead.
   const breakdown = view === 'provider' ? providerQuery.data : view === 'location' ? locationQuery.data : undefined;
 
-  const handleExport = () => {
-    const stamp = `${service}-${view}-${date}`;
-    if (view === 'campaigns' && service === 'conference') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        [
-          'Account ID', 'Account Name', 'Call Date', 'CRN', 'Conf Num', 'Start Time', 'End Time', 'Conference Name',
-          'PIN', 'DID', 'Total Ringed Calls', 'Total Connected Calls', 'Total Call Duration (Mins)',
-          'Total Attended Duration (Mins)', 'Peak Port Used',
-        ],
-        (conferenceSorted ?? []).map((r) => [
-          r.account_id, r.account_name, r.date, r.crn, r.conf_num, r.start_time, r.end_time, r.conference_name,
-          r.pin, r.dids.join(', '), r.ringed, r.connected, r.call_minutes, r.attended_minutes, r.peak_port,
-        ]),
-      );
-      return;
-    }
-    if (view === 'campaigns') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        ['Date', ...CAMPAIGN_COLUMNS.map((c) => c.label)],
-        (campaignSort.rows ?? []).map((r) => [
-          r.date,
-          ...CAMPAIGN_COLUMNS.map((c) => r[c.key]),
-        ]),
-      );
-      return;
-    }
-    if (view === 'account') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        ['Account', 'Account Name', labels.total, labels.connected, labels.notConnected, labels.percent, 'Minutes'],
-        (accountSort.rows ?? []).map((r) => [
-          isNoAccount(r.account) ? 'No account' : r.account,
-          r.account_name ?? '',
-          r.total_size,
-          r.connected_size,
-          r.not_connected_size,
-          r.connected_percentage,
-          r.total_minutes,
-        ]),
-      );
-      return;
-    }
-    downloadCsv(
-      `campaign-${stamp}.csv`,
-      [meta.column, labels.total, labels.connected, labels.notConnected, labels.percent],
-      (simpleSort.rows ?? []).map((r) => [
-        r.label,
-        r.total_size,
-        r.connected_size,
-        r.not_connected_size,
-        r.connected_percentage,
-      ]),
-    );
+  // Export: every tab's data for the day, fetched through the same queries
+  // the tabs use (so a tab already open costs nothing), one sheet per tab.
+  const queryClient = useQueryClient();
+  const headerActions = useHeaderActions();
+  const buildExport = async () => {
+    const day: CampaignFilter = { date, service };
+    const [accounts, providers, locations, campaigns, conferences] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: ['campaign', 'account', day.date, day.service, ''],
+        queryFn: () => campaignApi.accountWise(day, ''),
+      }),
+      queryClient.fetchQuery({ queryKey: ['campaign', 'provider', day.date, day.service], queryFn: () => campaignApi.serviceProviderWise(day) }),
+      queryClient.fetchQuery({ queryKey: ['campaign', 'location', day.date, day.service], queryFn: () => campaignApi.locationWise(day) }),
+      service === 'voicedrop'
+        ? queryClient.fetchQuery({ queryKey: ['campaign', 'campaigns', day.date], queryFn: () => campaignApi.campaigns(day) })
+        : Promise.resolve(null),
+      service === 'conference'
+        ? queryClient.fetchQuery({ queryKey: ['conference-summary', 'records', day.date], queryFn: () => conferenceSummaryApi.records(day.date) })
+        : Promise.resolve(null),
+    ]);
+    return campaignReport(service, date, {
+      accounts: accounts.rows,
+      providers,
+      locations,
+      campaigns: campaigns?.rows,
+      conferences: conferences?.rows,
+    });
   };
 
   const visibleCount =
@@ -432,6 +405,12 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
         {/* The search sits in the app header beside the date control — see
             components/HeaderSlot. It stays owned here because what it matches
             depends on the active view and service. */}
+        {headerActions &&
+          createPortal(
+            <ExportMenu label="Export Campaign Metrics" disabled={!status.available || !date} build={buildExport} />,
+            headerActions,
+          )}
+
         {headerSlot &&
           createPortal(
             <HeaderSearch
@@ -455,8 +434,6 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               setSearch('');
               setAccount('');
             }}
-            onExport={handleExport}
-            canExport={visibleCount > 0}
             // The open tab's row count, once its rows are in; follows the search.
             count={active.isPending || active.error ? null : visibleCount}
           />

@@ -1,4 +1,3 @@
-import { Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
@@ -13,8 +12,6 @@ interface MetricsToolbarProps<T extends string> {
   tabs: ToolbarTab<T>[];
   active: T;
   onTab: (id: T) => void;
-  onExport: () => void;
-  canExport: boolean;
   /** The colour key for the table below, shown at the left. */
   legend?: ReactNode;
   /** How many rows the open tab's table lists; shown beside that tab only. Null while loading. */
@@ -22,7 +19,7 @@ interface MetricsToolbarProps<T extends string> {
 }
 
 /**
- * The bar above the table: the view tabs, centred, with Export at the right.
+ * The bar above the table: the view tabs, centred.
  *
  * Same underline tab strip the analytics charts use — these are mutually
  * exclusive views of one page, which is what a tab bar means and what the card
@@ -36,8 +33,6 @@ export function MetricsToolbar<T extends string>({
   tabs,
   active,
   onTab,
-  onExport,
-  canExport,
   legend,
   count,
 }: MetricsToolbarProps<T>) {
@@ -79,17 +74,8 @@ export function MetricsToolbar<T extends string>({
           })}
         </div>
 
-        <div className="flex justify-end pb-1.5">
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={!canExport}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-surface-dark text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-        </div>
+        {/* Export lives in the app header now (Excel / PDF of every tab). */}
+        <span aria-hidden="true" />
       </div>
     </div>
   );
