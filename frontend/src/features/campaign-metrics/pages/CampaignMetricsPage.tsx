@@ -32,6 +32,7 @@ import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
 import { ConnectedKey } from '../components/ConnectedBar';
 import { SMALL_GROUP, isNoAccount, measureLabels } from '../labels';
+import { providerName } from '../../../lib/providers';
 
 interface CampaignMetricsPageProps {
   service: CampaignService;
@@ -268,12 +269,13 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const simpleRows = useMemo((): SimpleRow[] | undefined => {
     const rows =
       view === 'provider'
-        ? providerQuery.data?.rows.map((r) => ({ ...r, label: `Provider ${r.service_provider}` }))
+        ? providerQuery.data?.rows.map((r) => ({ ...r, label: providerName(r.service_provider), code: r.service_provider }))
         : view === 'location'
           ? locationQuery.data?.rows.map((r) => ({ ...r, label: r.location }))
           : undefined;
     if (!rows || !term) return rows;
-    return rows.filter((r) => r.label.toLowerCase().includes(term));
+    // A provider is found by its name or its number ("jio" or "15").
+    return rows.filter((r) => r.label.toLowerCase().includes(term) || ('code' in r && String(r.code) === term));
   }, [view, providerQuery.data, locationQuery.data, term]);
 
   // Campaign rows are one day's tens of campaigns, filtered here.

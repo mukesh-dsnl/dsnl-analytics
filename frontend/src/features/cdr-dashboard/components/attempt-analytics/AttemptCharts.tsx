@@ -41,6 +41,7 @@ import {
 import { HoverTooltipProvider, TipBody } from './HoverTooltip';
 import type { TipRow } from './HoverTooltip';
 import { useHover } from './tooltipContext';
+import { providerName } from '../../../../lib/providers';
 
 interface AttemptChartsProps {
   data: CdrDashboard | undefined;
@@ -327,7 +328,7 @@ function cubeSections(cubeRows: CallCubeRow[], dimension: CubeDimension, value: 
       totals.set(key, (totals.get(key) ?? 0) + row.count);
     }
     const rows: TipRow[] = [...totals]
-      .map(([label, count]) => ({ label: other === 'provider' ? `Provider ${label}` : label, value: count }))
+      .map(([label, count]) => ({ label: other === 'provider' ? providerName(label) : label, value: count }))
       .sort((a, b) => b.value - a.value);
     return { title: DIMENSION_TITLE[other], rows };
   });
@@ -699,7 +700,7 @@ function ProviderCard({
         {rows.map((r, i) => (
           <BarRow
             key={r.label}
-            label={`Provider ${r.label}`}
+            label={providerName(r.label)}
             value={r.value}
             max={max}
             base={total}
@@ -707,7 +708,7 @@ function ProviderCard({
             tip={() => (
               <TipBody
                 eyebrow="Service providers"
-                title={`Provider ${r.label}`}
+                title={providerName(r.label)}
                 value={r.value}
                 share={`${pct(r.value, total)} of attempts`}
                 sections={cubeSections(cubeRows, 'provider', r.label)}

@@ -27,6 +27,7 @@ import { useContentPanel } from '../../../components/ContentPanelSlot';
 import { campaignApi } from '../api';
 import type { AccountInsight, CampaignFilter, InsightAid } from '../api';
 import { downloadCsv } from '../exportCsv';
+import { providerName } from '../../../lib/providers';
 import { HoverTooltipProvider, TipBody } from '../../cdr-dashboard/components/attempt-analytics/HoverTooltip';
 import { useHover } from '../../cdr-dashboard/components/attempt-analytics/tooltipContext';
 
@@ -517,7 +518,7 @@ function CarrierCard({ carriers: raw }: { carriers: AccountInsight['carriers'] }
         )
       }
       items={carriers.map((c) => ({
-        label: `Provider ${c.carrier}`,
+        label: providerName(c.carrier),
         share: c.attempt_percentage,
         value: c.attempts,
         percentage: c.attempts > 0 && c.attempt_percentage < 0.1 ? '<0.1%' : `${c.attempt_percentage.toFixed(1)}%`,
@@ -525,7 +526,7 @@ function CarrierCard({ carriers: raw }: { carriers: AccountInsight['carriers'] }
         tip: () => (
           <TipBody
             eyebrow="Provider performance"
-            title={`Provider ${c.carrier}`}
+            title={providerName(c.carrier)}
             value={c.attempts}
             share={`${c.attempt_percentage.toFixed(2)}% of attempts`}
             sections={[
@@ -873,8 +874,8 @@ function exportReport(insight: AccountInsight, filters: CampaignFilter, account:
       `${r.percentage.toFixed(1)}%`,
     ]),
     ...carriers.flatMap((c) => [
-      ['Provider performance', `Provider ${c.carrier} · attempts`, c.attempts, `${c.attempt_percentage.toFixed(2)}%`],
-      ['Provider performance', `Provider ${c.carrier} · connected`, `${c.connected} of ${c.total}`, `${c.connect_percentage.toFixed(2)}%`],
+      ['Provider performance', `${providerName(c.carrier)} · attempts`, c.attempts, `${c.attempt_percentage.toFixed(2)}%`],
+      ['Provider performance', `${providerName(c.carrier)} · connected`, `${c.connected} of ${c.total}`, `${c.connect_percentage.toFixed(2)}%`],
     ]),
     ...blasts.flatMap((b) =>
       b.aids.flatMap((a) => [
