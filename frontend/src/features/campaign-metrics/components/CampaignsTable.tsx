@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from 'react';
 import clsx from 'clsx';
 import { isIncomplete } from '../campaignRows';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
@@ -8,7 +7,6 @@ import { SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome'
 import { SummaryLink } from './SummaryLink';
 import { ChartButton, DetailsButton } from './ChartButton';
 import { summaryPath } from '../links';
-import { useClickToOpen } from '../../../lib/useClickToOpen';
 
 interface CampaignsTableProps {
   rows: CampaignTableRow[] | undefined;
@@ -47,8 +45,7 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * row is tinted red, so it stands out without being searched for.
  */
 export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, onOpen, openCrn }: CampaignsTableProps) {
-  // Opens on a click, but not on one that selects text to copy.
-  const clickToOpen = useClickToOpen();
+
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -100,7 +97,6 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, 
                   row={row}
                   onChart={onChart}
                   onOpen={onOpen}
-                  onRowClick={onOpen && ((e) => clickToOpen(e, () => onOpen(row)))}
                   open={openCrn === row.crn}
                 />
               ))}
@@ -116,40 +112,26 @@ function CampaignRow({
   row,
   onChart,
   onOpen,
-  onRowClick,
   open,
 }: {
   row: CampaignTableRow;
   onChart?: (row: CampaignTableRow) => void;
   onOpen?: (row: CampaignTableRow) => void;
-  /** The row's click: opens the details unless the click was selecting text. */
-  onRowClick?: (e: { detail: number }) => void;
   open: boolean;
 }) {
   const incomplete = isIncomplete(row);
-  // Links and buttons inside the row do their own thing, not open the sheet.
-  const keep = { onClick: (e: { stopPropagation: () => void }) => e.stopPropagation() };
 
   return (
     <tr
       title={
         incomplete
           ? `Not finished: ${row.unblast_count.toLocaleString()} of this campaign's numbers were never dialled (Unblast)`
-          : onOpen
-            ? 'Show this campaign’s details'
-            : undefined
+          : undefined
       }
-      aria-selected={onOpen ? open : undefined}
-      {...(onOpen && {
-        tabIndex: 0,
-        onClick: onRowClick,
-        onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
-          if (e.key === 'Enter') onOpen(row);
-        },
-      })}
+      // The row only shows which campaign's details are open; the details
+      // button at its end opens them, so the row is free for selecting text.
       className={clsx(
         'border-b transition-colors',
-        onOpen && 'cursor-pointer outline-none focus-visible:bg-[#eef5fe] dark:focus-visible:bg-white/[0.04]',
         open
           ? 'bg-[#e8f1fd] border-[#eef2f8] dark:bg-sky-500/10 dark:border-zinc-800/40'
           : incomplete
@@ -166,7 +148,6 @@ function CampaignRow({
           'whitespace-nowrap text-sm font-semibold tabular-nums text-zinc-900 dark:text-white',
           incomplete && 'shadow-[inset_3px_0_0_theme(colors.red.500)]',
         )}
-        {...keep}
       >
         <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
           {row.account_id}
@@ -239,7 +220,7 @@ function CampaignRow({
       <td className={clsx(NUM, 'text-zinc-700 dark:text-zinc-300')}>
         {row.connected_duration.toLocaleString()}
       </td>
-      <td className={clsx(CELL, 'text-right')} {...keep}>
+      <td className={clsx(CELL, 'text-right')}>
         <span className="inline-flex items-center gap-1.5">
           {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
           {onOpen && <DetailsButton label={`Show details for CRN ${row.crn}`} onClick={() => onOpen(row)} />}

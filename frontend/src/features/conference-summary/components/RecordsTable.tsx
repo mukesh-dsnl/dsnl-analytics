@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from 'react';
 import clsx from 'clsx';
 
 import { ConnectedBar } from '../../campaign-metrics/components/ConnectedBar';
@@ -9,7 +8,6 @@ import type { ConferenceRecord } from '../api';
 import { SummaryLink } from '../../campaign-metrics/components/SummaryLink';
 import { ChartButton, DetailsButton } from '../../campaign-metrics/components/ChartButton';
 import { summaryPath } from '../../campaign-metrics/links';
-import { useClickToOpen } from '../../../lib/useClickToOpen';
 
 /** A record as the table holds it: nulls flattened, and the connect rate worked out. */
 export interface ConferenceRow extends ConferenceRecord {
@@ -73,8 +71,7 @@ export function RecordsTable({
 }) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
-  // Opens on a click, but not on one that selects text to copy.
-  const clickToOpen = useClickToOpen();
+
   return (
     <TableCard>
       <TableStatus isLoading={isLoading} error={error} isEmpty={isEmpty} />
@@ -103,29 +100,17 @@ export function RecordsTable({
                 return (
                   <tr
                     key={roomKey(row)}
-                    aria-selected={onOpen ? open : undefined}
-                    {...(onOpen && {
-                      tabIndex: 0,
-                      title: 'Show this conference’s details',
-                      onClick: (e: { detail: number }) => clickToOpen(e, () => onOpen(row)),
-                      onKeyDown: (e: KeyboardEvent) => {
-                        if (e.key === 'Enter') onOpen(row);
-                      },
-                    })}
+                    // The details button at the row's end opens the room; the
+                    // row itself only shows which one is open.
                     className={clsx(
                       'transition-colors',
-                      onOpen && 'cursor-pointer outline-none focus-visible:bg-[#eef5fe] dark:focus-visible:bg-white/[0.04]',
                       open ? 'bg-[#e8f1fd] dark:bg-sky-500/10' : 'hover:bg-[#f5f9fe] dark:hover:bg-white/[0.03]',
                       empty && 'text-zinc-400 dark:text-zinc-500',
                     )}
                   >
                     <td className={CELL}>
                       {/* The id is its own link, to the account's page — not the details. */}
-                      <div
-                        className="w-fit text-sm font-semibold tabular-nums text-zinc-900 dark:text-white"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
+                      <div className="w-fit text-sm font-semibold tabular-nums text-zinc-900 dark:text-white">
                         <SummaryLink to={summaryPath('conference', row.account_id)!} title={`Open account ${row.account_id}'s page`}>
                           {row.account_id}
                         </SummaryLink>
