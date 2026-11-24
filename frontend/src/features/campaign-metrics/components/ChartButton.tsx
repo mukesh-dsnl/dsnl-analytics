@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ChartNoAxesColumn, PanelRightOpen } from 'lucide-react';
+import { ChartNoAxesColumn, Info } from 'lucide-react';
 
 import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS } from './TableChrome';
 
@@ -34,7 +34,7 @@ export function DetailsButton({ label, onClick }: { label: string; onClick: () =
       title="Show details"
       className={clsx(ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS)}
     >
-      <PanelRightOpen className="h-[18px] w-[18px]" strokeWidth={2.2} />
+      <Info className="h-[18px] w-[18px]" strokeWidth={2.2} />
     </button>
   );
 }
