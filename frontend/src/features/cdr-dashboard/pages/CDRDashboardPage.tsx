@@ -84,7 +84,12 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   // The date range lives in the header now, so it comes from the shared store
   // rather than from this page's own state — which is also what keeps it
   // steady while navigating between the service pages.
-  const { from, to } = useDateRange(status);
+  const range = useDateRange(status);
+  // A service's page reads one day (its header shows a single-date picker); a
+  // range left in the shared store by the All services page is read as its
+  // last day. All services keeps the whole range.
+  const from = service === 'all' ? range.from : range.to;
+  const to = range.to;
   // The filters render into the app header, beside the date control — see
   // components/HeaderSlot. They stay owned by this page (the field set differs
   // per service) and merely appear up there.

@@ -16,6 +16,7 @@ import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
+import { HeaderAttemptDay } from '../features/cdr-dashboard/components/HeaderAttemptDay';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
 import { HeaderSlotContext } from './HeaderSlot';
 import { BrandMark } from './BrandMark';
@@ -536,8 +537,11 @@ export function Layout() {
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
             {/* Summary covers the whole table; its own header says how far the data runs. */}
+            {/* A service's Attempt Metrics reads one day; All services keeps a range. */}
             {isAiChat || isMulticallRegistry || isSummary || isHome || isPorts ? null : location.pathname.endsWith('/campaign-metrics') ? (
               <HeaderCampaignDate />
+            ) : /^\/analytics\/(voicedrop|conference|multicall)\/attempt-metrics/.test(location.pathname) ? (
+              <HeaderAttemptDay />
             ) : (
               <HeaderDateRange />
             )}
