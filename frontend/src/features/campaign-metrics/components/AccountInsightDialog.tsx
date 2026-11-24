@@ -153,7 +153,7 @@ export function AccountInsightDialog({ filters, account, crn, onClose }: Account
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            <ExportMenu label="Export this report" disabled={!data} build={() => insightReport(data!, filters, account, crn)} />
+            <ExportMenu variant="boxed" label="Export this report" disabled={!data} build={() => insightReport(data!, filters, account, crn)} />
             <button
               type="button"
               onClick={onClose}

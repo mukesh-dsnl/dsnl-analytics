@@ -16,8 +16,9 @@ const FORMATS: Record<'xlsx' | 'pdf', { label: string; hint: string; icon: typeo
  * when a format is picked — from what the page shows at that moment, or, when
  * it has to fetch more first, asynchronously.
  *
- * `variant`: "header" is the square icon for the app header; "inline" is a
- * small icon button for inside a card or dialog.
+ * `variant`: "header" is a bare icon, styled like the theme toggle beside it in
+ * the app header; "boxed" is a bordered square, for beside other boxed buttons
+ * (the chart popup's Close); "inline" is a small boxed icon for inside a card.
  */
 export function ExportMenu({
   build,
@@ -27,7 +28,7 @@ export function ExportMenu({
 }: {
   build: () => Report | Promise<Report>;
   disabled?: boolean;
-  variant?: 'header' | 'inline';
+  variant?: 'header' | 'boxed' | 'inline';
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -58,12 +59,19 @@ export function ExportMenu({
           className={clsx(
             'inline-flex shrink-0 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-40',
             variant === 'header'
-              ? 'h-10 w-10 rounded-lg border border-zinc-200 bg-white text-[#45556e] shadow-sm hover:text-[#1d4ed8] hover:bg-zinc-50 dark:border-zinc-800 dark:bg-surface-dark dark:text-zinc-200 dark:hover:bg-zinc-800/60 dark:hover:text-sky-300'
-              : 'h-8 w-8 rounded-lg border border-[#e3eaf3] bg-white text-[#5b6a82] hover:bg-[#f3f7fc] hover:text-[#16213a] dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.1] dark:hover:text-white',
-            open && 'ring-2 ring-sky-300',
+              ? // The theme toggle's own look: the icon alone, no box.
+                'rounded-md p-1 text-[#45556e] hover:text-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3] dark:text-white dark:hover:text-sky-300'
+              : variant === 'boxed'
+                ? 'h-10 w-10 rounded-lg border border-zinc-200 bg-white text-[#45556e] shadow-sm hover:text-[#1d4ed8] hover:bg-zinc-50 dark:border-zinc-800 dark:bg-surface-dark dark:text-zinc-200 dark:hover:bg-zinc-800/60 dark:hover:text-sky-300'
+                : 'h-8 w-8 rounded-lg border border-[#e3eaf3] bg-white text-[#5b6a82] hover:bg-[#f3f7fc] hover:text-[#16213a] dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:bg-white/[0.1] dark:hover:text-white',
+            open && (variant === 'header' ? 'text-[#1d4ed8] dark:text-sky-300' : 'ring-2 ring-sky-300'),
           )}
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-[18px] w-[18px]" />}
+          {busy ? (
+            <Loader2 className={clsx('animate-spin', variant === 'header' ? 'h-5 w-5' : 'h-4 w-4')} />
+          ) : (
+            <Download className={variant === 'header' ? 'h-5 w-5' : 'h-[18px] w-[18px]'} />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent
