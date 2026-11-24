@@ -9,6 +9,7 @@ import type { ConferenceRecord } from '../api';
 import { SummaryLink } from '../../campaign-metrics/components/SummaryLink';
 import { ChartButton } from '../../campaign-metrics/components/ChartButton';
 import { summaryPath } from '../../campaign-metrics/links';
+import { useClickToOpen } from '../../../lib/useClickToOpen';
 
 /** A record as the table holds it: nulls flattened, and the connect rate worked out. */
 export interface ConferenceRow extends ConferenceRecord {
@@ -72,6 +73,8 @@ export function RecordsTable({
 }) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
+  // Opens on a click, but not on one that selects text to copy.
+  const clickToOpen = useClickToOpen();
   return (
     <TableCard>
       <TableStatus isLoading={isLoading} error={error} isEmpty={isEmpty} />
@@ -104,7 +107,7 @@ export function RecordsTable({
                     {...(onOpen && {
                       tabIndex: 0,
                       title: 'Show this conference’s details',
-                      onClick: () => onOpen(row),
+                      onClick: (e: { detail: number }) => clickToOpen(e, () => onOpen(row)),
                       onKeyDown: (e: KeyboardEvent) => {
                         if (e.key === 'Enter') onOpen(row);
                       },

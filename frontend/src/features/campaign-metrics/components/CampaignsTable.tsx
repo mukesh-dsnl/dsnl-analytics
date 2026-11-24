@@ -12,6 +12,7 @@ import { downloadCsv } from '../exportCsv';
 import { SummaryLink } from './SummaryLink';
 import { ChartButton } from './ChartButton';
 import { summaryPath } from '../links';
+import { useClickToOpen } from '../../../lib/useClickToOpen';
 
 interface CampaignsTableProps {
   rows: CampaignTableRow[] | undefined;
@@ -50,6 +51,8 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * row is tinted red, so it stands out without being searched for.
  */
 export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, onOpen, openCrn }: CampaignsTableProps) {
+  // Opens on a click, but not on one that selects text to copy.
+  const clickToOpen = useClickToOpen();
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -101,6 +104,7 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, 
                   row={row}
                   onChart={onChart}
                   onOpen={onOpen}
+                  onRowClick={onOpen && ((e) => clickToOpen(e, () => onOpen(row)))}
                   open={openCrn === row.crn}
                 />
               ))}
@@ -116,11 +120,14 @@ function CampaignRow({
   row,
   onChart,
   onOpen,
+  onRowClick,
   open,
 }: {
   row: CampaignTableRow;
   onChart?: (row: CampaignTableRow) => void;
   onOpen?: (row: CampaignTableRow) => void;
+  /** The row's click: opens the details unless the click was selecting text. */
+  onRowClick?: (e: { detail: number }) => void;
   open: boolean;
 }) {
   const incomplete = isIncomplete(row);
@@ -139,7 +146,7 @@ function CampaignRow({
       aria-selected={onOpen ? open : undefined}
       {...(onOpen && {
         tabIndex: 0,
-        onClick: () => onOpen(row),
+        onClick: onRowClick,
         onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
           if (e.key === 'Enter') onOpen(row);
         },
