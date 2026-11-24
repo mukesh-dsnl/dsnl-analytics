@@ -24,7 +24,7 @@ import { CampaignsTable } from '../components/CampaignsTable';
 import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
 import { conferenceSummaryApi } from '../../conference-summary/api';
 import { RecordsTable } from '../../conference-summary/components/RecordsTable';
-import type { ConferenceRow } from '../../conference-summary/components/RecordsTable';
+import type { ConferenceRow, ConferenceSortKey } from '../../conference-summary/components/RecordsTable';
 import { ConferenceRoomDrawer } from '../../conference-summary/components/ConferenceRoomDrawer';
 import type { RoomRef } from '../../conference-summary/components/ConferenceRoomDrawer';
 import { roomKey } from '../../conference-summary/api';
@@ -304,11 +304,12 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       ),
     );
   }, [conferenceQuery.data, term, account]);
-  // Conference rooms always read in start-time order.
-  const conferenceSorted = useMemo(
-    () => conferenceRows && [...conferenceRows].sort((a, b) => a.start_time.localeCompare(b.start_time) || a.crn - b.crn),
-    [conferenceRows],
-  );
+  // Conference rooms open in start-time order; a header click sorts by that column.
+  const conferenceSort = useSortableRows<ConferenceRow, ConferenceSortKey>(conferenceRows, {
+    key: 'start_time',
+    direction: 'asc',
+  });
+  const conferenceSorted = conferenceSort.rows;
 
   const campaignSort = useSortableRows<CampaignTableRow, CampaignSortKey>(campaignRows, {
     key: 'start_time',
@@ -483,6 +484,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           ) : view === 'campaigns' && service === 'conference' ? (
             <RecordsTable
               rows={conferenceSorted}
+              sort={conferenceSort.sort}
+              onSort={conferenceSort.toggle}
               isLoading={conferenceQuery.isPending}
               error={conferenceQuery.error}
               openKey={room ? roomKey(room) : null}
