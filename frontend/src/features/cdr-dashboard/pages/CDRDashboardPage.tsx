@@ -21,11 +21,12 @@ interface CDRDashboardPageProps {
  * (always shown) and the service itself (fixed by the route).
  *
  * Conference and Multicall share a field set — CPIN (CODR.CHAIR_PIN) only
- * means anything once CODR is in the join, which both of them force. All has
- * no identity scheme of its own, so it gets no fields at all.
+ * means anything once CODR is in the join, which both of them force. All
+ * services (reached by its URL only) offers every field: the backend joins
+ * CODR whenever a CPIN is given, whichever service is in view.
  */
 const SERVICE_FIELDS: Record<CdrService, DetailField[]> = {
-  all: [],
+  all: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
   voicedrop: ['account_id', 'crn', 'time_from', 'time_to'],
   conference: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
   multicall: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
