@@ -136,12 +136,23 @@ export function Layout() {
   /** Set the moment Logout is pressed: the panel is collapsing and the route is about to change. */
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const collapseTimer = useRef<number | undefined>(undefined);
-  // Collapsed, the sidebar is an icon rail, and stays one until it is opened
-  // with a click (the expand button at the top left of the header). It used to
-  // open while the pointer was over it, as an overlay — which covered the
-  // content whenever the pointer crossed the rail on its way elsewhere, and
-  // could strand a chart's hover readout underneath it.
-  const narrow = isSidebarCollapsed;
+  // Collapsed, the rail opens while the pointer is over it and closes when it
+  // leaves — as an overlay over the content, so nothing behind it moves. A
+  // short delay each way keeps a pointer passing across it from flickering it.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(peekTimer.current), []);
+  const openPeek = () => {
+    if (!isSidebarCollapsed) return;
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(true), 120);
+  };
+  const closePeek = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setPeek(false), 180);
+  };
+  // What the sidebar draws: the icon rail only when collapsed and not hovered.
+  const narrow = isSidebarCollapsed && !peek;
   /** The corner button's opening/closing circle — null when nothing is moving. */
 
   useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
@@ -262,9 +273,14 @@ export function Layout() {
         style={{ transition: 'width 300ms' }}
       >
       <aside
+        onMouseEnter={openPeek}
+        onMouseLeave={closePeek}
         className={clsx(
           'app-sidebar-scrim absolute inset-y-0 left-0 flex flex-col overflow-hidden',
           narrow ? 'w-20' : 'w-60',
+          // Opened by hover: it floats over the panel, so it takes the shell's
+          // own ground (fixed, so it lines up with the field behind) and a shadow.
+          peek && 'app-ground app-shell shadow-[8px_0_32px_rgba(0,0,0,0.35)]',
           isLoggingOut && 'opacity-0 pointer-events-none',
         )}
         // Width for the collapse, opacity for the logout fade — each at its own
@@ -292,12 +308,15 @@ export function Layout() {
           {!narrow && (
             <button
               type="button"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-              title="Collapse sidebar"
+              onClick={() => {
+                toggleSidebar();
+                setPeek(false);
+              }}
+              aria-label={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
+              title={peek ? 'Keep sidebar open' : 'Collapse sidebar'}
               className="ml-auto shrink-0 rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
             >
-              <PanelLeftClose className="h-5 w-5" />
+              {peek ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
             </button>
           )}
         </div>
