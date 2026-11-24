@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { AlertTriangle, Download, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { isIncomplete } from '../campaignRows';
@@ -20,6 +21,9 @@ interface CampaignsTableProps {
   onSort: (key: CampaignSortKey) => void;
   /** Opens the charts for one campaign (its account and CRN). */
   onChart?: (row: CampaignTableRow) => void;
+  /** Opens a campaign's details in the side sheet; the open one is highlighted. */
+  onOpen?: (row: CampaignTableRow) => void;
+  openCrn?: number | null;
 }
 
 /** The numeric columns, in reading order: what was loaded, what was dialled, how it went. */
@@ -45,7 +49,7 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * pinned header. A campaign with numbers left unblasted did not finish — its
  * row is tinted red, so it stands out without being searched for.
  */
-export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }: CampaignsTableProps) {
+export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, onOpen, openCrn }: CampaignsTableProps) {
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -92,7 +96,13 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             </thead>
             <tbody>
               {rows.map((row) => (
-                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} onChart={onChart} />
+                <CampaignRow
+                  key={`${row.account_id}-${row.client_id}-${row.crn}`}
+                  row={row}
+                  onChart={onChart}
+                  onOpen={onOpen}
+                  open={openCrn === row.crn}
+                />
               ))}
             </tbody>
           </table>
@@ -102,21 +112,46 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
   );
 }
 
-function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: CampaignTableRow) => void }) {
+function CampaignRow({
+  row,
+  onChart,
+  onOpen,
+  open,
+}: {
+  row: CampaignTableRow;
+  onChart?: (row: CampaignTableRow) => void;
+  onOpen?: (row: CampaignTableRow) => void;
+  open: boolean;
+}) {
   const incomplete = isIncomplete(row);
+  // Links and buttons inside the row do their own thing, not open the sheet.
+  const keep = { onClick: (e: { stopPropagation: () => void }) => e.stopPropagation() };
 
   return (
     <tr
       title={
         incomplete
           ? `Not finished: ${row.unblast_count.toLocaleString()} of this campaign's numbers were never dialled (Unblast)`
-          : undefined
+          : onOpen
+            ? 'Show this campaign’s details'
+            : undefined
       }
+      aria-selected={onOpen ? open : undefined}
+      {...(onOpen && {
+        tabIndex: 0,
+        onClick: () => onOpen(row),
+        onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
+          if (e.key === 'Enter') onOpen(row);
+        },
+      })}
       className={clsx(
         'border-b transition-colors',
-        incomplete
-          ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
-          : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
+        onOpen && 'cursor-pointer outline-none focus-visible:bg-[#eef5fe] dark:focus-visible:bg-white/[0.04]',
+        open
+          ? 'bg-[#e8f1fd] border-[#eef2f8] dark:bg-sky-500/10 dark:border-zinc-800/40'
+          : incomplete
+            ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
+            : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
       )}
     >
       {/* The red stripe on the leading edge keeps an incomplete row findable
@@ -128,6 +163,7 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
           'whitespace-nowrap text-sm font-semibold tabular-nums text-zinc-900 dark:text-white',
           incomplete && 'shadow-[inset_3px_0_0_theme(colors.red.500)]',
         )}
+        {...keep}
       >
         <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
           {row.account_id}
@@ -156,7 +192,7 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
         </span>
       </td>
 
-      <td className={clsx(CELL, 'min-w-[220px] max-w-[340px]')}>
+      <td className={clsx(CELL, 'min-w-[140px] max-w-[200px]')}>
         <span className="flex items-center gap-2">
           <span
             className="truncate text-sm font-semibold text-zinc-900 dark:text-white"
@@ -200,7 +236,7 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
       <td className={clsx(NUM, 'text-zinc-700 dark:text-zinc-300')}>
         {row.connected_duration.toLocaleString()}
       </td>
-      <td className={clsx(CELL, 'text-right')}>
+      <td className={clsx(CELL, 'text-right')} {...keep}>
         <span className="inline-flex items-center gap-1.5">
           {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
           <RecordsDownload row={row} />

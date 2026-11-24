@@ -645,6 +645,44 @@ def query_account_insight(
     }
 
 
+def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) -> dict[str, Any]:
+    """
+    What the Voicedrop campaign side panel adds to the campaign's summary row:
+    the providers it went out on and how many blasts it ran (from the day's CDR
+    file), plus the account and client names from the master lists.
+    """
+    try:
+        files = lake.files_for_range("cdr", day, day)
+    except lake.LakeUnavailable as exc:
+        raise DatasetNotReady(str(exc)) from exc
+    if not files:
+        raise DatasetNotReady(f"No CDR export file for {day} in {lake.root('cdr')}.")
+
+    found = _run(
+        f"""
+        SELECT array_to_string(list_sort(list(DISTINCT SERVICE_PROVIDER)), ', ') AS service_providers,
+               COUNT(DISTINCT CONFDIAL_REBLAST_COUNT)                            AS distinct_blast_count
+        FROM read_parquet({_sql_list(files)})
+        WHERE CALL_DATE = ?
+          AND CRN = ?
+        GROUP BY CALL_DATE, CRN
+        """,
+        [day, crn],
+    )
+    row = found[0] if found else {}
+    providers = [p.strip() for p in str(row.get("service_providers") or "").split(",") if p.strip()]
+    clients = directory.clients()
+    return {
+        "crn": crn,
+        "account_name": directory.accounts().get(int(account_id)),
+        "client_name": clients.get(int(client_id)) if client_id is not None else None,
+        "service_providers": providers,
+        "total_blasts": int(row.get("distinct_blast_count") or 0),
+        # False when the day's CDR file holds no call for this CRN.
+        "found_in_cdr": bool(found),
+    }
+
+
 def _trailing_int(label: str) -> int:
     """The number off the end of "Blast 12" / "AID 3", so these sort as the sequence they are."""
     try:

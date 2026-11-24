@@ -58,6 +58,18 @@ export interface Breakdown<Row> {
 }
 
 /** One Voicedrop campaign (CRN) on one day, from q100_dump.voicedrop_summary. */
+/** What the Voicedrop campaign side panel adds to its summary row. */
+export interface VoicedropCampaignDetail {
+  crn: number;
+  account_name: string | null;
+  client_name: string | null;
+  /** SERVICE_PROVIDER codes the campaign went out on, ascending. */
+  service_providers: string[];
+  /** Distinct CONFDIAL_REBLAST_COUNT values: how many blasts it ran. */
+  total_blasts: number;
+  found_in_cdr: boolean;
+}
+
 export interface VoicedropCampaignRow {
   date: string | null;
   account_id: number;
@@ -202,6 +214,10 @@ export const campaignApi = {
    * the reporting team's column order. Rows are plain arrays to keep a large
    * campaign's payload small.
    */
+  /** One campaign's providers, blast count and names — for its side panel. */
+  campaignDetail: (date: string, crn: number, accountId: number, clientId: number | null): Promise<VoicedropCampaignDetail> =>
+    post('campaigns/detail', { date, crn, account_id: accountId, client_id: clientId }),
+
   campaignRecords: (
     date: string,
     accountId: number,

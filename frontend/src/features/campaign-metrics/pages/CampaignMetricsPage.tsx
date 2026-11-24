@@ -26,6 +26,7 @@ import { conferenceSummaryApi } from '../../conference-summary/api';
 import { RecordsTable } from '../../conference-summary/components/RecordsTable';
 import type { ConferenceRow, ConferenceSortKey } from '../../conference-summary/components/RecordsTable';
 import { ConferenceRoomDrawer } from '../../conference-summary/components/ConferenceRoomDrawer';
+import { VoicedropCampaignDrawer } from '../components/VoicedropCampaignDrawer';
 import type { RoomRef } from '../../conference-summary/components/ConferenceRoomDrawer';
 import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
@@ -167,6 +168,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const [charting, setCharting] = useState<{ account: string; crn: string } | null>(null);
   // The conference room whose details are open (Conference › Campaigns).
   const [room, setRoom] = useState<RoomRef | null>(null);
+  // The Voicedrop campaign whose details are open (Voicedrop › Campaigns).
+  const [campaign, setCampaign] = useState<CampaignTableRow | null>(null);
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it
@@ -502,6 +505,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={campaignSort.sort}
               onSort={campaignSort.toggle}
               onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
+              onOpen={setCampaign}
+              openCrn={campaign?.crn ?? null}
             />
           ) : view === 'account' ? (
             <AccountWiseTable
@@ -548,6 +553,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       </div>
 
       {room && <ConferenceRoomDrawer key={roomKey(room)} room={room} onClose={() => setRoom(null)} />}
+      {campaign && (
+        <VoicedropCampaignDrawer key={`${campaign.date}-${campaign.crn}`} row={campaign} onClose={() => setCampaign(null)} />
+      )}
       {charting && (
         <AccountInsightDialog filters={filters} account={charting.account} crn={charting.crn} onClose={() => setCharting(null)} />
       )}

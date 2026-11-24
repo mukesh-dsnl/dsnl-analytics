@@ -137,6 +137,15 @@ class VoicedropCampaignsResponse(BaseModel):
     rows: list[VoicedropCampaignRow]
 
 
+class CampaignDetailRequest(BaseModel):
+    """One Voicedrop campaign, for its side panel: day, CRN, and whose it is."""
+
+    date: date
+    crn: int
+    account_id: int
+    client_id: Optional[int] = None
+
+
 class CampaignRecordsRequest(BaseModel):
     """One campaign's call records: its day, account and CRN."""
 
