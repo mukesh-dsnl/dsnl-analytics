@@ -454,6 +454,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
             }}
             onExport={handleExport}
             canExport={visibleCount > 0}
+            // The open tab's row count, once its rows are in; follows the search.
+            count={active.isPending || active.error ? null : visibleCount}
           />
         </div>
 

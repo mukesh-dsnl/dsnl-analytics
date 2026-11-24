@@ -17,6 +17,8 @@ interface MetricsToolbarProps<T extends string> {
   canExport: boolean;
   /** The colour key for the table below, shown at the left. */
   legend?: ReactNode;
+  /** How many rows the open tab's table lists; shown beside that tab only. Null while loading. */
+  count?: number | null;
 }
 
 /**
@@ -37,6 +39,7 @@ export function MetricsToolbar<T extends string>({
   onExport,
   canExport,
   legend,
+  count,
 }: MetricsToolbarProps<T>) {
   return (
     <div className="border-b border-zinc-200 dark:border-zinc-800/60">
@@ -62,6 +65,9 @@ export function MetricsToolbar<T extends string>({
               >
                 <tab.icon className="w-4 h-4 shrink-0" />
                 {tab.label}
+                {isActive && count != null && (
+                  <span className="tabular-nums opacity-80">({count.toLocaleString()})</span>
+                )}
                 {/* Drawn as a span rather than a border on the button so it can
                     sit flush on the strip's own rule and cover it exactly — a
                     border would land a pixel above and read as a double line. */}
