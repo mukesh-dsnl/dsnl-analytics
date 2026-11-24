@@ -126,6 +126,21 @@ export function VoicedropCampaignDrawer({ row, onClose }: { row: CampaignTableRo
         <Row label="Total blasts" mono>
           {detail ? (detail.found_in_cdr ? detail.total_blasts : <Dash />) : (failed ?? pending)}
         </Row>
+        <Row label={detail && detail.dids.length > 1 ? 'DIDs' : 'DID'} mono>
+          {detail ? (
+            detail.dids.length ? (
+              <span className="flex flex-col items-end gap-0.5">
+                {detail.dids.map((did) => (
+                  <span key={did}>{did}</span>
+                ))}
+              </span>
+            ) : (
+              <Dash />
+            )
+          ) : (
+            failed ?? pending
+          )}
+        </Row>
       </Section>
 
       <Section title="Voicedrop details">
@@ -171,6 +186,7 @@ function detailsText(row: CampaignTableRow, detail?: VoicedropCampaignDetail): s
     `CRN: ${row.crn}  Book Ref: ${row.booking_reference ?? '—'}`,
     `Service provider: ${detail ? detail.service_providers.map(providerName).join(', ') || '—' : '—'}`,
     `Total blasts: ${detail?.found_in_cdr ? detail.total_blasts : '—'}`,
+    `DID: ${detail?.dids.join(', ') || '—'}`,
     `List size: ${row.phone_number_count}  DND: ${row.dnd_count}  Dial out: ${row.dialout_count}`,
     `Blast: ${row.blast_count}  Unblast: ${row.unblast_count}`,
     `Connected: ${withShare(row.connected, row)}  Not connected: ${withShare(row.not_connected, row)}`,
@@ -204,6 +220,7 @@ ${tr('CRN', mono(row.crn))}
 ${tr('Book Ref', mono(row.booking_reference))}
 ${tr('Service provider', escapeHtml(detail ? detail.service_providers.map(providerName).join(', ') || '—' : '—'))}
 ${tr('Total blasts', mono(detail?.found_in_cdr ? detail.total_blasts : '—'))}
+${tr(detail && detail.dids.length > 1 ? 'DIDs' : 'DID', `<span class="mono">${detail?.dids.length ? detail.dids.map(escapeHtml).join('<br>') : '—'}</span>`)}
 </table>
 <h2>Voicedrop details</h2><table class="kv">
 ${tr('List size', mono(nf.format(row.phone_number_count)))}

@@ -648,8 +648,11 @@ def query_account_insight(
 def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) -> dict[str, Any]:
     """
     What the Voicedrop campaign side panel adds to the campaign's summary row:
-    the providers it went out on and how many blasts it ran (from the day's CDR
-    file), plus the account and client names from the master lists.
+    the providers it went out on, how many blasts it ran and its DIDs (from the
+    day's CDR file), plus the account and client names from the master lists.
+
+    DID is a DOUBLE in the CDR export, so it is cast to a whole number before
+    listing: "34170187", not "34170187.0".
     """
     try:
         files = lake.files_for_range("cdr", day, day)
@@ -661,7 +664,9 @@ def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) 
     found = _run(
         f"""
         SELECT array_to_string(list_sort(list(DISTINCT SERVICE_PROVIDER)), ', ') AS service_providers,
-               COUNT(DISTINCT CONFDIAL_REBLAST_COUNT)                            AS distinct_blast_count
+               COUNT(DISTINCT CONFDIAL_REBLAST_COUNT)                            AS distinct_blast_count,
+               array_to_string(list_sort(list(DISTINCT CAST(DID AS BIGINT))
+                   FILTER (WHERE DID IS NOT NULL)), ', ')                        AS dids
         FROM read_parquet({_sql_list(files)})
         WHERE CALL_DATE = ?
           AND CRN = ?
@@ -671,6 +676,7 @@ def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) 
     )
     row = found[0] if found else {}
     providers = [p.strip() for p in str(row.get("service_providers") or "").split(",") if p.strip()]
+    dids = [d.strip() for d in str(row.get("dids") or "").split(",") if d.strip()]
     clients = directory.clients()
     return {
         "crn": crn,
@@ -678,6 +684,7 @@ def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) 
         "client_name": clients.get(int(client_id)) if client_id is not None else None,
         "service_providers": providers,
         "total_blasts": int(row.get("distinct_blast_count") or 0),
+        "dids": dids,
         # False when the day's CDR file holds no call for this CRN.
         "found_in_cdr": bool(found),
     }

@@ -67,6 +67,8 @@ export interface VoicedropCampaignDetail {
   service_providers: string[];
   /** Distinct CONFDIAL_REBLAST_COUNT values: how many blasts it ran. */
   total_blasts: number;
+  /** The DIDs the campaign used, ascending, as whole numbers. */
+  dids: string[];
   found_in_cdr: boolean;
 }
 
