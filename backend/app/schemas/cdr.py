@@ -162,6 +162,12 @@ class ReasonDatum(CategoryDatum):
     codes: list[CategoryDatum] = []
 
 
+class CauseDatum(CategoryDatum):
+    """One raw disconnect code, named from the system cause-code list."""
+
+    code: str = ""
+
+
 class PeakPortDatum(BaseModel):
     bucket: str
     peak: float
@@ -236,6 +242,8 @@ class CdrDashboardResponse(BaseModel):
     reblast: CdrReblast
     reblast_aid: list[ReblastAidDatum]
     disconnect_reason: list[ReasonDatum]
+    # The same attempts, one row per raw code with the system's cause message.
+    disconnect_cause: list[CauseDatum] = []
     location: list[CategoryDatum]
     minutes_by_location: list[LocationMinutesDatum]
     call_funnel: list[CategoryDatum]

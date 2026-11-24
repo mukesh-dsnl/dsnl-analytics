@@ -49,6 +49,13 @@ _DISCONNECT_REASONS: dict[str, str] = json.loads(
     (Path(__file__).parent / "disconnect_reasons.json").read_text(encoding="utf-8")
 )
 
+# Code -> the switch's own cause message (cause_codes.json, from the system's
+# cause-code list). The dashboard's disconnect card shows the friendly names
+# above by default; this is its "system cause codes" view of the same counts.
+_CAUSE_CODES: dict[str, str] = json.loads(
+    (Path(__file__).parent / "cause_codes.json").read_text(encoding="utf-8")
+)
+
 # Every panel the single-pass dashboard query can produce.
 DASHBOARD_PANELS = (
     "summary",
@@ -751,10 +758,27 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     return _by_value(rows)
 
 
+def _cause_codes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The disconnect panel's raw rows, one per code, named from the system cause-code list."""
+    out = []
+    for row in rows:
+        code = str(row["label"])
+        if code in ("None", ""):
+            code, name = "", "No code recorded"
+        else:
+            name = _CAUSE_CODES.get(code, "Not in the cause-code list")
+        out.append({"code": code, "label": name, "value": row["value"]})
+    return sorted(out, key=lambda r: r["value"], reverse=True)
+
+
 def query_dashboard(f: CdrFilter) -> dict:
     """Every dashboard panel, from one pass over the range."""
     grouped, meta = compute_panels(f)
-    return {panel: _shape(panel, rows) for panel, rows in grouped.items()} | meta
+    shaped = {panel: _shape(panel, rows) for panel, rows in grouped.items()}
+    # Same rows as disconnect_reason, unfolded: no second read of the files.
+    if "disconnect_reason" in grouped:
+        shaped["disconnect_cause"] = _cause_codes(grouped["disconnect_reason"])
+    return shaped | meta
 
 
 # ── Single-panel endpoints ─────────────────────────────────────────────────

@@ -97,6 +97,11 @@ export interface ReasonDatum extends CategoryDatum {
   codes?: CategoryDatum[];
 }
 
+/** One raw disconnect code with the system cause message. */
+export interface CauseDatum extends CategoryDatum {
+  code: string;
+}
+
 export interface PeakPortDatum {
   bucket: string;
   peak: number;
@@ -157,6 +162,8 @@ export interface CdrDashboard {
   reblast: CdrReblast;
   reblast_aid: ReblastAidDatum[];
   disconnect_reason: ReasonDatum[];
+  /** The same attempts per raw code, named from the system cause-code list. */
+  disconnect_cause?: CauseDatum[];
   location: CategoryDatum[];
   /** Connected-call minutes by location, split by dial direction — the Minutes Usage KPI's hover. */
   minutes_by_location: LocationMinutesDatum[];
