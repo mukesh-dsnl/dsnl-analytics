@@ -58,8 +58,7 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             <thead>
               <tr>
                 <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
-                {/* A no-break space keeps "Book Ref" on one line in its narrow column. */}
-                <SortableHeader label={'Book\u00a0Ref'} sortKey="booking_reference" sort={sort} onSort={onSort} />
+                <SortableHeader label="Book Ref" sortKey="booking_reference" sort={sort} onSort={onSort} />
                 <SortableHeader label="Start" sortKey="start_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="End" sortKey="end_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
