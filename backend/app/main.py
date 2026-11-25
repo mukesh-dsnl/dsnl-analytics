@@ -105,7 +105,7 @@ deliberate: this application renders model-generated content, and a token in
 app = FastAPI(
     title="DSNL Analytics",
     description=DESCRIPTION,
-    version="3.0",
+    version="4.0",
     lifespan=lifespan,
     openapi_tags=TAGS_METADATA,
     # The built-in docs routes are switched off and re-declared below, behind
