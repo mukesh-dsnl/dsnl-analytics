@@ -1,5 +1,5 @@
-import { createContext, createElement, useContext, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import { createContext, createElement, useContext, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
 import {
   Area,
   AreaChart,
@@ -12,8 +12,11 @@ import {
 import {
   AlertTriangle,
   BellRing,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
+  Loader2,
   MapPin,
   MousePointer2,
   PhoneOff,
@@ -43,6 +46,7 @@ import type { TipRow } from './HoverTooltip';
 import { useHover } from './tooltipContext';
 import { providerName } from '../../../../lib/providers';
 import { Toggle } from '../../../summary/components/ui';
+import { copyElementImage } from '../../../../lib/elementImage';
 
 interface AttemptChartsProps {
   data: CdrDashboard | undefined;
@@ -84,6 +88,13 @@ const TABS: { id: Tab; label: string; dialOutOnly?: boolean }[] = [
 
 /** Set when a single card is shown on its own: it then takes the full row. */
 const FullWidth = createContext(false);
+
+/**
+ * Whether cards carry a copy-as-image button. On for the Attempt Metrics
+ * charts (AttemptCharts provides it); the Summary pages, which reuse Card,
+ * leave it off.
+ */
+const CopyableCards = createContext(false);
 
 const BUCKET_LABEL: Record<string, string> = {
   minute: 'Highest concurrent ports per minute',
@@ -132,6 +143,7 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
 
   return (
     <HoverTooltipProvider>
+      <CopyableCards.Provider value={true}>
       <div className="vd-design">
         {/* Chart groups — a segmented switch */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -194,6 +206,7 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
           )
         )}
       </div>
+      </CopyableCards.Provider>
     </HoverTooltipProvider>
   );
 }
@@ -237,9 +250,12 @@ export function Card({
   children: ReactNode;
 }) {
   const full = useContext(FullWidth);
+  const copyable = useContext(CopyableCards);
+  const cardRef = useRef<HTMLElement>(null);
   if (full) span = 12;
   return (
     <article
+      ref={cardRef}
       className={clsx(
         'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eef5] bg-white shadow-[0_6px_20px_#1c305408] dark:border-[#1c2a42] dark:bg-[#0e192c] dark:shadow-[0_10px_30px_-16px_rgba(0,0,0,0.8)]',
         span === 7 && 'lg:col-span-7',
@@ -252,7 +268,10 @@ export function Card({
           <h3 className={clsx('m-0 text-[13px] font-medium leading-[1.4]', INK)}>{title}</h3>
           <p className={clsx('mt-0.5 mb-0 text-[12px] leading-normal', MUTED)}>{subtitle}</p>
         </div>
-        {!isLoading && !error && !isEmpty && extra}
+        <div className="flex shrink-0 items-start gap-2">
+          {!isLoading && !error && !isEmpty && extra}
+          {copyable && !isLoading && !error && !isEmpty && <CopyCardButton card={cardRef} title={title} />}
+        </div>
       </div>
       <div className={clsx('flex-1 p-[18px]', bodyClassName)}>
         {isLoading ? (
@@ -271,6 +290,57 @@ export function Card({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * The small copy icon at a card's top right: copies a picture of the card, as
+ * it looks now, to the clipboard. It leaves itself out of the picture.
+ */
+function CopyCardButton({ card, title }: { card: RefObject<HTMLElement | null>; title: string }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
+  const [problem, setProblem] = useState('');
+  const copy = async () => {
+    if (!card.current || state === 'busy') return;
+    setState('busy');
+    try {
+      await copyElementImage(card.current);
+      setState('done');
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : 'Could not copy the image.');
+      setState('failed');
+    }
+    window.setTimeout(() => setState('idle'), 1800);
+  };
+  const label =
+    state === 'done' ? 'Copied as image' : state === 'failed' ? problem : state === 'busy' ? 'Copying…' : `Copy "${title}" as an image`;
+  return (
+    <button
+      type="button"
+      data-snapshot-skip=""
+      onClick={() => void copy()}
+      aria-label={label}
+      title={label}
+      className={clsx(
+        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
+        state === 'done'
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : state === 'failed'
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-[#9aa6b8] hover:bg-[#f2f5fa] hover:text-[#1d4ed8] dark:text-zinc-500 dark:hover:bg-white/[0.06] dark:hover:text-sky-300',
+        FOCUS,
+      )}
+    >
+      {state === 'busy' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : state === 'done' ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : state === 'failed' ? (
+        <AlertTriangle className="h-3.5 w-3.5" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
   );
 }
 
