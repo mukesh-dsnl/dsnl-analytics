@@ -528,3 +528,23 @@ body {
     animation-duration: 3s;
   }
 }
+
+/* The clock / calendar glyph inside a native time or date field is drawn by
+   the browser in black, so on a dark field it vanished. Inverted here, once,
+   for every such field. (The filter bar used to try this per field with
+   `[&::-webkit-calendar-picker-indicator]:dark:invert`, but that order puts
+   the dark selector *after* the pseudo-element, which is not valid CSS, so the
+   rule was dropped; Port Analyzer's time fields had no rule at all.) */
+.dark input[type='time']::-webkit-calendar-picker-indicator,
+.dark input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* A native dropdown's open list is drawn by the browser on a white sheet,
+   while the select itself carries the dark theme's light text — so in dark
+   mode the options were white on white (Port Analyzer's Service and Time).
+   Giving the options their own dark ground fixes every select at once. */
+.dark select option {
+  background-color: #0e192c;
+  color: #e4e4e7;
+}

@@ -1,7 +1,9 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUIStore, useAuthStore } from '../store';
 import {
+  Activity,
   House,
+  Megaphone,
   Server,
   LayoutGrid,
   LogOut,
@@ -14,8 +16,9 @@ import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import { HeaderDateRange } from '../features/cdr-dashboard/components/HeaderDateRange';
+import { HeaderAttemptDay } from '../features/cdr-dashboard/components/HeaderAttemptDay';
 import { HeaderCampaignDate } from '../features/campaign-metrics/components/HeaderCampaignDate';
-import { HeaderSlotContext } from './HeaderSlot';
+import { HeaderActionsContext, HeaderSlotContext } from './HeaderSlot';
 import { BrandMark } from './BrandMark';
 import { AnalyticsAiIcon } from './AnalyticsAiIcon';
 import { ContentPanelContext } from './ContentPanelSlot';
@@ -51,6 +54,14 @@ const OVERVIEW: NavSection = {
     { label: 'Port Analyzer', path: '/analytics/ports', icon: Server },
   ],
 };
+/**
+ * The one page of the all-services view. It belongs to no service, so on it
+ * the switcher reads "All services" and the list under it is this entry
+ * alone, rather than the pages of whichever service was chosen last.
+ */
+const ALL_SERVICES_PAGES: NavItem[] = [
+  { label: 'Attempt Metrics', path: '/analytics/all/attempt-metrics', icon: Activity },
+];
 // The assistant is deliberately not a nav entry: the floating button in the
 // corner is its way in, and two controls for one destination in the same
 // column is one too many.
@@ -120,6 +131,8 @@ export function Layout() {
   // *value* to portal into, so it has to survive a render, and a plain ref
   // would still be null on the render the children mount in.
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
+  // The page's actions (its Export menu), between the date control and the theme toggle.
+  const [headerActions, setHeaderActions] = useState<HTMLDivElement | null>(null);
   // Same reasoning for the panel itself: page-owned overlays portal into it so
   // they centre on the card rather than on the viewport (see ContentPanelSlot).
   const [contentPanel, setContentPanel] = useState<HTMLDivElement | null>(null);
@@ -166,6 +179,8 @@ export function Layout() {
   // new one (Campaign Metrics stays Campaign Metrics), or its first page when
   // it has no such page; anywhere else it only changes the list.
   const isPorts = location.pathname.startsWith('/analytics/ports');
+  // All services › Attempt Metrics: every service's attempts on one page.
+  const isAllServices = location.pathname.startsWith('/analytics/all/');
   const switchService = (next: ServiceId) => {
     setNavService(next);
     // Port Analyzer covers every service: switching sets its service filter.
@@ -175,10 +190,29 @@ export function Layout() {
       navigate(`/analytics/ports?${params}`);
       return;
     }
+    // The all-services page has no service of its own to swap out, so choosing
+    // one there opens that service's Attempt Metrics. Before, the switcher only
+    // changed the list under it and the page went on showing every service.
+    if (isAllServices) {
+      navigate(`/analytics/${next}/attempt-metrics`);
+      return;
+    }
     if (!routeService || next === routeService) return;
     const here = SERVICES[routeService].pages.find((p) => isActivePath(p.path));
     const there = SERVICES[next].pages.find((p) => p.key === here?.key) ?? SERVICES[next].pages[0];
     navigate(there.path);
+  };
+
+  // Attempt Metrics and Campaign Metrics exist once per service and look the
+  // same on each, so the header says which one this is. (Every other page puts
+  // its own title into the header slot.)
+  const titled = location.pathname.match(
+    /^\/analytics\/(all|voicedrop|conference|multicall)\/(attempt-metrics|campaign-metrics)$/,
+  );
+  const pageTitle = titled && {
+    service: titled[1] === 'all' ? 'All services' : SERVICES[titled[1] as ServiceId].name,
+    page: titled[2] === 'attempt-metrics' ? 'Attempt Metrics' : 'Campaign Metrics',
+    icon: titled[2] === 'attempt-metrics' ? Activity : Megaphone,
   };
 
   /** The chat route is the one page with no date control of its own. */
@@ -362,13 +396,13 @@ export function Layout() {
                   <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/55">Services</div>
                 )}
                 <div className="pb-1.5">
-                  <ServiceSwitcher value={shownService} onChange={switchService} collapsed={narrow} />
+                  <ServiceSwitcher value={shownService} allServices={isAllServices} onChange={switchService} collapsed={narrow} />
                 </div>
-                {SERVICES[shownService].pages.map((item) => (
+                {(isAllServices ? ALL_SERVICES_PAGES : SERVICES[shownService].pages).map((item) => (
                   <NavLink
                     key={item.path}
                     item={item}
-                    section={SERVICES[shownService].name}
+                    section={isAllServices ? 'All services' : SERVICES[shownService].name}
                     active={isActivePath(item.path)}
                     collapsed={narrow}
                   />
@@ -486,6 +520,17 @@ export function Layout() {
                 <PanelLeftOpen className="w-5 h-5" />
               </button>
             )}
+            {pageTitle && (
+              <h1 className="hidden shrink-0 items-center gap-2.5 lg:flex">
+                <pageTitle.icon className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span className="flex flex-col whitespace-nowrap leading-tight">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    {pageTitle.service}
+                  </span>
+                  <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{pageTitle.page}</span>
+                </span>
+              </h1>
+            )}
             <div
               ref={setHeaderSlot}
               className="flex-1 min-w-0 flex items-center py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -494,11 +539,16 @@ export function Layout() {
               question, and the assistant names the one it used in its answer.
               A picker here would imply it narrowed the query, which it did not. */}
             {/* Summary covers the whole table; its own header says how far the data runs. */}
+            {/* A service's Attempt Metrics reads one day; All services keeps a range. */}
             {isAiChat || isMulticallRegistry || isSummary || isHome || isPorts ? null : location.pathname.endsWith('/campaign-metrics') ? (
               <HeaderCampaignDate />
+            ) : /^\/analytics\/(voicedrop|conference|multicall)\/attempt-metrics/.test(location.pathname) ? (
+              <HeaderAttemptDay />
             ) : (
               <HeaderDateRange />
             )}
+            {/* Empty unless the page puts its actions here. */}
+            <div ref={setHeaderActions} className="flex shrink-0 items-center gap-2 empty:hidden" />
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -519,9 +569,11 @@ export function Layout() {
             )}
           >
             <HeaderSlotContext.Provider value={headerSlot}>
-              <ContentPanelContext.Provider value={contentPanel}>
-                <Outlet />
-              </ContentPanelContext.Provider>
+              <HeaderActionsContext.Provider value={headerActions}>
+                <ContentPanelContext.Provider value={contentPanel}>
+                  <Outlet />
+                </ContentPanelContext.Provider>
+              </HeaderActionsContext.Provider>
             </HeaderSlotContext.Provider>
           </main>
         </div>

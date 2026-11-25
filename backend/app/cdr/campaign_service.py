@@ -21,13 +21,15 @@ connected conferee's rows are always a subset of that scope's rows, so the
 subtraction is exact and can never go negative.
 """
 
+import json
 import logging
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import duckdb
 
-from app.cdr import lake
+from app.cdr import directory, lake
 from app.schemas.campaign import CampaignFilter
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,14 @@ _SERVICE_PREDICATE: dict[str, str] = {
     "conference": "o.MODULE_TYPE = 1",
     "multicall": "o.MODULE_TYPE = 4",
 }
+
+
+# Code -> reason name, the same file Attempt Metrics reads (cdr/service.py), so
+# the chart popup names a reason exactly as that page does instead of printing
+# the bare code.
+_DISCONNECT_REASONS: dict[str, str] = json.loads(
+    (Path(__file__).parent / "disconnect_reasons.json").read_text(encoding="utf-8")
+)
 
 
 class DatasetNotReady(RuntimeError):
@@ -223,7 +233,25 @@ def query_account_wise(f: CampaignFilter, search: str | None = None) -> list[dic
         """,
         params,
     )
-    return [_with_derived(r) for r in rows]
+    names = directory.accounts()
+    return [_with_account_name(_with_derived(r), names) for r in rows]
+
+
+def _with_account_name(row: dict[str, Any], names: dict[int, str]) -> dict[str, Any]:
+    """
+    The account's name from the master list, beside its id.
+
+    ACCOUNTID 0 is not an account: it is what CDR carries when a call belongs
+    to none (nearly all of MultiCall, 2,379 of 2,399 parties on 2026-11-16,
+    whose app users are not under a corporate account). The master list does
+    hold a row for id 0, but naming these calls after it would be wrong.
+    """
+    try:
+        account_id = int(row["account"])
+    except (TypeError, ValueError):
+        account_id = 0
+    row["account_name"] = names.get(account_id) if account_id > 0 else None
+    return row
 
 
 def query_account_crn(f: CampaignFilter, account_id: str) -> list[dict[str, Any]]:
@@ -246,42 +274,64 @@ def query_account_crn(f: CampaignFilter, account_id: str) -> list[dict[str, Any]
     return [_with_derived(r) for r in rows]
 
 
-def query_service_provider_wise(f: CampaignFilter) -> list[dict[str, Any]]:
-    """Per-service-provider breakdown for the day."""
+def _breakdown(f: CampaignFilter, key_sql: str, label: str) -> dict[str, Any]:
+    """
+    One breakdown's rows, plus the day's own total and how far the rows overrun it.
+
+    The rows count distinct conferees *within* each group, so a conferee who
+    was tried through two groups is in both rows. That is right for each row
+    (both providers really did carry that number) but it means the rows add up
+    to more than the day holds. Measured on 2026-11-16, Voicedrop: provider
+    rows sum to 1,270,690 against 1,270,669 distinct numbers; the 21 extra are
+    numbers dialled over two providers (19 of them over 15 and 22). Conference
+    overlaps far more (27,860 against 16,701), since a party is routinely
+    retried on another provider.
+
+    So the total is counted once over the whole day, in the same pass
+    (GROUPING SETS), and `overlap` is the difference: how many group
+    memberships are second appearances of a conferee already counted.
+    """
     from_clause = _from_clause(f)
     where_sql, params = _where(f)
 
-    rows = _run(
+    found = _run(
         f"""
-        SELECT CAST(c.SERVICE_PROVIDER AS VARCHAR) AS service_provider,
+        WITH scoped AS (
+            SELECT {key_sql} AS label,
+                   c.CRN, c.CONFEREE_SEQ_NO, c.INCONFERENCE,
+                   c.RELEASE_DATETIME_EPOC, c.INCONF_DATETIME_EPOC
+            {from_clause}
+            {where_sql}
+        )
+        SELECT c.label AS {label},
+               GROUPING(c.label) AS is_total,
                {_METRIC_COLUMNS}
-        {from_clause}
-        {where_sql}
-        GROUP BY 1
+        FROM scoped c
+        GROUP BY GROUPING SETS ((c.label), ())
         ORDER BY total_size DESC
         """,
         params,
     )
-    return [_with_derived(r) for r in rows]
+    rows = [_with_derived(r) for r in found if not r["is_total"]]
+    total = next((_with_derived(r) for r in found if r["is_total"]), None) or _with_derived({})
+    for row in (*rows, total):
+        row.pop("is_total", None)
+    total.pop(label, None)
+    return {
+        "rows": rows,
+        "total": total,
+        "overlap": sum(r["total_size"] for r in rows) - total["total_size"],
+    }
 
 
-def query_location_wise(f: CampaignFilter) -> list[dict[str, Any]]:
-    """Per-location (bridge server) breakdown for the day."""
-    from_clause = _from_clause(f)
-    where_sql, params = _where(f)
+def query_service_provider_wise(f: CampaignFilter) -> dict[str, Any]:
+    """Per-service-provider breakdown for the day, with the day's distinct total."""
+    return _breakdown(f, "CAST(c.SERVICE_PROVIDER AS VARCHAR)", "service_provider")
 
-    rows = _run(
-        f"""
-        SELECT 'L' || CAST(c.LOCATION_ID AS VARCHAR) AS location,
-               {_METRIC_COLUMNS}
-        {from_clause}
-        {where_sql}
-        GROUP BY 1
-        ORDER BY total_size DESC
-        """,
-        params,
-    )
-    return [_with_derived(r) for r in rows]
+
+def query_location_wise(f: CampaignFilter) -> dict[str, Any]:
+    """Per-location (bridge server) breakdown for the day, with the day's distinct total."""
+    return _breakdown(f, "'L' || CAST(c.LOCATION_ID AS VARCHAR)", "location")
 
 
 # ── Account insight (the per-row chart popup) ──────────────────────────────
@@ -496,7 +546,19 @@ def query_account_insight(
         return round((part / whole) * 100, 2) if whole else 0.0
 
     # Disconnect reasons: the largest few by name, the rest as one "Other".
-    reasons = sorted(grouped.get("disconnect", []), key=lambda r: r["value"], reverse=True)
+    # Codes are folded onto their names first (several codes share one name),
+    # so the popup reads "Ringing Not Answered", as Attempt Metrics does, and
+    # not "Reason 31". A code the name list does not cover keeps its number.
+    by_name: dict[str, int] = {}
+    for r in grouped.get("disconnect", []):
+        code = str(r["label"])
+        name = _DISCONNECT_REASONS.get(code) or (f"Code {code}" if code not in ("None", "") else "No code")
+        by_name[name] = by_name.get(name, 0) + int(r["value"])
+    reasons = sorted(
+        ({"label": name, "value": count} for name, count in by_name.items()),
+        key=lambda r: r["value"],
+        reverse=True,
+    )
     named = reasons[:_TOP_DISCONNECT_REASONS]
     tail = sum(int(r["value"]) for r in reasons[_TOP_DISCONNECT_REASONS:])
     disconnect = [
@@ -580,6 +642,51 @@ def query_account_insight(
         "disconnect_reasons": disconnect,
         "carriers": carriers,
         "blasts": blasts,
+    }
+
+
+def campaign_detail(day: Any, crn: int, account_id: int, client_id: int | None) -> dict[str, Any]:
+    """
+    What the Voicedrop campaign side panel adds to the campaign's summary row:
+    the providers it went out on, how many blasts it ran and its DIDs (from the
+    day's CDR file), plus the account and client names from the master lists.
+
+    DID is a DOUBLE in the CDR export, so it is cast to a whole number before
+    listing: "34170187", not "34170187.0".
+    """
+    try:
+        files = lake.files_for_range("cdr", day, day)
+    except lake.LakeUnavailable as exc:
+        raise DatasetNotReady(str(exc)) from exc
+    if not files:
+        raise DatasetNotReady(f"No CDR export file for {day} in {lake.root('cdr')}.")
+
+    found = _run(
+        f"""
+        SELECT array_to_string(list_sort(list(DISTINCT SERVICE_PROVIDER)), ', ') AS service_providers,
+               COUNT(DISTINCT CONFDIAL_REBLAST_COUNT)                            AS distinct_blast_count,
+               array_to_string(list_sort(list(DISTINCT CAST(DID AS BIGINT))
+                   FILTER (WHERE DID IS NOT NULL)), ', ')                        AS dids
+        FROM read_parquet({_sql_list(files)})
+        WHERE CALL_DATE = ?
+          AND CRN = ?
+        GROUP BY CALL_DATE, CRN
+        """,
+        [day, crn],
+    )
+    row = found[0] if found else {}
+    providers = [p.strip() for p in str(row.get("service_providers") or "").split(",") if p.strip()]
+    dids = [d.strip() for d in str(row.get("dids") or "").split(",") if d.strip()]
+    clients = directory.clients()
+    return {
+        "crn": crn,
+        "account_name": directory.accounts().get(int(account_id)),
+        "client_name": clients.get(int(client_id)) if client_id is not None else None,
+        "service_providers": providers,
+        "total_blasts": int(row.get("distinct_blast_count") or 0),
+        "dids": dids,
+        # False when the day's CDR file holds no call for this CRN.
+        "found_in_cdr": bool(found),
     }
 
 

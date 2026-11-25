@@ -309,9 +309,21 @@ def account(account_id: int) -> Optional[dict[str, Any]]:
     }
 
 
-def statement(month: Optional[str] = None) -> list[dict[str, Any]]:
-    """Per account, per month: conferences, parties, minutes — one month, or every month."""
+def statement_report(month: Optional[str] = None) -> dict[str, Any]:
+    """
+    The statement's lines, with the scope's distinct active days. The lines'
+    own "active_days" are per account, so their sum counts a day once per
+    account (879 for October 2026); the Total row needs the distinct days.
+    """
     rows = _daily_rows()
+    days = {row["day"] for row in rows if month is None or _month_key(row["day"]) == month}
+    return {"rows": statement(month, rows), "active_days": len(days)}
+
+
+def statement(month: Optional[str] = None, rows: Optional[list[dict[str, Any]]] = None) -> list[dict[str, Any]]:
+    """Per account, per month: conferences, parties, minutes — one month, or every month."""
+    if rows is None:
+        rows = _daily_rows()
     names = _names()
     by_key: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:

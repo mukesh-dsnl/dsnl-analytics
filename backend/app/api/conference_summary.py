@@ -74,7 +74,7 @@ def conference_account(account_id: int) -> dict[str, Any]:
 def conference_statement(month: Optional[str] = Query(default=None)) -> dict[str, Any]:
     if month is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
-    return {"month": month, "rows": _read(insights.statement, month)}
+    return {"month": month, **_read(insights.statement_report, month)}
 
 
 @router.get("/conference-summary/room")

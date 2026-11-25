@@ -7,7 +7,7 @@ import { PageLoadingBar } from '../../../components/Loading';
 import { filtersForDay } from '../api';
 import type { CdrFilters, CdrService, CdrStatus } from '../api';
 import { spanDays } from '../dateRange';
-import { useCdrStatus, useDateRange, useDebouncedValue } from '../hooks';
+import { useCdrStatus, useDateRange } from '../hooks';
 import { CDRDashboard } from '../components/CDRDashboard';
 import { ServiceFilterBar } from '../components/ServiceFilterBar';
 import type { DetailField } from '../components/ServiceFilterBar';
@@ -21,11 +21,12 @@ interface CDRDashboardPageProps {
  * (always shown) and the service itself (fixed by the route).
  *
  * Conference and Multicall share a field set — CPIN (CODR.CHAIR_PIN) only
- * means anything once CODR is in the join, which both of them force. All has
- * no identity scheme of its own, so it gets no fields at all.
+ * means anything once CODR is in the join, which both of them force. All
+ * services (reached by its URL only) offers every field: the backend joins
+ * CODR whenever a CPIN is given, whichever service is in view.
  */
 const SERVICE_FIELDS: Record<CdrService, DetailField[]> = {
-  all: [],
+  all: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
   voicedrop: ['account_id', 'crn', 'time_from', 'time_to'],
   conference: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
   multicall: ['account_id', 'crn', 'conf_num', 'cpin', 'time_from', 'time_to'],
@@ -84,7 +85,12 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
   // The date range lives in the header now, so it comes from the shared store
   // rather than from this page's own state — which is also what keeps it
   // steady while navigating between the service pages.
-  const { from, to } = useDateRange(status);
+  const range = useDateRange(status);
+  // A service's page reads one day (its header shows a single-date picker); a
+  // range left in the shared store by the All services page is read as its
+  // last day. All services keeps the whole range.
+  const from = service === 'all' ? range.from : range.to;
+  const to = range.to;
   // The filters render into the app header, beside the date control — see
   // components/HeaderSlot. They stay owned by this page (the field set differs
   // per service) and merely appear up there.
@@ -112,21 +118,12 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
 
   const fields = SERVICE_FIELDS[service];
 
-  // Only the typed fields are debounced, and deliberately so. Holding the
-  // dates back too would mean that widening the range fires a query for the
-  // *old* range first and makes the backend read a month of files nobody is
-  // waiting for. Dates are discrete clicks, so they apply at once.
-  const { account_id, crn, conf_num, cpin, time_from, time_to } = filters;
-  const typed = useMemo(
-    () => ({ account_id, crn, conf_num, cpin, time_from, time_to }),
-    [account_id, crn, conf_num, cpin, time_from, time_to],
-  );
-  const debouncedTyped = useDebouncedValue(typed, 400);
-  const isSettling = typed !== debouncedTyped;
-
+  // The typed fields reach `filters` only when the bar's Apply is pressed (see
+  // ServiceFilterBar), so there is nothing to debounce here. Dates are discrete
+  // clicks in the header and apply at once.
   const query = useMemo<CdrFilters>(
-    () => ({ ...filters, ...debouncedTyped, service, date_from: from, date_to: to }),
-    [filters, debouncedTyped, service, from, to],
+    () => ({ ...filters, service, date_from: from, date_to: to }),
+    [filters, service, from, to],
   );
 
   const span = spanDays(query.date_from, query.date_to);
@@ -167,7 +164,6 @@ function Analytics({ service, status }: { service: CdrService; status: CdrStatus
               fields={fields}
               value={filters}
               onChange={setFilters}
-              isPending={isSettling}
             />,
             headerSlot,
           )}

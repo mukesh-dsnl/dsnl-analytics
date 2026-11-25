@@ -53,6 +53,9 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which field was left empty. The form carries noValidate, so these stand in
+  // for the browser's own "Please fill out this field" bubble, in the page's style.
+  const [missing, setMissing] = useState<{ username?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   /** Set the moment auth succeeds: the card is expanding and the route is about to change. */
   const [isLeaving, setIsLeaving] = useState(false);
@@ -90,6 +93,12 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const empty = {
+      username: username.trim() ? undefined : 'Enter your username.',
+      password: password ? undefined : 'Enter your password.',
+    };
+    setMissing(empty);
+    if (empty.username || empty.password) return;
     setIsSubmitting(true);
     try {
       // Succeeds only if the server set a session cookie; from here on the
@@ -229,7 +238,7 @@ export function Login() {
               Sign in to continue to your dashboard.
             </p>
 
-            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
               {error && (
                 <div
                   role="alert"
@@ -255,11 +264,21 @@ export function Login() {
                     autoFocus
                     autoComplete="username"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className={clsx(INPUT_CLASS, 'pr-4')}
-                    placeholder="username"
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      setMissing((m) => ({ ...m, username: undefined }));
+                    }}
+                    aria-invalid={!!missing.username}
+                    aria-describedby={missing.username ? 'login-username-error' : undefined}
+                    className={clsx(INPUT_CLASS, 'pr-4', missing.username && 'border-red-400 dark:border-red-500/60')}
+                    placeholder="Enter username"
                   />
                 </div>
+                {missing.username && (
+                  <p id="login-username-error" role="alert" className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                    {missing.username}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -277,9 +296,15 @@ export function Login() {
                     required
                     autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className={clsx(INPUT_CLASS, 'pr-12')}
-                    placeholder="••••••••"
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setMissing((m) => ({ ...m, password: undefined }));
+                    }}
+                    aria-invalid={!!missing.password}
+                    aria-describedby={missing.password ? 'login-password-error' : undefined}
+                    className={clsx(INPUT_CLASS, 'pr-12', missing.password && 'border-red-400 dark:border-red-500/60')}
+                    // Words, not dots: "••••••••" in an empty field read as a password already typed.
+                    placeholder="Enter password"
                   />
                   <button
                     type="button"
@@ -291,6 +316,11 @@ export function Login() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {missing.password && (
+                  <p id="login-password-error" role="alert" className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                    {missing.password}
+                  </p>
+                )}
               </div>
 
               <button

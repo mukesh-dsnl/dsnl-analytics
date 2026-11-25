@@ -71,6 +71,13 @@ export const TH_CLASS =
 export const TH_CLASS_RIGHT = `${TH_CLASS} text-right`;
 export const TD_CLASS = 'px-4 py-3 text-sm text-zinc-700 dark:text-zinc-300 tabular-nums';
 export const TD_CLASS_RIGHT = `${TD_CLASS} text-right`;
+/**
+ * A Total row's cell: pinned to the bottom of the scroll area as the header is
+ * to the top, with the rule drawn as a shadow for the same reason (see TH_CLASS).
+ */
+export const TOTAL_CELL =
+  'sticky bottom-0 z-10 bg-[#eef4fb] dark:bg-[#13233f] ' +
+  'shadow-[inset_0_1px_0_#cfe0f3] dark:shadow-[inset_0_1px_0_#22385a]';
 
 interface TablePagerProps {
   page: number;
@@ -144,6 +151,8 @@ interface SortableHeaderProps<K extends string> {
   sort: SortState<K>;
   onSort: (key: K) => void;
   align?: 'left' | 'right';
+  /** A hover note saying what the column measures; underlines the label with dots. */
+  title?: string;
 }
 
 /**
@@ -159,6 +168,7 @@ export function SortableHeader<K extends string>({
   sort,
   onSort,
   align = 'left',
+  title,
 }: SortableHeaderProps<K>) {
   const isActive = sort.key === sortKey;
 
@@ -167,10 +177,12 @@ export function SortableHeader<K extends string>({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
+        title={title}
         className={clsx(
           'group inline-flex items-center gap-1 uppercase tracking-wider hover:text-zinc-900 dark:hover:text-white transition-colors',
           align === 'right' && 'flex-row-reverse',
           isActive && 'text-zinc-900 dark:text-white',
+          title && 'underline decoration-dotted decoration-current/40 underline-offset-4',
         )}
       >
         {label}

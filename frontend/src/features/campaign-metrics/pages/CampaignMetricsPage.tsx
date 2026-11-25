@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Users, Radio, MapPin, Megaphone } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -10,10 +10,11 @@ import { campaignApi } from '../api';
 import type { AccountMetricsRow, CampaignFilter, CampaignService } from '../api';
 import { useCdrStatus, useCampaignDate } from '../hooks';
 import { useDebouncedValue } from '../../cdr-dashboard/hooks';
-import { useHeaderSlot } from '../../../components/HeaderSlot';
+import { useHeaderActions, useHeaderSlot } from '../../../components/HeaderSlot';
+import { ExportMenu } from '../../../components/ExportMenu';
+import { campaignReport } from '../campaignReport';
 import { HeaderSearch } from '../components/HeaderSearch';
 import { useSortableRows } from '../useSortableRows';
-import { downloadCsv } from '../exportCsv';
 import type { CdrStatus } from '../../cdr-dashboard/api';
 import { AccountWiseTable } from '../components/AccountWiseTable';
 import { AccountInsightDialog } from '../components/AccountInsightDialog';
@@ -21,15 +22,18 @@ import { SimpleMetricsTable } from '../components/SimpleMetricsTable';
 import type { SimpleRow, SimpleSortKey } from '../components/SimpleMetricsTable';
 import { MetricsToolbar } from '../components/MetricsToolbar';
 import { CampaignsTable } from '../components/CampaignsTable';
-import { CAMPAIGN_COLUMNS, withConnectedShare } from '../campaignRows';
+import { withConnectedShare } from '../campaignRows';
 import { conferenceSummaryApi } from '../../conference-summary/api';
 import { RecordsTable } from '../../conference-summary/components/RecordsTable';
-import type { ConferenceRow } from '../../conference-summary/components/RecordsTable';
+import type { ConferenceRow, ConferenceSortKey } from '../../conference-summary/components/RecordsTable';
 import { ConferenceRoomDrawer } from '../../conference-summary/components/ConferenceRoomDrawer';
+import { VoicedropCampaignDrawer } from '../components/VoicedropCampaignDrawer';
 import type { RoomRef } from '../../conference-summary/components/ConferenceRoomDrawer';
 import { roomKey } from '../../conference-summary/api';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { ToolbarTab } from '../components/MetricsToolbar';
+import { SMALL_GROUP, measureLabels } from '../labels';
+import { providerName } from '../../../lib/providers';
 
 interface CampaignMetricsPageProps {
   service: CampaignService;
@@ -51,8 +55,19 @@ const VOICEDROP_VIEWS: ToolbarTab<View>[] = [
   ...VIEWS.slice(1),
 ];
 
-// Conference's Campaigns are its rooms, from conference_summary.
-const CONFERENCE_VIEWS: ToolbarTab<View>[] = VOICEDROP_VIEWS;
+// Conference's "campaigns" are its rooms, from conference_summary — so the tab
+// says what it lists.
+const CONFERENCE_VIEWS: ToolbarTab<View>[] = VOICEDROP_VIEWS.map((v) =>
+  v.id === 'campaigns' ? { ...v, label: 'Conferences' } : v,
+);
+
+/**
+ * A percentage over a handful of numbers is noise (4 of 4 is 100%), so when a
+ * table is ordered by Connected % those rows go after the rest, whichever way
+ * it is sorted — the top of the list is then accounts big enough to mean it.
+ */
+const smallLast = (row: { total_size: number }, key: string) =>
+  key === 'connected_percentage' && row.total_size < SMALL_GROUP;
 
 /** The services with a Campaigns tab: their summary tables hold one row per campaign. */
 const hasCampaigns = (service: CampaignService) => service === 'voicedrop' || service === 'conference';
@@ -74,14 +89,21 @@ const VIEW_META: Record<View, { column: string; icon: typeof Radio }> = {
  */
 function searchPlaceholder(view: View, service: CampaignService): string {
   if (view === 'account') {
-    return service === 'voicedrop'
-      ? 'Search by account or CRN…'
-      : 'Search by account, CRN or CPIN…';
+    return service === 'voicedrop' ? 'Search account or CRN…' : 'Search account, CRN or CPIN…';
   }
   if (view === 'campaigns') {
-    return service === 'conference' ? 'Search by account, CRN, Conf Num, PIN, DID or name…' : 'Search by CRN, account, client or name…';
+    // Short enough to fit the box; searchHint below lists everything it matches.
+    return service === 'conference' ? 'Search account, CRN, PIN…' : 'Search CRN, account or name…';
   }
   return view === 'provider' ? 'Search service provider…' : 'Search location…';
+}
+
+/** Everything the box matches, for the views whose list is too long for a placeholder. */
+function searchHint(view: View, service: CampaignService): string | undefined {
+  if (view !== 'campaigns') return undefined;
+  return service === 'conference'
+    ? 'Matches account, CRN, Conf Num, PIN, DID or conference name'
+    : 'Matches CRN, account, client, campaign name or booking reference';
 }
 
 function Banner({ children }: { children: ReactNode }) {
@@ -147,6 +169,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const [charting, setCharting] = useState<{ account: string; crn: string } | null>(null);
   // The conference room whose details are open (Conference › Campaigns).
   const [room, setRoom] = useState<RoomRef | null>(null);
+  // The Voicedrop campaign whose details are open (Voicedrop › Campaigns).
+  const [campaign, setCampaign] = useState<CampaignTableRow | null>(null);
   const headerSlot = useHeaderSlot();
 
   // Same reasoning as switching view below: the term belongs to the service it
@@ -248,12 +272,13 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
   const simpleRows = useMemo((): SimpleRow[] | undefined => {
     const rows =
       view === 'provider'
-        ? providerQuery.data?.rows.map((r) => ({ ...r, label: r.service_provider }))
+        ? providerQuery.data?.rows.map((r) => ({ ...r, label: providerName(r.service_provider), code: r.service_provider }))
         : view === 'location'
           ? locationQuery.data?.rows.map((r) => ({ ...r, label: r.location }))
           : undefined;
     if (!rows || !term) return rows;
-    return rows.filter((r) => r.label.toLowerCase().includes(term));
+    // A provider is found by its name or its number ("jio" or "15").
+    return rows.filter((r) => r.label.toLowerCase().includes(term) || ('code' in r && String(r.code) === term));
   }, [view, providerQuery.data, locationQuery.data, term]);
 
   // Campaign rows are one day's tens of campaigns, filtered here.
@@ -283,82 +308,58 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       ),
     );
   }, [conferenceQuery.data, term, account]);
-  // Conference rooms always read in start-time order.
-  const conferenceSorted = useMemo(
-    () => conferenceRows && [...conferenceRows].sort((a, b) => a.start_time.localeCompare(b.start_time) || a.crn - b.crn),
-    [conferenceRows],
-  );
+  // Conference rooms open in start-time order; a header click sorts by that column.
+  const conferenceSort = useSortableRows<ConferenceRow, ConferenceSortKey>(conferenceRows, {
+    key: 'start_time',
+    direction: 'asc',
+  });
+  const conferenceSorted = conferenceSort.rows;
 
   const campaignSort = useSortableRows<CampaignTableRow, CampaignSortKey>(campaignRows, {
     key: 'start_time',
     direction: 'asc',
   });
 
-  const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(accountRows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
-  const simpleSort = useSortableRows<SimpleRow, SimpleSortKey>(simpleRows, {
-    key: 'total_size',
-    direction: 'desc',
-  });
+  const accountSort = useSortableRows<AccountMetricsRow, keyof AccountMetricsRow>(
+    accountRows,
+    { key: 'total_size', direction: 'desc' },
+    smallLast,
+  );
+  const simpleSort = useSortableRows<SimpleRow, SimpleSortKey>(simpleRows, { key: 'total_size', direction: 'desc' }, smallLast);
 
   const meta = VIEW_META[view];
+  const labels = measureLabels(service);
+  // The day counted once comes from the backend; a search narrows the rows,
+  // and then the Total row adds up what is shown instead.
+  const breakdown = view === 'provider' ? providerQuery.data : view === 'location' ? locationQuery.data : undefined;
 
-  const handleExport = () => {
-    const stamp = `${service}-${view}-${date}`;
-    if (view === 'campaigns' && service === 'conference') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        [
-          'Account ID', 'Account Name', 'Call Date', 'CRN', 'Conf Num', 'Start Time', 'End Time', 'Conference Name',
-          'PIN', 'DID', 'Total Ringed Calls', 'Total Connected Calls', 'Total Call Duration (Mins)',
-          'Total Attended Duration (Mins)', 'Peak Port Used',
-        ],
-        (conferenceSorted ?? []).map((r) => [
-          r.account_id, r.account_name, r.date, r.crn, r.conf_num, r.start_time, r.end_time, r.conference_name,
-          r.pin, r.dids.join(', '), r.ringed, r.connected, r.call_minutes, r.attended_minutes, r.peak_port,
-        ]),
-      );
-      return;
-    }
-    if (view === 'campaigns') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        ['Date', ...CAMPAIGN_COLUMNS.map((c) => c.label)],
-        (campaignSort.rows ?? []).map((r) => [
-          r.date,
-          ...CAMPAIGN_COLUMNS.map((c) => r[c.key]),
-        ]),
-      );
-      return;
-    }
-    if (view === 'account') {
-      downloadCsv(
-        `campaign-${stamp}.csv`,
-        ['Account', 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %', 'Total Minutes'],
-        (accountSort.rows ?? []).map((r) => [
-          r.account,
-          r.total_size,
-          r.connected_size,
-          r.not_connected_size,
-          r.connected_percentage,
-          r.total_minutes,
-        ]),
-      );
-      return;
-    }
-    downloadCsv(
-      `campaign-${stamp}.csv`,
-      [meta.column, 'Total Size', 'Connected Size', 'Not Connected Size', 'Connected %'],
-      (simpleSort.rows ?? []).map((r) => [
-        r.label,
-        r.total_size,
-        r.connected_size,
-        r.not_connected_size,
-        r.connected_percentage,
-      ]),
-    );
+  // Export: every tab's data for the day, fetched through the same queries
+  // the tabs use (so a tab already open costs nothing), one sheet per tab.
+  const queryClient = useQueryClient();
+  const headerActions = useHeaderActions();
+  const buildExport = async () => {
+    const day: CampaignFilter = { date, service };
+    const [accounts, providers, locations, campaigns, conferences] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: ['campaign', 'account', day.date, day.service, ''],
+        queryFn: () => campaignApi.accountWise(day, ''),
+      }),
+      queryClient.fetchQuery({ queryKey: ['campaign', 'provider', day.date, day.service], queryFn: () => campaignApi.serviceProviderWise(day) }),
+      queryClient.fetchQuery({ queryKey: ['campaign', 'location', day.date, day.service], queryFn: () => campaignApi.locationWise(day) }),
+      service === 'voicedrop'
+        ? queryClient.fetchQuery({ queryKey: ['campaign', 'campaigns', day.date], queryFn: () => campaignApi.campaigns(day) })
+        : Promise.resolve(null),
+      service === 'conference'
+        ? queryClient.fetchQuery({ queryKey: ['conference-summary', 'records', day.date], queryFn: () => conferenceSummaryApi.records(day.date) })
+        : Promise.resolve(null),
+    ]);
+    return campaignReport(service, date, {
+      accounts: accounts.rows,
+      providers,
+      locations,
+      campaigns: campaigns?.rows,
+      conferences: conferences?.rows,
+    });
   };
 
   const visibleCount =
@@ -404,12 +405,19 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
         {/* The search sits in the app header beside the date control — see
             components/HeaderSlot. It stays owned here because what it matches
             depends on the active view and service. */}
+        {headerActions &&
+          createPortal(
+            <ExportMenu label="Export Campaign Metrics" disabled={!status.available || !date} build={buildExport} />,
+            headerActions,
+          )}
+
         {headerSlot &&
           createPortal(
             <HeaderSearch
               value={search}
               onChange={setSearch}
               placeholder={searchPlaceholder(view, service)}
+              hint={searchHint(view, service)}
               isPending={isSearchPending}
             />,
             headerSlot,
@@ -426,8 +434,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               setSearch('');
               setAccount('');
             }}
-            onExport={handleExport}
-            canExport={visibleCount > 0}
+            // The open tab's row count, once its rows are in; follows the search.
+            count={active.isPending || active.error ? null : visibleCount}
           />
         </div>
 
@@ -448,7 +456,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
                   Show all ✕
                 </button>
               </span>
-              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its campaigns on {date}</span>
+              <span className="text-[12px] text-zinc-500 dark:text-zinc-400">its {labels.campaignWord} on {date}</span>
             </div>
           )}
           {!status.available ? (
@@ -458,6 +466,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
           ) : view === 'campaigns' && service === 'conference' ? (
             <RecordsTable
               rows={conferenceSorted}
+              sort={conferenceSort.sort}
+              onSort={conferenceSort.toggle}
               isLoading={conferenceQuery.isPending}
               error={conferenceQuery.error}
               openKey={room ? roomKey(room) : null}
@@ -472,6 +482,8 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={campaignSort.sort}
               onSort={campaignSort.toggle}
               onChart={(r) => setCharting({ account: String(r.account_id), crn: String(r.crn) })}
+              onOpen={setCampaign}
+              openCrn={campaign?.crn ?? null}
             />
           ) : view === 'account' ? (
             <AccountWiseTable
@@ -482,6 +494,7 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               sort={accountSort.sort}
               onSort={accountSort.toggle}
               showCpin={service !== 'voicedrop'}
+              labels={labels}
               // Voicedrop and Conference: an account opens its campaigns.
               onOpenAccount={
                 hasCampaigns(service)
@@ -502,6 +515,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
               error={active.error}
               sort={simpleSort.sort}
               onSort={simpleSort.toggle}
+              labels={labels}
+              total={term ? undefined : breakdown?.total}
+              overlap={term ? 0 : (breakdown?.overlap ?? 0)}
             />
           )}
 
@@ -514,6 +530,9 @@ function Metrics({ service, status }: { service: CampaignService; status: CdrSta
       </div>
 
       {room && <ConferenceRoomDrawer key={roomKey(room)} room={room} onClose={() => setRoom(null)} />}
+      {campaign && (
+        <VoicedropCampaignDrawer key={`${campaign.date}-${campaign.crn}`} row={campaign} onClose={() => setCampaign(null)} />
+      )}
       {charting && (
         <AccountInsightDialog filters={filters} account={charting.account} crn={charting.crn} onClose={() => setCharting(null)} />
       )}

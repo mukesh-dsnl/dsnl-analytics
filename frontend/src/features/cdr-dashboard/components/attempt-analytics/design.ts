@@ -42,6 +42,22 @@ export function compact(n: number): string {
   return fmt(n);
 }
 
+/**
+ * Axis ticks in round steps (1, 2, 2.5 or 5 times a power of ten) from zero to
+ * a little above the largest value: 0, 100k, 200k, 300k, 400k rather than a
+ * ceiling cut in thirds (133.3k, 266.7k), or 0, 500, 1k, 1.5k rather than 550.
+ */
+export function niceTicks(n: number, intervals = 4): number[] {
+  if (!(n > 0)) return [0, 1];
+  const top = n * 1.08;
+  const raw = top / intervals;
+  const base = 10 ** Math.floor(Math.log10(raw));
+  // These axes all count calls or ports, so a step is never below one.
+  const step = Math.max(1, ([1, 2, 2.5, 5, 10].find((v) => v * base >= raw) ?? 10) * base);
+  const count = Math.max(1, Math.ceil(top / step));
+  return Array.from({ length: count + 1 }, (_, i) => i * step);
+}
+
 /** A round axis ceiling a little above the largest value. */
 export function niceCeiling(n: number): number {
   if (n <= 0) return 1;

@@ -12,6 +12,8 @@ export interface DailyColumn<T> {
   key: keyof T & string;
   label: string;
   percent?: boolean;
+  /** A hover note on the header: what the column counts. */
+  title?: string;
   /** The Total row's figure; summed when not given. */
   total?: (days: T[]) => number;
 }
@@ -61,7 +63,7 @@ export function DailyStatement<T extends { date: string }>({
   );
   const lines = useMemo(() => days.filter((d) => d.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date)), [days, month]);
   // A total that does not add up (accounts across days) is given as NaN, and shown as a dash.
-  const cell = (c: DailyColumn<T>, value: number) => (Number.isNaN(value) ? '—' : c.percent ? `${value}%` : fmt(value));
+  const cell = (c: DailyColumn<T>, value: number) => (Number.isNaN(value) ? '—' : c.percent ? `${value.toFixed(1)}%` : fmt(value));
   const td = (...extra: string[]) => clsx(TD, onDay && TD_LINK, ...extra);
   const total = (c: DailyColumn<T>) => (c.total ? c.total(lines) : lines.reduce((s, d) => s + (Number(d[c.key]) || 0), 0));
 
@@ -108,7 +110,11 @@ export function DailyStatement<T extends { date: string }>({
               <tr>
                 <th className={clsx(TH, 'text-left')}>Date</th>
                 {columns.map((c) => (
-                  <th key={c.key} className={clsx(TH, 'text-right')}>
+                  <th
+                    key={c.key}
+                    title={c.title}
+                    className={clsx(TH, 'text-right', c.title && 'cursor-help underline decoration-dotted decoration-current/40 underline-offset-4')}
+                  >
                     {c.label}
                   </th>
                 ))}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, Layers } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SERVICES, SERVICE_ORDER } from './services';
@@ -19,17 +19,27 @@ const lightTile = (tile: string) =>
  * service's icon, opening to the side. White in both themes — on the navy
  * sidebar it has to read at a glance as the one control there is.
  */
+/** What the switcher shows on the one page that covers every service at once. */
+const ALL_SERVICES = { name: 'All services', icon: Layers, tile: 'bg-[#eef2f7] text-[#475569]' };
+
 export function ServiceSwitcher({
   value,
   onChange,
   collapsed,
+  allServices = false,
 }: {
   value: ServiceId;
   onChange: (service: ServiceId) => void;
   collapsed: boolean;
+  /**
+   * The page in view covers every service (All services › Attempt Metrics), so
+   * the switcher says so instead of naming the last service that was chosen —
+   * which is what made a page of 2.6M attempts sit under "MultiCall".
+   */
+  allServices?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const current = SERVICES[value];
+  const current = allServices ? ALL_SERVICES : SERVICES[value];
   const Icon = current.icon;
 
   return (
@@ -65,6 +75,7 @@ export function ServiceSwitcher({
         {SERVICE_ORDER.map((id) => {
           const option = SERVICES[id];
           const OptionIcon = option.icon;
+          const selected = !allServices && id === value;
           return (
             <button
               key={id}
@@ -75,14 +86,14 @@ export function ServiceSwitcher({
               }}
               className={clsx(
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93b8f3]',
-                id === value ? 'bg-[#eef4fd]' : 'hover:bg-[#f5f8fc]',
+                selected ? 'bg-[#eef4fd]' : 'hover:bg-[#f5f8fc]',
               )}
             >
               <span className={clsx('inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', lightTile(option.tile))}>
                 <OptionIcon className="h-4 w-4" />
               </span>
-              <span className={clsx('min-w-0 flex-1 truncate text-[13px]', id === value ? 'font-semibold' : 'font-medium')}>{option.name}</span>
-              {id === value && <Check className="h-4 w-4 shrink-0 text-[#2563eb]" />}
+              <span className={clsx('min-w-0 flex-1 truncate text-[13px]', selected ? 'font-semibold' : 'font-medium')}>{option.name}</span>
+              {selected && <Check className="h-4 w-4 shrink-0 text-[#2563eb]" />}
             </button>
           );
         })}

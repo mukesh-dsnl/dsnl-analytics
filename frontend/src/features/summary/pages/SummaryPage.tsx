@@ -179,7 +179,7 @@ function Sections({
           {...NONE}
           span={12}
           title="Busiest hours"
-          subtitle="Campaigns by weekday and start hour, all accounts since the table began — the share of the week is on the right"
+          subtitle="Campaigns by weekday and start hour of all accounts — the share of the week is on the right"
           extra={<Toggle label="Colour by" options={HOUR_METRICS} value={hourMetric} onChange={setHourMetric} />}
         >
           <WeekHourHeatmap cells={data.weekday_hour} metric={hourMetric} metrics={HOUR_LABELS} />
@@ -266,7 +266,7 @@ function MonthlyStatement({ months, asOf, onAccount }: { months: string[]; asOf:
         error={query.error}
         isEmpty={!lines.length}
         title="Monthly statement"
-        subtitle="Per account: campaigns, dialed, connected and connected minutes — ready for billing or the client"
+        subtitle="Per account: campaigns, dialed, connected and connected minutes"
         extra={
           <div className="flex items-center gap-2">
             <select
@@ -293,6 +293,7 @@ function MonthlyStatement({ months, asOf, onAccount }: { months: string[]; asOf:
             columns={VOICEDROP_COLUMNS}
             showMonth={month === 'all'}
             showAccount
+            totals={query.data ? { active_days: query.data.active_days } : undefined}
             onRow={(line) => onAccount(line.account_id, 'monthly')}
             rowTitle={(line) => `Open account ${line.account_id}'s monthly statement`}
           />

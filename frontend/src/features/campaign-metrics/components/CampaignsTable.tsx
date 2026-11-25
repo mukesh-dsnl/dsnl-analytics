@@ -1,15 +1,11 @@
-import { useState } from 'react';
-import { AlertTriangle, Download, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { isIncomplete } from '../campaignRows';
 import type { CampaignSortKey, CampaignTableRow } from '../campaignRows';
 import type { SortState } from '../useSortableRows';
 import { ConnectedBar } from './ConnectedBar';
-import { ROW_ACTION_CLASS, ROW_ACTION_IDLE_CLASS, SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
-import { campaignApi } from '../api';
-import { downloadCsv } from '../exportCsv';
+import { SortableHeader, TableCard, TableStatus, TH_CLASS } from './TableChrome';
 import { SummaryLink } from './SummaryLink';
-import { ChartButton } from './ChartButton';
+import { ChartButton, DetailsButton } from './ChartButton';
 import { summaryPath } from '../links';
 
 interface CampaignsTableProps {
@@ -20,6 +16,9 @@ interface CampaignsTableProps {
   onSort: (key: CampaignSortKey) => void;
   /** Opens the charts for one campaign (its account and CRN). */
   onChart?: (row: CampaignTableRow) => void;
+  /** Opens a campaign's details in the side sheet; the open one is highlighted. */
+  onOpen?: (row: CampaignTableRow) => void;
+  openCrn?: number | null;
 }
 
 /** The numeric columns, in reading order: what was loaded, what was dialled, how it went. */
@@ -45,7 +44,8 @@ const NUM = `${CELL} text-right text-sm tabular-nums whitespace-nowrap`;
  * pinned header. A campaign with numbers left unblasted did not finish — its
  * row is tinted red, so it stands out without being searched for.
  */
-export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }: CampaignsTableProps) {
+export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart, onOpen, openCrn }: CampaignsTableProps) {
+
   const isEmpty = !isLoading && !error && (rows?.length ?? 0) === 0;
   const ready = !isLoading && !error && !isEmpty && rows;
 
@@ -58,8 +58,9 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             <thead>
               <tr>
                 <SortableHeader label="Account" sortKey="account_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="Client" sortKey="client_id" sort={sort} onSort={onSort} />
-                <SortableHeader label="Time" sortKey="start_time" sort={sort} onSort={onSort} />
+                <SortableHeader label="Book Ref" sortKey="booking_reference" sort={sort} onSort={onSort} />
+                <SortableHeader label="Start" sortKey="start_time" sort={sort} onSort={onSort} />
+                <SortableHeader label="End" sortKey="end_time" sort={sort} onSort={onSort} />
                 <SortableHeader label="Campaign" sortKey="name" sort={sort} onSort={onSort} />
                 <SortableHeader label="CRN" sortKey="crn" sort={sort} onSort={onSort} />
                 {MEASURES.map((m) => (
@@ -91,7 +92,13 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
             </thead>
             <tbody>
               {rows.map((row) => (
-                <CampaignRow key={`${row.account_id}-${row.client_id}-${row.crn}`} row={row} onChart={onChart} />
+                <CampaignRow
+                  key={`${row.account_id}-${row.client_id}-${row.crn}`}
+                  row={row}
+                  onChart={onChart}
+                  onOpen={onOpen}
+                  open={openCrn === row.crn}
+                />
               ))}
             </tbody>
           </table>
@@ -101,16 +108,35 @@ export function CampaignsTable({ rows, isLoading, error, sort, onSort, onChart }
   );
 }
 
-function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: CampaignTableRow) => void }) {
+function CampaignRow({
+  row,
+  onChart,
+  onOpen,
+  open,
+}: {
+  row: CampaignTableRow;
+  onChart?: (row: CampaignTableRow) => void;
+  onOpen?: (row: CampaignTableRow) => void;
+  open: boolean;
+}) {
   const incomplete = isIncomplete(row);
 
   return (
     <tr
+      title={
+        incomplete
+          ? `Not finished: ${row.unblast_count.toLocaleString()} of this campaign's numbers were never dialled (Unblast)`
+          : undefined
+      }
+      // The row only shows which campaign's details are open; the details
+      // button at its end opens them, so the row is free for selecting text.
       className={clsx(
         'border-b transition-colors',
-        incomplete
-          ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
-          : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
+        open
+          ? 'bg-[#e8f1fd] border-[#eef2f8] dark:bg-sky-500/10 dark:border-zinc-800/40'
+          : incomplete
+            ? 'bg-red-50 hover:bg-red-100/70 border-red-100 dark:bg-red-500/[0.09] dark:hover:bg-red-500/[0.14] dark:border-red-500/20'
+            : 'border-[#eef2f8] hover:bg-[#f4f8fd] dark:border-zinc-800/40 dark:hover:bg-white/[0.03]',
       )}
     >
       {/* The red stripe on the leading edge keeps an incomplete row findable
@@ -126,25 +152,31 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
         <SummaryLink to={summaryPath('voicedrop', row.account_id)!} title={`Open account ${row.account_id}'s summary`}>
           {row.account_id}
         </SummaryLink>
+        {/* The client, under its account: a client belongs to one account. */}
+        <span className="block text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          <SummaryLink
+            to={summaryPath('voicedrop', row.account_id, row.client_id)!}
+            title={`Open client ${row.client_id} of account ${row.account_id}`}
+          >
+            {row.client_id}
+          </SummaryLink>
+        </span>
       </td>
       <td className={clsx(CELL, 'whitespace-nowrap text-sm tabular-nums text-zinc-700 dark:text-zinc-300')}>
-        <SummaryLink
-          to={summaryPath('voicedrop', row.account_id, row.client_id)!}
-          title={`Open client ${row.client_id} of account ${row.account_id}`}
-        >
-          {row.client_id}
-        </SummaryLink>
+        {row.booking_reference ?? '—'}
+      </td>
+      <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-900 dark:text-white')}>
+        {short(row.start_time)}
       </td>
       <td className={clsx(CELL, 'whitespace-nowrap')}>
-        <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">
-          {short(row.start_time)} – {short(row.end_time)}
-        </span>
-        <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+        <span className="block text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{short(row.end_time)}</span>
+        {/* How long the room ran, start to end. */}
+        <span className="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400" title="Room duration">
           {span(row.start_time, row.end_time)}
         </span>
       </td>
 
-      <td className={clsx(CELL, 'min-w-[220px] max-w-[340px]')}>
+      <td className={clsx(CELL, 'min-w-[140px] max-w-[200px]')}>
         <span className="flex items-center gap-2">
           <span
             className="truncate text-sm font-semibold text-zinc-900 dark:text-white"
@@ -153,11 +185,6 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
             {row.name ?? '—'}
           </span>
         </span>
-        {row.booking_reference != null && (
-          <span className="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-            Ref {row.booking_reference}
-          </span>
-        )}
       </td>
 
       <td className={clsx(CELL, 'whitespace-nowrap text-sm font-medium tabular-nums text-zinc-700 dark:text-zinc-300')}>
@@ -196,7 +223,7 @@ function CampaignRow({ row, onChart }: { row: CampaignTableRow; onChart?: (row: 
       <td className={clsx(CELL, 'text-right')}>
         <span className="inline-flex items-center gap-1.5">
           {onChart && <ChartButton label={`View charts for CRN ${row.crn}`} onClick={() => onChart(row)} />}
-          <RecordsDownload row={row} />
+          {onOpen && <DetailsButton label={`Show details for CRN ${row.crn}`} onClick={() => onOpen(row)} />}
         </span>
       </td>
     </tr>
@@ -217,59 +244,4 @@ function span(start: string | null, end: string | null): string {
   };
   const minutes = Math.max(Math.round((seconds(end) - seconds(start)) / 60), 0);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
-}
-
-/**
- * Downloads one campaign's call records as CSV — the reporting team's
- * per-number query for this row's date, account and CRN, every row.
- */
-function RecordsDownload({ row }: { row: CampaignTableRow }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'failed'>('idle');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const download = async () => {
-    if (!row.date || state === 'loading') return;
-    setState('loading');
-    setProblem(null);
-    try {
-      const { columns, rows } = await campaignApi.campaignRecords(row.date, row.account_id, row.crn);
-      if (rows.length === 0) throw new Error('No call records for this campaign in the CDR export.');
-      downloadCsv(`campaign-${row.crn}-${row.account_id}-${row.date}.csv`, columns, rows);
-      setState('idle');
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : 'The download failed.');
-      setState('failed');
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={download}
-      disabled={state === 'loading'}
-      aria-label={`Download call records for CRN ${row.crn} as CSV`}
-      title={
-        state === 'loading'
-          ? 'Preparing CSV…'
-          : state === 'failed'
-            ? `${problem} Click to retry.`
-            : 'Download call records (CSV)'
-      }
-      className={clsx(
-        ROW_ACTION_CLASS,
-        'disabled:cursor-wait',
-        state === 'failed'
-          ? 'border-red-300 text-red-600 dark:border-red-500/50 dark:text-red-400'
-          : ROW_ACTION_IDLE_CLASS,
-      )}
-    >
-      {state === 'loading' ? (
-        <Loader2 className="w-4 h-4 animate-spin" />
-      ) : state === 'failed' ? (
-        <AlertTriangle className="w-4 h-4" />
-      ) : (
-        <Download className="w-4 h-4" />
-      )}
-    </button>
-  );
 }

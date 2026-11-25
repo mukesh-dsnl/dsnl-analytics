@@ -1,5 +1,5 @@
-import { Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
 export interface ToolbarTab<T extends string> {
@@ -12,12 +12,14 @@ interface MetricsToolbarProps<T extends string> {
   tabs: ToolbarTab<T>[];
   active: T;
   onTab: (id: T) => void;
-  onExport: () => void;
-  canExport: boolean;
+  /** The colour key for the table below, shown at the left. */
+  legend?: ReactNode;
+  /** How many rows the open tab's table lists; shown beside that tab only. Null while loading. */
+  count?: number | null;
 }
 
 /**
- * The bar above the table: the view tabs, centred, with Export at the right.
+ * The bar above the table: the view tabs, centred.
  *
  * Same underline tab strip the analytics charts use — these are mutually
  * exclusive views of one page, which is what a tab bar means and what the card
@@ -31,13 +33,13 @@ export function MetricsToolbar<T extends string>({
   tabs,
   active,
   onTab,
-  onExport,
-  canExport,
+  legend,
+  count,
 }: MetricsToolbarProps<T>) {
   return (
     <div className="border-b border-zinc-200 dark:border-zinc-800/60">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
-        <span aria-hidden="true" />
+        <div className="min-w-0 self-center">{legend}</div>
 
         <div className="flex items-center gap-1 justify-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((tab) => {
@@ -58,6 +60,9 @@ export function MetricsToolbar<T extends string>({
               >
                 <tab.icon className="w-4 h-4 shrink-0" />
                 {tab.label}
+                {isActive && count != null && (
+                  <span className="tabular-nums opacity-80">({count.toLocaleString()})</span>
+                )}
                 {/* Drawn as a span rather than a border on the button so it can
                     sit flush on the strip's own rule and cover it exactly — a
                     border would land a pixel above and read as a double line. */}
@@ -69,17 +74,8 @@ export function MetricsToolbar<T extends string>({
           })}
         </div>
 
-        <div className="flex justify-end pb-1.5">
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={!canExport}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-surface-dark text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-        </div>
+        {/* Export lives in the app header now (Excel / PDF of every tab). */}
+        <span aria-hidden="true" />
       </div>
     </div>
   );

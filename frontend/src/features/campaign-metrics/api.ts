@@ -26,6 +26,8 @@ export interface CampaignMetricsRow {
 
 export interface AccountMetricsRow extends CampaignMetricsRow {
   account: string;
+  /** From the account master list; null when unknown, and for account 0 ("no account"). */
+  account_name: string | null;
   total_minutes: number;
 }
 
@@ -44,7 +46,32 @@ export interface LocationMetricsRow extends CampaignMetricsRow {
   location: string;
 }
 
+/**
+ * A breakdown's rows, with the day counted once. `total` is not the rows
+ * added up: a number tried through two providers is in both rows, and
+ * `overlap` is how many times that happened.
+ */
+export interface Breakdown<Row> {
+  rows: Row[];
+  total: CampaignMetricsRow;
+  overlap: number;
+}
+
 /** One Voicedrop campaign (CRN) on one day, from q100_dump.voicedrop_summary. */
+/** What the Voicedrop campaign side panel adds to its summary row. */
+export interface VoicedropCampaignDetail {
+  crn: number;
+  account_name: string | null;
+  client_name: string | null;
+  /** SERVICE_PROVIDER codes the campaign went out on, ascending. */
+  service_providers: string[];
+  /** Distinct CONFDIAL_REBLAST_COUNT values: how many blasts it ran. */
+  total_blasts: number;
+  /** The DIDs the campaign used, ascending, as whole numbers. */
+  dids: string[];
+  found_in_cdr: boolean;
+}
+
 export interface VoicedropCampaignRow {
   date: string | null;
   account_id: number;
@@ -174,10 +201,10 @@ export const campaignApi = {
   ): Promise<{ account: string; rows: AccountCrnMetricsRow[] }> =>
     post('account-wise/crn', { ...filters, account_id: accountId }),
 
-  serviceProviderWise: (filters: CampaignFilter): Promise<{ rows: ServiceProviderMetricsRow[] }> =>
+  serviceProviderWise: (filters: CampaignFilter): Promise<Breakdown<ServiceProviderMetricsRow>> =>
     post('service-provider-wise', filters),
 
-  locationWise: (filters: CampaignFilter): Promise<{ rows: LocationMetricsRow[] }> =>
+  locationWise: (filters: CampaignFilter): Promise<Breakdown<LocationMetricsRow>> =>
     post('location-wise', filters),
 
   /** The day's Voicedrop campaigns, from the summary table — Voicedrop only. */
@@ -189,6 +216,10 @@ export const campaignApi = {
    * the reporting team's column order. Rows are plain arrays to keep a large
    * campaign's payload small.
    */
+  /** One campaign's providers, blast count and names — for its side panel. */
+  campaignDetail: (date: string, crn: number, accountId: number, clientId: number | null): Promise<VoicedropCampaignDetail> =>
+    post('campaigns/detail', { date, crn, account_id: accountId, client_id: clientId }),
+
   campaignRecords: (
     date: string,
     accountId: number,

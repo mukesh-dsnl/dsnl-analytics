@@ -49,6 +49,13 @@ _DISCONNECT_REASONS: dict[str, str] = json.loads(
     (Path(__file__).parent / "disconnect_reasons.json").read_text(encoding="utf-8")
 )
 
+# Code -> the switch's own cause message (cause_codes.json, from the system's
+# cause-code list). The dashboard's disconnect card shows the friendly names
+# above by default; this is its "system cause codes" view of the same counts.
+_CAUSE_CODES: dict[str, str] = json.loads(
+    (Path(__file__).parent / "cause_codes.json").read_text(encoding="utf-8")
+)
+
 # Every panel the single-pass dashboard query can produce.
 DASHBOARD_PANELS = (
     "summary",
@@ -606,13 +613,31 @@ def _scalar(rows: list[dict[str, Any]], label: str) -> float:
     return 0
 
 
+# The group for codes disconnect_reasons.json has no name for. It used to be
+# "Unknown", which read as "the switch did not say why" — but every one of these
+# attempts does carry a code; it is the name list that is short. On 2026-11-16
+# the group is 37.4% of Voicedrop attempts, nearly all of it three codes (153,
+# 224, 130), so the row also carries which codes it holds, largest first.
+UNNAMED_REASON = "Unnamed codes"
+_UNNAMED_CODES_SHOWN = 8
+
+
 def _map_disconnect_reasons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fold raw codes onto their labels; an unmapped code becomes "Unknown"."""
+    """Fold raw codes onto their names; codes with no name share one group that lists them."""
     totals: dict[str, float] = {}
+    unnamed: list[dict[str, Any]] = []
     for row in rows:
-        reason = _DISCONNECT_REASONS.get(str(row["label"]), "Unknown")
+        code = str(row["label"])
+        reason = _DISCONNECT_REASONS.get(code)
+        if reason is None:
+            reason = UNNAMED_REASON
+            unnamed.append({"label": f"Code {code}" if code not in ("None", "") else "No code", "value": row["value"]})
         totals[reason] = totals.get(reason, 0) + row["value"]
-    return _by_value([{"label": r, "value": v} for r, v in totals.items()])
+    out = _by_value([{"label": r, "value": v} for r, v in totals.items()])
+    for item in out:
+        if item["label"] == UNNAMED_REASON:
+            item["codes"] = _by_value(unnamed)[:_UNNAMED_CODES_SHOWN]
+    return out
 
 
 def _trailing_int(label: str) -> int:
@@ -733,10 +758,28 @@ def _shape(panel: str, rows: list[dict[str, Any]]) -> Any:
     return _by_value(rows)
 
 
+def _cause_codes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The disconnect panel's raw rows, one per code, named from the system cause-code list."""
+    out = []
+    for row in rows:
+        code = str(row["label"])
+        if code in ("None", ""):
+            code, name = "", "Unknown"
+        else:
+            # A code the cause-code list does not cover is shown as Unknown.
+            name = _CAUSE_CODES.get(code, "Unknown")
+        out.append({"code": code, "label": name, "value": row["value"]})
+    return sorted(out, key=lambda r: r["value"], reverse=True)
+
+
 def query_dashboard(f: CdrFilter) -> dict:
     """Every dashboard panel, from one pass over the range."""
     grouped, meta = compute_panels(f)
-    return {panel: _shape(panel, rows) for panel, rows in grouped.items()} | meta
+    shaped = {panel: _shape(panel, rows) for panel, rows in grouped.items()}
+    # Same rows as disconnect_reason, unfolded: no second read of the files.
+    if "disconnect_reason" in grouped:
+        shaped["disconnect_cause"] = _cause_codes(grouped["disconnect_reason"])
+    return shaped | meta
 
 
 # ── Single-panel endpoints ─────────────────────────────────────────────────

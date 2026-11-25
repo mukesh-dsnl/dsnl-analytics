@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import clsx from 'clsx';
-import { BarChart3, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
+import { BarChart3, ImageDown, Loader2, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 
 import { ProcessingChip, ProgressSweep } from '../../../components/Loading';
 import { compact } from '../../cdr-dashboard/components/attempt-analytics/design';
 import type { PortResult } from '../api';
 import { clock, fromSeconds, toSeconds } from '../params';
+import { downloadChartPng } from '../../../lib/chartImage';
 
 const nf = new Intl.NumberFormat('en-US');
 const AXIS = { fontSize: 12, fill: '#6b7a90' };
@@ -58,6 +59,24 @@ export function PortActivity({
     return [...hours].map(([t, ports]) => ({ t, ports }));
   }, [result, view]);
   const stepSeconds = view === 'hour' ? 3600 : 60;
+
+  // Download the chart as a PNG, titled with the day and its peak.
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [saving, setSaving] = useState(false);
+  const saveImage = async () => {
+    const svg = chartRef.current?.querySelector<SVGSVGElement>('svg.recharts-surface');
+    if (!svg || !result) return;
+    setSaving(true);
+    try {
+      await downloadChartPng(svg, {
+        title: `Port Activity Over Time · ${view === 'hour' ? 'Hour wise' : 'Minute wise'}`,
+        subtitle: `${dateLabel} · peak ${nf.format(result.summary.peak)} ports at ${clock(result.summary.peak_at)}`,
+        filename: `port-activity-${dateLabel}-${view}`,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Drag to zoom. Recharts delivers its mouse moves a frame late, so the
   // release is read a moment after it happens, once the last move has landed.
@@ -118,6 +137,16 @@ export function PortActivity({
         )}
         <button
           type="button"
+          onClick={() => void saveImage()}
+          disabled={!result || saving}
+          title="Download the chart as an image (PNG)"
+          aria-label="Download the chart as an image"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#dfe7f1] text-[#45556e] transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/[0.08] dark:text-zinc-300 dark:hover:bg-white/[0.04]"
+        >
+          {saving ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <ImageDown className="h-[18px] w-[18px]" />}
+        </button>
+        <button
+          type="button"
           onClick={() => onFull(!full)}
           title={full ? 'Exit full screen (Esc)' : 'Full screen'}
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#dfe7f1] text-[#45556e] transition-colors hover:bg-zinc-50 dark:border-white/[0.08] dark:text-zinc-300 dark:hover:bg-white/[0.04]"
@@ -129,6 +158,7 @@ export function PortActivity({
       <div className={clsx('relative min-w-0 select-none', full ? 'min-h-[300px] flex-1' : 'h-[420px]')}>
         {result ? (
           <div
+            ref={chartRef}
             className={clsx(
               'h-full cursor-crosshair transition-opacity [&_.recharts-surface]:outline-none [&_.recharts-wrapper]:outline-none',
               isFetching && 'opacity-40',

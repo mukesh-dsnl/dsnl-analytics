@@ -12,6 +12,7 @@ touching any existing CDR analytics route.
     POST /api/campaign/location-wise            per-location breakdown
     POST /api/campaign/campaigns                Voicedrop campaigns, from voicedrop_summary
     POST /api/campaign/campaigns/records        one campaign's call records, from the lake
+    POST /api/campaign/campaigns/detail         one campaign's providers, blasts and names
 
 All take app/schemas/campaign.py::CampaignFilter (a single `date` + `service`);
 the CRN drill-down additionally takes the `account_id` to break down.
@@ -31,6 +32,7 @@ from app.schemas.campaign import (
     AccountWiseRequest,
     CampaignAccountCrnResponse,
     CampaignAccountResponse,
+    CampaignDetailRequest,
     CampaignFilter,
     CampaignLocationResponse,
     CampaignRecordsRequest,
@@ -92,19 +94,19 @@ def account_insight(body: AccountInsightRequest) -> AccountInsightResponse:
 @router.post("/campaign/service-provider-wise", response_model=CampaignServiceProviderResponse)
 def service_provider_wise(body: CampaignFilter) -> CampaignServiceProviderResponse:
     try:
-        rows = service.query_service_provider_wise(body)
+        result = service.query_service_provider_wise(body)
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
-    return CampaignServiceProviderResponse(rows=rows)
+    return CampaignServiceProviderResponse(**result)
 
 
 @router.post("/campaign/location-wise", response_model=CampaignLocationResponse)
 def location_wise(body: CampaignFilter) -> CampaignLocationResponse:
     try:
-        rows = service.query_location_wise(body)
+        result = service.query_location_wise(body)
     except service.DatasetNotReady as exc:
         raise _not_ready(exc)
-    return CampaignLocationResponse(rows=rows)
+    return CampaignLocationResponse(**result)
 
 
 @router.post("/campaign/campaigns", response_model=VoicedropCampaignsResponse)
@@ -123,6 +125,19 @@ def voicedrop_campaigns(body: CampaignFilter) -> VoicedropCampaignsResponse:
         logger.error(f"Voicedrop campaigns failed for {body.date}: {exc}")
         raise HTTPException(status_code=502, detail="The campaign summary database could not be read.")
     return VoicedropCampaignsResponse(rows=rows)
+
+
+@router.post("/campaign/campaigns/detail")
+def voicedrop_campaign_detail(body: CampaignDetailRequest) -> dict:
+    """
+    The Voicedrop campaign side panel's extra figures: the service providers the
+    campaign went out on and its number of distinct blasts, read from that day's
+    CDR file for the CRN, with the account and client names.
+    """
+    try:
+        return service.campaign_detail(body.date, body.crn, body.account_id, body.client_id)
+    except service.DatasetNotReady as exc:
+        raise _not_ready(exc)
 
 
 @router.post("/campaign/campaigns/records")

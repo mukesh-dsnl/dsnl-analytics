@@ -223,7 +223,7 @@ export const conferenceSummaryApi = {
   overview: () => get<ConferenceOverview>('overview'),
   account: (accountId: number) => get<ConferenceAccountHistory>(`account/${accountId}`),
   statement: (month: string | null) =>
-    get<{ month: string | null; rows: ConferenceStatementLine[] }>(
+    get<{ month: string | null; rows: ConferenceStatementLine[]; active_days: number }>(
       `statement${month ? `?month=${encodeURIComponent(month)}` : ''}`,
     ),
 };

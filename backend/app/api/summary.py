@@ -51,4 +51,4 @@ def summary_account(account_id: int, client: Optional[int] = Query(default=None)
 def summary_statement(month: Optional[str] = Query(default=None)) -> dict[str, Any]:
     if month is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
-    return {"month": month, "rows": _read(insights.statement, month)}
+    return {"month": month, **_read(insights.statement_report, month)}

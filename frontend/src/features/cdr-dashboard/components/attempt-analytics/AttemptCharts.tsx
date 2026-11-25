@@ -1,5 +1,5 @@
-import { createContext, createElement, useContext, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import { createContext, createElement, useContext, useRef, useState } from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
 import {
   Area,
   AreaChart,
@@ -12,8 +12,11 @@ import {
 import {
   AlertTriangle,
   BellRing,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
+  Loader2,
   MapPin,
   MousePointer2,
   PhoneOff,
@@ -35,12 +38,15 @@ import {
   colorAt,
   compact,
   fmt,
-  niceCeiling,
+  niceTicks,
   pct,
 } from './design';
 import { HoverTooltipProvider, TipBody } from './HoverTooltip';
 import type { TipRow } from './HoverTooltip';
 import { useHover } from './tooltipContext';
+import { providerName } from '../../../../lib/providers';
+import { Toggle } from '../../../summary/components/ui';
+import { copyElementImage } from '../../../../lib/elementImage';
 
 interface AttemptChartsProps {
   data: CdrDashboard | undefined;
@@ -82,6 +88,13 @@ const TABS: { id: Tab; label: string; dialOutOnly?: boolean }[] = [
 
 /** Set when a single card is shown on its own: it then takes the full row. */
 const FullWidth = createContext(false);
+
+/**
+ * Whether cards carry a copy-as-image button. On for the Attempt Metrics
+ * charts (AttemptCharts provides it); the Summary pages, which reuse Card,
+ * leave it off.
+ */
+const CopyableCards = createContext(false);
 
 const BUCKET_LABEL: Record<string, string> = {
   minute: 'Highest concurrent ports per minute',
@@ -130,6 +143,7 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
 
   return (
     <HoverTooltipProvider>
+      <CopyableCards.Provider value={true}>
       <div className="vd-design">
         {/* Chart groups — a segmented switch */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -192,6 +206,7 @@ export function AttemptCharts({ data, cubeRows, isLoading, error, dialOutStages 
           )
         )}
       </div>
+      </CopyableCards.Provider>
     </HoverTooltipProvider>
   );
 }
@@ -235,9 +250,12 @@ export function Card({
   children: ReactNode;
 }) {
   const full = useContext(FullWidth);
+  const copyable = useContext(CopyableCards);
+  const cardRef = useRef<HTMLElement>(null);
   if (full) span = 12;
   return (
     <article
+      ref={cardRef}
       className={clsx(
         'col-span-12 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e9eef5] bg-white shadow-[0_6px_20px_#1c305408] dark:border-[#1c2a42] dark:bg-[#0e192c] dark:shadow-[0_10px_30px_-16px_rgba(0,0,0,0.8)]',
         span === 7 && 'lg:col-span-7',
@@ -250,7 +268,10 @@ export function Card({
           <h3 className={clsx('m-0 text-[13px] font-medium leading-[1.4]', INK)}>{title}</h3>
           <p className={clsx('mt-0.5 mb-0 text-[12px] leading-normal', MUTED)}>{subtitle}</p>
         </div>
-        {!isLoading && !error && !isEmpty && extra}
+        <div className="flex shrink-0 items-start gap-2">
+          {!isLoading && !error && !isEmpty && extra}
+          {copyable && !isLoading && !error && !isEmpty && <CopyCardButton card={cardRef} title={title} />}
+        </div>
       </div>
       <div className={clsx('flex-1 p-[18px]', bodyClassName)}>
         {isLoading ? (
@@ -269,6 +290,57 @@ export function Card({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * The small copy icon at a card's top right: copies a picture of the card, as
+ * it looks now, to the clipboard. It leaves itself out of the picture.
+ */
+function CopyCardButton({ card, title }: { card: RefObject<HTMLElement | null>; title: string }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
+  const [problem, setProblem] = useState('');
+  const copy = async () => {
+    if (!card.current || state === 'busy') return;
+    setState('busy');
+    try {
+      await copyElementImage(card.current);
+      setState('done');
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : 'Could not copy the image.');
+      setState('failed');
+    }
+    window.setTimeout(() => setState('idle'), 1800);
+  };
+  const label =
+    state === 'done' ? 'Copied as image' : state === 'failed' ? problem : state === 'busy' ? 'Copying…' : `Copy "${title}" as an image`;
+  return (
+    <button
+      type="button"
+      data-snapshot-skip=""
+      onClick={() => void copy()}
+      aria-label={label}
+      title={label}
+      className={clsx(
+        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
+        state === 'done'
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : state === 'failed'
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-[#9aa6b8] hover:bg-[#f2f5fa] hover:text-[#1d4ed8] dark:text-zinc-500 dark:hover:bg-white/[0.06] dark:hover:text-sky-300',
+        FOCUS,
+      )}
+    >
+      {state === 'busy' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : state === 'done' ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : state === 'failed' ? (
+        <AlertTriangle className="h-3.5 w-3.5" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
   );
 }
 
@@ -327,7 +399,7 @@ function cubeSections(cubeRows: CallCubeRow[], dimension: CubeDimension, value: 
       totals.set(key, (totals.get(key) ?? 0) + row.count);
     }
     const rows: TipRow[] = [...totals]
-      .map(([label, count]) => ({ label: other === 'provider' ? `Provider ${label}` : label, value: count }))
+      .map(([label, count]) => ({ label: other === 'provider' ? providerName(label) : label, value: count }))
       .sort((a, b) => b.value - a.value);
     return { title: DIMENSION_TITLE[other], rows };
   });
@@ -396,9 +468,9 @@ function ActivityCard({ data, total, ...state }: CardStateProps & { data?: CdrDa
         })}
       </div>
       <div className="mt-[15px] ml-[127px] mr-[146px] flex justify-between text-[10px] text-[#91a1b7] dark:text-zinc-500">
-        <span>0</span>
-        <span>{compact(total / 2)}</span>
-        <span>{compact(total)}</span>
+        <span>0%</span>
+        <span>50%</span>
+        <span>100% · {compact(total)} attempts</span>
       </div>
     </Card>
   );
@@ -497,13 +569,16 @@ function ConnectionCard({
   );
 }
 
-const durationLabel = (label: string) => `${label.replace('-', '–')} s`;
+// "60+" is strictly longer than 60 s (the group before it ends at 60), so it is
+// written "Over 60 s" rather than left to read as overlapping "31–60 s".
+const durationLabel = (label: string) => (label === '60+' ? 'Over 60 s' : `${label.replace('-', '–')} s`);
 
 function DurationCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) {
   const buckets = data?.call_duration ?? [];
   const splits = data?.call_duration_direction ?? [];
   const connected = buckets.reduce((t, b) => t + b.value, 0);
-  const max = niceCeiling(Math.max(...buckets.map((b) => b.value), 1));
+  const ticks = niceTicks(Math.max(...buckets.map((b) => b.value), 1));
+  const max = ticks[ticks.length - 1];
 
   return (
     <Card
@@ -515,19 +590,18 @@ function DurationCard({ data, ...state }: CardStateProps & { data?: CdrDashboard
     >
       <div className="mb-[5px] grid h-[156px] grid-cols-[35px_1fr] gap-[9px]">
         <div className="flex flex-col justify-between pb-7 text-[10px] text-[#8599b3] dark:text-zinc-500">
-          <span>{compact(max)}</span>
-          <span>{compact((max / 3) * 2)}</span>
-          <span>{compact(max / 3)}</span>
-          <span>0</span>
+          {[...ticks].reverse().map((t) => (
+            <span key={t}>{compact(t)}</span>
+          ))}
         </div>
         <div className="relative">
           {/* Gridlines at the four tick heights */}
           <div className="absolute inset-x-0 top-0 bottom-7 border-b border-[#e5ebf2] dark:border-zinc-800">
-            {[0, 1, 2].map((i) => (
+            {ticks.slice(1).map((t) => (
               <span
-                key={i}
+                key={t}
                 className="absolute inset-x-0 block h-px bg-[#eef2f6] dark:bg-white/[0.05]"
-                style={{ top: `${(i / 3) * 100}%` }}
+                style={{ top: `${(1 - t / max) * 100}%` }}
               />
             ))}
           </div>
@@ -697,7 +771,7 @@ function ProviderCard({
         {rows.map((r, i) => (
           <BarRow
             key={r.label}
-            label={`Provider ${r.label}`}
+            label={providerName(r.label)}
             value={r.value}
             max={max}
             base={total}
@@ -705,7 +779,7 @@ function ProviderCard({
             tip={() => (
               <TipBody
                 eyebrow="Service providers"
-                title={`Provider ${r.label}`}
+                title={providerName(r.label)}
                 value={r.value}
                 share={`${pct(r.value, total)} of attempts`}
                 sections={cubeSections(cubeRows, 'provider', r.label)}
@@ -778,6 +852,17 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
   const points = data?.peak_ports ?? [];
   const peak = Math.max(0, ...points.map((p) => p.peak));
   const tick = { fill: '#8193ad', fontSize: 10, fontFamily: 'Dashboard, sans-serif' };
+  // Buckets arrive as "2026-11-16 09:00". On a single day the date is the same
+  // on every label, so the axis shows the time alone and the date goes in the
+  // footer once; across days it shows day/month and time.
+  const first = points[0]?.bucket ?? '';
+  const timed = first.length > 10;
+  const oneDay = timed && first.slice(0, 10) === points[points.length - 1].bucket.slice(0, 10);
+  const bucketTick = (bucket: string) =>
+    !timed ? bucket : oneDay ? bucket.slice(11) : `${bucket.slice(8, 10)}/${bucket.slice(5, 7)} ${bucket.slice(11)}`;
+  // Labels on the hour (09:00, 10:00), not wherever the chart happens to put them.
+  const hourTicks = timed ? points.filter((p) => p.bucket.endsWith(':00')).map((p) => p.bucket) : [];
+  const portTicks = niceTicks(peak);
 
   return (
     <Card
@@ -805,8 +890,26 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="#eaf0f6" strokeDasharray="3 5" className="dark:opacity-20" />
-          <XAxis dataKey="bucket" tick={tick} tickLine={false} axisLine={false} minTickGap={40} interval="preserveStartEnd" />
-          <YAxis tick={tick} tickLine={false} axisLine={false} width={44} allowDecimals={false} tickFormatter={compact} />
+          <XAxis
+            dataKey="bucket"
+            tick={tick}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={40}
+            interval="preserveStartEnd"
+            ticks={hourTicks.length > 1 ? hourTicks : undefined}
+            tickFormatter={bucketTick}
+          />
+          <YAxis
+            tick={tick}
+            tickLine={false}
+            axisLine={false}
+            width={44}
+            allowDecimals={false}
+            ticks={portTicks}
+            domain={[0, portTicks[portTicks.length - 1]]}
+            tickFormatter={compact}
+          />
           <Tooltip
             cursor={{ stroke: '#8bbbd8', strokeDasharray: '3 3' }}
             content={({ active, payload, label }) =>
@@ -838,6 +941,7 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
           <Dot color={COLORS.blue} />
           Concurrent ports
         </span>
+        {oneDay && <span>{first.slice(0, 10)}</span>}
         <span>Timezone: IST</span>
       </div>
     </Card>
@@ -845,6 +949,7 @@ function PeakCard({ data, ...state }: CardStateProps & { data?: CdrDashboard }) 
 }
 
 const blastNumber = (label: string) => Number(label.match(/(\d+)\s*$/)?.[1] ?? 0);
+
 
 /** Repeat attempts shows Blast 0–5 until expanded: some days run to dozens of blasts. */
 const COLLAPSED_LAST_BLAST = 5;
@@ -951,17 +1056,77 @@ function ReasonsCard({
   total,
   ...state
 }: CardStateProps & { data?: CdrDashboard; total: number }) {
+  // Two views of the same attempts. "Reasons" (the default) groups codes under
+  // plain names; "Detailed" shows each raw code with the system's own cause
+  // message, for when the exact switch-level reason is needed. Detailed opens
+  // on its largest few codes; the arrow below opens every one.
+  const [view, setView] = useState<'reasons' | 'detailed'>('reasons');
+  const [expanded, setExpanded] = useState(false);
+  const causes = data?.disconnect_cause ?? [];
   const rows = [...(data?.disconnect_reason ?? [])].sort((a, b) => b.value - a.value);
   const max = Math.max(...rows.map((r) => r.value), 1);
+  const shownCauses = expanded ? causes : causes.slice(0, CAUSES_COLLAPSED);
+  const hiddenCount = causes.length - CAUSES_COLLAPSED;
+  const causeMax = Math.max(...causes.map((c) => c.value), 1);
 
   return (
     <Card
       {...state}
       span={7}
       title="Disconnect reasons"
-      subtitle="Reported reasons across all attempts"
+      subtitle={view === 'reasons' ? 'Reported reasons across all attempts' : 'System cause code behind each attempt'}
       isEmpty={rows.length === 0}
+      extra={
+        causes.length > 0 && (
+          <Toggle
+            label="Show"
+            value={view}
+            onChange={setView}
+            options={[
+              { id: 'reasons', label: 'Reasons' },
+              { id: 'detailed', label: 'Detailed' },
+            ]}
+          />
+        )
+      }
     >
+      {view === 'detailed' ? (
+        <>
+        <div className="flex flex-col gap-3.5">
+          {shownCauses.map((c, i) => (
+            <BarRow
+              key={c.code || 'none'}
+              label={c.code ? `${c.code} · ${c.label}` : c.label}
+              value={c.value}
+              max={causeMax}
+              base={total}
+              color={colorAt(REASON_COLORS, i)}
+              columns="grid-cols-[minmax(150px,250px)_1fr_80px_44px]"
+              trackHeight="h-2"
+              tip={() => (
+                <TipBody
+                  eyebrow={c.code ? `Cause code ${c.code}` : 'Cause code'}
+                  title={c.label}
+                  value={c.value}
+                  share={`${pct(c.value, total)} of attempts`}
+                />
+              )}
+            />
+          ))}
+        </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7ebf2] bg-[#f7f9fc] py-2 text-[11px] font-medium text-[#5b6a82] transition-colors hover:border-[#bcd6ef] hover:text-[#1d4ed8] dark:border-zinc-800/60 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:text-sky-300"
+          >
+            {expanded ? `Show top ${CAUSES_COLLAPSED} only` : `Show all ${causes.length} cause codes`}
+            <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+          </button>
+        )}
+        </>
+      ) : (
       <div className="flex flex-col gap-3.5">
         {rows.map((r, i) => (
           <BarRow
@@ -974,11 +1139,26 @@ function ReasonsCard({
             columns="grid-cols-[minmax(150px,250px)_1fr_80px_44px]"
             trackHeight="h-2"
             tip={() => (
-              <TipBody eyebrow="Disconnect reasons" title={r.label} value={r.value} share={`${pct(r.value, total)} of attempts`} />
+              <TipBody
+                eyebrow="Disconnect reasons"
+                title={r.label}
+                value={r.value}
+                share={`${pct(r.value, total)} of attempts`}
+                sections={r.codes?.length ? [{ title: 'Codes in this group', base: r.value, rows: r.codes }] : []}
+                note={
+                  r.codes?.length
+                    ? 'These attempts do carry a disconnect code, but the reason list has no name for it yet. Switch to Detailed to see what each one means.'
+                    : undefined
+                }
+              />
             )}
           />
         ))}
       </div>
+      )}
     </Card>
   );
 }
+
+/** Cause codes the Detailed view shows before its arrow is opened. */
+const CAUSES_COLLAPSED = 6;

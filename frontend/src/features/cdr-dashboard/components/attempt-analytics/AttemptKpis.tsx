@@ -3,7 +3,7 @@ import { AlertTriangle, Hash, Layers, Phone, Timer, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 
-import type { CdrDashboard } from '../../api';
+import type { CdrDashboard, CdrService } from '../../api';
 import { TONES, fmt, pct } from './design';
 import type { Tone } from './design';
 import { TipBody } from './HoverTooltip';
@@ -18,6 +18,7 @@ interface AttemptKpisProps {
    * means something for Conference and MultiCall.
    */
   showConferences: boolean;
+  service: CdrService;
 }
 
 const isNotConnected = (label: string) => /\b(not|un)[\s_-]*connected/i.test(label);
@@ -28,7 +29,10 @@ const isNotConnected = (label: string) => /\b(not|un)[\s_-]*connected/i.test(lab
  * dial direction, average call length, DTMF uptake, and for Conference and
  * MultiCall the rooms. Hover shows the detail.
  */
-export function AttemptKpis({ data, isLoading, error, showConferences }: AttemptKpisProps) {
+export function AttemptKpis({ data, isLoading, error, showConferences, service }: AttemptKpisProps) {
+  // On Conference this is rooms that had at least one call, which is fewer
+  // than the Summary's Daily Statement counts (see the hover note below).
+  const roomsLabel = service === 'conference' ? 'Conferences with calls' : 'Total conferences';
   const attempts = data?.summary.total_calls ?? 0;
   const participants = data?.summary.total_participants ?? 0;
   const minutes = data?.summary.minutes_usage ?? 0;
@@ -59,13 +63,13 @@ export function AttemptKpis({ data, isLoading, error, showConferences }: Attempt
         bar={attempts ? (connected / attempts) * 100 : 0}
         note={
           <>
-            <strong>{pct(connected, attempts)}</strong> connection rate
+            <strong>{pct(connected, attempts)}</strong> of attempts connected
           </>
         }
         tip={() => (
           <TipBody
             eyebrow="Total attempts"
-            title="Every dial attempt"
+            title="Every dial attempt, retries included"
             value={attempts}
             sections={[
               {
@@ -101,14 +105,6 @@ export function AttemptKpis({ data, isLoading, error, showConferences }: Attempt
                 title: 'Phone numbers',
                 rows: [{ label: 'Total phone numbers', value: data?.summary.total_phone_numbers ?? 0, share: '' }],
               },
-              {
-                title: 'Call direction (attempts)',
-                base: dialled,
-                rows: [
-                  { label: 'Dial out', value: dialOut },
-                  { label: 'Dial in', value: dialIn },
-                ],
-              },
             ]}
           />
         )}
@@ -118,7 +114,7 @@ export function AttemptKpis({ data, isLoading, error, showConferences }: Attempt
           {...state}
           tone={TONES.sky}
           icon={Layers}
-          label="Total conferences"
+          label={roomsLabel}
           value={fmt(conferences)}
           note={
             <>
@@ -127,9 +123,14 @@ export function AttemptKpis({ data, isLoading, error, showConferences }: Attempt
           }
           tip={() => (
             <TipBody
-              eyebrow="Total conferences"
+              eyebrow={roomsLabel}
               title="Distinct rooms (CRN + conference number)"
               value={conferences}
+              note={
+                service === 'conference'
+                  ? 'Audio-conference rooms with at least one call in this period. The Summary\u2019s Daily Statement is higher: it also counts Proxy rooms, and rooms that were opened but nobody was dialled into.'
+                  : undefined
+              }
               share={`${conferences ? (participants / conferences).toFixed(1) : '0'} participants each`}
               sections={[
                 {

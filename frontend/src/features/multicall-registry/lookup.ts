@@ -31,6 +31,31 @@ export const SEARCH_FIELDS: FieldMeta[] = [
   { key: 'cpins', label: 'CPIN', icon: KeyRound, placeholder: 'e.g. 482913, 557120', inputMode: 'numeric' },
 ];
 
+/**
+ * What a value in each box has to look like. Matching is exact, so a value of
+ * the wrong shape ("abc" as a Reg Num) can never match anything; it is caught
+ * before the search instead of coming back as "no account matched".
+ */
+const VALUE_SHAPE: Record<SearchField, RegExp> = {
+  reg_nums: /^\d+$/,
+  phones: /^\+?\d+$/,
+  emails: /^[^@\s]+@[^@\s]+$/,
+  cpins: /^\d+$/,
+};
+
+/** The same rule in words, for the message under the boxes. */
+export const VALUE_RULE: Record<SearchField, string> = {
+  reg_nums: 'digits only',
+  phones: 'digits only',
+  emails: 'full addresses, like name@company.com',
+  cpins: 'digits only',
+};
+
+/** The values of a box that cannot be searched for. */
+export function invalidValues(key: SearchField, values: string[]): string[] {
+  return values.filter((value) => !VALUE_SHAPE[key].test(value));
+}
+
 export const FIELD_BY_KEY = Object.fromEntries(SEARCH_FIELDS.map((field) => [field.key, field])) as Record<SearchField, FieldMeta>;
 
 export const EMPTY_DRAFTS: Record<SearchField, string> = { reg_nums: '', phones: '', emails: '', cpins: '' };

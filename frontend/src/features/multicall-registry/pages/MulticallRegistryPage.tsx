@@ -28,7 +28,7 @@ function matchesFilter(row: RegistrationMatch, needle: string): boolean {
 }
 
 /**
- * Registration lookup: a centred search that docks to the top once used,
+ * Registration lookup: the search across the top of the page from the start,
  * matching accounts below it, and each account's profiles one click away —
  * with previous/next to walk through every account in the results.
  *
@@ -145,17 +145,22 @@ export function MulticallRegistryPage() {
       headerSlot,
     )}
 
-    {/* One horizontal bar throughout: it waits mid-page, then rises to the top once used. */}
-    <div className={clsx('transition-[padding] duration-500 ease-out motion-reduce:transition-none', docked ? 'pt-0' : 'pt-[16vh] sm:pt-[22vh]')}>
+    {/* One horizontal bar, at the top from the start. It used to wait mid-page
+        and jump to the top on the first search, moving out from under the pointer. */}
+    <div>
       <SearchPanel drafts={drafts} onChange={(field, value) => setDrafts((current) => ({ ...current, [field]: value }))}
         onSubmit={runSearch} onReset={reset} docked={docked} pending={search.isFetching} />
     </div>
+
+    {!docked && <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+      Enter one or more values in any box, separated by commas, and press Search. Only main accounts are listed.
+    </p>}
 
     {docked && <div className="mt-5 space-y-4">
       {duplicateRegs.length > 0 && <p role="status" className="mc-rise flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          {duplicateRegs.length === 1 ? 'Reg Num' : 'Reg Nums'} <span className="font-semibold tabular-nums">{duplicateRegs.slice(0, 8).join(', ')}{duplicateRegs.length > 8 ? ` +${duplicateRegs.length - 8} more` : ''}</span> {duplicateRegs.length === 1 ? 'is a duplicate' : 'are duplicates'} and {duplicateRegs.length === 1 ? 'is' : 'are'} not shown — only main accounts, whose Reg Num is divisible by 8, appear in results.
+          {duplicateRegs.length === 1 ? 'Reg Num' : 'Reg Nums'} <span className="font-semibold tabular-nums">{duplicateRegs.slice(0, 8).join(', ')}{duplicateRegs.length > 8 ? ` +${duplicateRegs.length - 8} more` : ''}</span> {duplicateRegs.length === 1 ? 'is a duplicate' : 'are duplicates'} and {duplicateRegs.length === 1 ? 'is' : 'are'} not shown. Only main accounts are listed.
         </span>
       </p>}
       {search.isPending ? <ResultsSkeleton />
@@ -166,10 +171,10 @@ export function MulticallRegistryPage() {
           <span className="rounded-2xl bg-zinc-100 p-3 text-zinc-400 dark:bg-zinc-800"><SearchX className="h-6 w-6" /></span>
           <h2 className="mt-4 text-sm font-semibold text-zinc-900 dark:text-white">No account matched {searchedTotal === 1 ? 'this value' : `any of these ${searchedTotal} values`}</h2>
           <p className="mt-1 max-w-md text-sm leading-6 text-zinc-500 dark:text-zinc-400">
-            Matching is exact and only main accounts (Reg Num divisible by 8) are listed. Phone and email also check contacts saved on profiles, and CPIN checks every profile's chairperson PIN.
+            Matching is exact, and only main accounts are listed. Phone and email also check contacts saved on profiles, and CPIN checks every profile's chairperson PIN.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-            {SEARCH_FIELDS.filter((field) => submitted![field.key].length).map((field) => <span key={field.key} className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{FIELD_BY_KEY[field.key].label}: {submitted![field.key].length}</span>)}
+            {SEARCH_FIELDS.filter((field) => submitted![field.key].length).map((field) => <span key={field.key} className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{FIELD_BY_KEY[field.key].label}: {submitted![field.key].slice(0, 3).join(', ')}{submitted![field.key].length > 3 ? ` +${submitted![field.key].length - 3} more` : ''}</span>)}
           </div>
         </div>
       : accountIndex >= 0 ? <AccountView accounts={accountList} index={accountIndex} criteria={submitted!} onNavigate={navigate} onBack={back} />
